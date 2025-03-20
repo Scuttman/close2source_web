@@ -1,0 +1,88 @@
+import '../../imports.dart';
+
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
+
+  late TabController _tabController;
+  final bool _isLoading = true;
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body:Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ScreenNormalAppBarWidget(title: "close2source", logOut: true,),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                HomeTabScreen(),
+                ReportsTabScreen(),
+                SpendingTabScreen()
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _bottomTabBar(),
+    );
+  }
+
+
+  Widget _bottomTabBar() {
+    return Material(
+      elevation: 4.0,
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(20),
+        topRight: Radius.circular(20),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              themeGradientStart,
+              themeGradientEnd,
+            ],
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          tabs: const [
+            Tab(text: 'Home'),
+            Tab(text: 'Report'),
+            Tab(text: 'Spend'),
+          ],
+        ),
+      ),
+    );
+  }
+}
