@@ -1,15 +1,21 @@
-import '../imports.dart';
+import 'package:flutter/material.dart';
+import 'package:close2source/screens/authentication/user_registration_form.dart';
+import 'package:close2source/screens/dashboard/dashboard_screen.dart';
+import 'package:close2source/screens/authentication/login_screen.dart';
 
 class AppRoutes {
   static const String login = '/login';
   static const String dashboard = '/dashboard';
+  static const String register = '/register';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       case login:
-        return MaterialPageRoute(builder: (_) => LoginScreen());
+        return MaterialPageRoute(builder: (_) => const LoginScreen());
       case dashboard:
-        return MaterialPageRoute(builder: (_) => DashboardScreen());
+        return MaterialPageRoute(builder: (_) => const DashboardScreen());
+      case register:
+        return MaterialPageRoute(builder: (_) => const UserRegistrationForm());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(
