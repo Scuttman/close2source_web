@@ -45,6 +45,7 @@ export 'screens/dashboard/dashboard_screen.dart';
 export 'screens/dashboard/home_tab/home_tab_screen.dart';
 export 'screens/dashboard/reports_tab/reports_tab_screen.dart';
 export 'screens/dashboard/spending_tab/spending_tab_screen.dart';
+export 'screens/dashboard/reports_tab/report_form_screen.dart';
 
 
 
@@ -55,3 +56,4 @@ export 'screens/dashboard/spending_tab/spending_tab_screen.dart';
 export 'widgets/screen_normal_appbar.dart';
 export 'widgets/current_user_tile.dart';
 export 'widgets/project_detail_widget.dart';
+export 'widgets/report_card_widget.dart';
