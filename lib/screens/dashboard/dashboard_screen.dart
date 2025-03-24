@@ -1,4 +1,8 @@
 import '../../imports.dart';
+import 'spending_tab/spending_tab_screen.dart';
+import 'package:flutter/material.dart';
+import 'home_tab/home_tab_screen.dart';
+import 'reports_tab/reports_tab_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -7,8 +11,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
-
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final bool _isLoading = true;
 
@@ -28,17 +32,17 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body:Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ScreenNormalAppBarWidget(title: "close2source", logOut: true,),
+          ScreenNormalAppBarWidget(title: "close2source", logOut: true),
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
                 HomeTabScreen(),
                 ReportsTabScreen(),
-                SpendingTabScreen()
+                SpendingTabScreen(),
               ],
             ),
           ),
@@ -47,7 +51,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       bottomNavigationBar: _bottomTabBar(),
     );
   }
-
 
   Widget _bottomTabBar() {
     return Material(
@@ -61,10 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              themeGradientStart,
-              themeGradientEnd,
-            ],
+            colors: [themeGradientStart, themeGradientEnd],
           ),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
@@ -77,9 +77,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
           tabs: const [
-            Tab(text: 'Home'),
-            Tab(text: 'Report'),
-            Tab(text: 'Spend'),
+            Tab(text: 'Home', icon: Icon(Icons.home)),
+            Tab(text: 'Report', icon: Icon(Icons.menu_book)),
+            Tab(text: 'Spend', icon: Icon(Icons.attach_money)),
           ],
         ),
       ),

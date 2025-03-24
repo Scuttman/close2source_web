@@ -193,30 +193,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.21.1"
-  firebase_storage:
-    dependency: "direct main"
-    description:
-      name: firebase_storage
-      sha256: "2274bb277d0d56d4a106fd89bad5e8f7c005bae77dc3df5abd36101957010840"
-      url: "https://pub.dev"
-    source: hosted
-    version: "12.4.4"
-  firebase_storage_platform_interface:
-    dependency: transitive
-    description:
-      name: firebase_storage_platform_interface
-      sha256: "36ed6ebc2453a500c6d1e63c8126459056a70a798d53636242b0325951814cf5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.2.4"
-  firebase_storage_web:
-    dependency: transitive
-    description:
-      name: firebase_storage_web
-      sha256: e169fc825cbd91c70d73f75b7e8be9ada272b4297184f779ca124b42945828fe
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.10.11"
   flutter:
     dependency: "direct main"
     description: flutter
@@ -272,30 +248,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
-  image_cropper:
-    dependency: "direct main"
-    description:
-      name: image_cropper
-      sha256: "0c6ea3f96ccdcbe855fc86e9de582fdd6a94d578be8d817a05d9ecef9f1a258b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.0.0"
-  image_cropper_for_web:
-    dependency: transitive
-    description:
-      name: image_cropper_for_web
-      sha256: "34256c8fb7fcb233251787c876bb37271744459b593a948a2db73caa323034d0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.0.2"
-  image_cropper_platform_interface:
-    dependency: transitive
-    description:
-      name: image_cropper_platform_interface
-      sha256: e8e9d2ca36360387aee39295ce49029362ae4df3071f23e8e71f2b81e40b7531
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.0"
   image_picker:
     dependency: "direct main"
     description:

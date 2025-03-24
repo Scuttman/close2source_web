@@ -15,14 +15,14 @@ void main() async {
 
   // Register Google Fonts
   LicenseRegistry.addLicense(() async* {
-    final license = await rootBundle.loadString('assets/fonts/Amatic_SC/OFL.txt');
+    final license = await rootBundle.loadString(
+      'assets/fonts/Amatic_SC/OFL.txt',
+    );
     yield LicenseEntryWithLineBreaks(['google_fonts'], license);
   });
 
   // Register & Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   fs.FirebaseFirestore firestore = fs.FirebaseFirestore.instance;
   firestore.settings = const fs.Settings(
@@ -33,9 +33,7 @@ void main() async {
   // Ensure MultiProvider wraps MyApp and is returned
   runApp(
     MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ProjectsProvider()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => ProjectsProvider())],
       child: MyApp(),
     ),
   );
@@ -57,9 +55,11 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: Colors.white,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
-      ),    initialRoute: FirebaseAuth.instance.currentUser == null
-        ? AppRoutes.login
-        : AppRoutes.dashboard,
+      ),
+      initialRoute:
+          FirebaseAuth.instance.currentUser == null
+              ? AppRoutes.login
+              : AppRoutes.dashboard,
       onGenerateRoute: AppRoutes.generateRoute,
     );
   }
