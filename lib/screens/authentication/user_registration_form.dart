@@ -46,6 +46,7 @@ class _UserRegistrationFormState extends State<UserRegistrationForm> {
                     setState(() {
                       _profileImage = File(pickedFile.path);
                     });
+                    
                   }
                 },
               ),
@@ -104,6 +105,16 @@ class _UserRegistrationFormState extends State<UserRegistrationForm> {
   void _submitForm() {
     if (_formKey.currentState?.validate() ?? false) {
       _formKey.currentState?.save();
+
+      AuthService().registerUser(
+        name: _name!,
+        organization: _organization!,
+        contact: _contact!,
+        email: _email!,
+        password: _password!,
+        profileImage: _profileImage,
+        context: context,
+      );
 
       ScaffoldMessenger.of(
         context,
