@@ -1,4 +1,8 @@
 import '../../imports.dart';
+import 'spending_tab/spending_tab_screen.dart';
+import 'package:flutter/material.dart';
+import 'home_tab/home_tab_screen.dart';
+import 'reports_tab/reports_tab_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
