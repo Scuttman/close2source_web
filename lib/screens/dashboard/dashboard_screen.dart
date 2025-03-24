@@ -31,24 +31,40 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ScreenNormalAppBarWidget(title: "close2source", logOut: true),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                HomeTabScreen(),
-                ReportsTabScreen(),
-                SpendingTabScreen(),
-              ],
-            ),
-          ),
-        ],
+    double sw = MediaQuery.of(context).size.width;
+    double sh = MediaQuery.of(context).size.height;
+    return  Stack(
+      children: [
+      Container(
+      width: sw,
+      height: sh,
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/sitebg.jpg'),
+          fit: BoxFit.cover,
+        ),
       ),
-      bottomNavigationBar: _bottomTabBar(),
+      child:Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ScreenNormalAppBarWidget(title: "close2source", logOut: true),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  HomeTabScreen(),
+                  ReportsTabScreen(),
+                  SpendingTabScreen(),
+                ],
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: _bottomTabBar(),
+      ),
+    )]
     );
   }
 

@@ -19,10 +19,9 @@ class _LoginScreenState extends State<LoginScreen> {
       width: screenWidth,
       height: screenHeight,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [themeGradientStart, themeGradientEnd],
+        image: DecorationImage(
+          image: AssetImage('assets/sitebg.jpg'),
+          fit: BoxFit.cover,
         ),
       ),
       child: Scaffold(

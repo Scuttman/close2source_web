@@ -52,3 +52,4 @@ export 'screens/authentication/user_registration_form.dart';
 export 'widgets/screen_normal_appbar.dart';
 export 'widgets/current_user_tile.dart';
 export 'widgets/project_detail_widget.dart';
+export 'widgets/report_card_widget.dart';
