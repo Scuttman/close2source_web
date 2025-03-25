@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 class ReportCard extends StatelessWidget {
   final Map<String, dynamic> report;
 
-  const ReportCard({Key? key, required this.report}) : super(key: key);
+  const ReportCard({super.key, required this.report});
 
   @override
   Widget build(BuildContext context) {

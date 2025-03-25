@@ -5,8 +5,7 @@ import '../data/data_imports.dart';
 class ProjectDetailWidget extends StatefulWidget {
   final String projectId; // Ensure we pass the project ID to fetch details
 
-  const ProjectDetailWidget({Key? key, required this.projectId})
-      : super(key: key);
+  const ProjectDetailWidget({super.key, required this.projectId});
 
   @override
   _ProjectDetailWidgetState createState() => _ProjectDetailWidgetState();
@@ -91,8 +90,8 @@ class _ProjectDetailWidgetState extends State<ProjectDetailWidget> {
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               Text("👤 Owner: ${project.projectOwner}"),
               Text("💰 Budget: ${project.projectBudget} ${project.projectCurrency}"),
-              Text("🕒 Created: ${project.creationDate?.toDate()}"),
-              Text("🔄 Last Updated: ${project.lastUpdated?.toDate()}"),
+              Text("🕒 Created: ${project.creationDate.toDate()}"),
+              Text("🔄 Last Updated: ${project.lastUpdated.toDate()}"),
               Text("✅ Status: ${project.status}"),
               const SizedBox(height: 10),
               ElevatedButton(

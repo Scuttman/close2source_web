@@ -60,11 +60,12 @@ class AuthService {
           .createUserWithEmailAndPassword(email: email, password: password);
 
       final uid = userCred.user?.uid;
-      if (uid == null)
+      if (uid == null) {
         throw FirebaseAuthException(
           code: 'uid-null',
           message: 'User ID is missing',
         );
+      }
 
       String? profileImageUrl;
 

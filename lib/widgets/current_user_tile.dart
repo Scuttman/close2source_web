@@ -1,6 +1,8 @@
 import '../imports.dart';
 
 class CurrentUserTile extends StatelessWidget {
+  const CurrentUserTile({super.key});
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;

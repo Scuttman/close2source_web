@@ -1,6 +1,5 @@
 import 'package:close2source/imports.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/project_model.dart';
 
 class ProjectsRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
