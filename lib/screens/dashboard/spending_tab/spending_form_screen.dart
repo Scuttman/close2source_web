@@ -4,6 +4,9 @@ import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path/path.dart' as p;
+import '../../../data/models/spending_entry.dart';
+import '../../../services/spending_cache_service.dart';
 
 class SpendingFormScreen extends StatefulWidget {
   const SpendingFormScreen({super.key});
@@ -105,6 +108,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
             toolbarColor: themeGradientStart,
             statusBarColor: themeGradientStart,
             toolbarWidgetColor: Colors.white,
+            backgroundColor: Colors.white,
             lockAspectRatio: false,
           ),
         ],
@@ -136,25 +140,32 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDate == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('📅 Please select a date')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📅 Please select a date'),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
 
     if (_receiptImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('📸 Please upload a receipt image')),
+        const SnackBar(
+          content: Text('📸 Please upload a receipt image'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
 
     try {
       final spendingId = DateTime.now().millisecondsSinceEpoch.toString();
+      final ext = p.extension(_receiptImage!.path);
       final receiptRef = FirebaseStorage.instance
           .ref()
           .child('receipts')
-          .child('$spendingId.jpg');
+          .child('$spendingId$ext');
 
       await receiptRef.putFile(_receiptImage!);
       final receiptUrl = await receiptRef.getDownloadURL();
@@ -172,15 +183,35 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
           });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Spending submitted and saved!')),
+        const SnackBar(
+          content: Text('✅ Spending submitted and saved!'),
+          backgroundColor: Colors.green,
+        ),
       );
 
-      Navigator.pop(context);
+      Navigator.of(context).pop();
     } catch (e) {
       debugPrint('🔥 Error saving spending: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('❌ Failed to submit: $e')));
+
+      final localEntry = SpendingEntry(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        description: _descController.text.trim(),
+        category: _selectedCategory ?? '',
+        amount: double.tryParse(_totalController.text) ?? 0,
+        date: _selectedDate!.toIso8601String(),
+        localImagePath: _receiptImage?.path ?? '',
+      );
+
+      await SpendingCacheService.saveLocally(localEntry);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📦 Saved offline – will sync later'),
+          backgroundColor: Colors.blueGrey,
+        ),
+      );
+
+      Navigator.of(context).pop();
     }
   }
 
@@ -200,8 +231,12 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Spending'),
         backgroundColor: themeGradientStart,
+        title: const Text('Add Spending'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -247,11 +282,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                                 DropdownMenuItem(value: cat, child: Text(cat)),
                           )
                           .toList(),
-                  onChanged: (val) {
-                    setState(() {
-                      _selectedCategory = val;
-                    });
-                  },
+                  onChanged: (val) => setState(() => _selectedCategory = val),
                   decoration: const InputDecoration(
                     labelText: 'Budget Category',
                   ),

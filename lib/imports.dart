@@ -17,6 +17,7 @@ export 'package:firebase_auth/firebase_auth.dart';
 export 'data/models/project_model.dart';
 export 'data/repositories/projects_repository.dart';
 export 'data/providers/project_selected_provider.dart';
+export 'data/models/spending_entry.dart';
 
 //------------------------------------------------------------------------------
 // Service Imports
@@ -42,6 +43,8 @@ export 'screens/authentication/login_screen.dart';
 export 'screens/dashboard/dashboard_screen.dart';
 export 'screens/dashboard/home_tab/home_tab_screen.dart';
 export 'screens/dashboard/reports_tab/reports_tab_screen.dart';
+export 'screens/dashboard/reports_tab/report_form_screen.dart';
+
 export 'screens/dashboard/spending_tab/spending_tab_screen.dart';
 export 'screens/authentication/user_registration_form.dart';
 

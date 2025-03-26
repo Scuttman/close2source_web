@@ -9,19 +9,20 @@ class ReportsTabScreen extends StatefulWidget {
 }
 
 class _ReportsTabScreenState extends State<ReportsTabScreen> {
-
-
-  Future<void> _addNewReport() async {
-    Navigator.pushNamed(context, 'report_form');
+  void _addNewReport() {
+    Navigator.pushNamed(context, 'report_form'); // ✅ This triggers navigation
   }
 
   @override
   Widget build(BuildContext context) {
-    final projectProvider = Provider.of<ProjectsProvider>(context, listen: true);
+    final projectProvider = Provider.of<ProjectsProvider>(
+      context,
+      listen: true,
+    );
     final project = projectProvider.selectedProject;
 
     if (project == null) {
-      return Center(child: Text('No project selected!'));
+      return const Center(child: Text('No project selected!'));
     }
 
     final List<dynamic> reports = project.reportList;
@@ -37,27 +38,33 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
+                const Padding(
+                  padding: EdgeInsets.only(top: 4.0),
                   child: Text(
                     'Project Reports',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.0),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18.0,
+                    ),
                   ),
                 ),
-                IconButton(onPressed: _addNewReport, icon: Icon(Icons.add)),
+                IconButton(
+                  onPressed: _addNewReport,
+                  icon: const Icon(Icons.add), // ✅ Add icon
+                ),
               ],
             ),
           ),
         ),
-        Divider(),
+        const Divider(),
         Expanded(
           flex: 2,
           child: Container(
-            constraints: BoxConstraints(minHeight: 20.0),
+            constraints: const BoxConstraints(minHeight: 20.0),
             child: ListView.separated(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               itemCount: reports.length,
-              separatorBuilder: (context, index) => SizedBox(height: 12),
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 return ReportCard(report: reports[index]);
               },
@@ -67,6 +74,4 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
       ],
     );
   }
-
-
 }
