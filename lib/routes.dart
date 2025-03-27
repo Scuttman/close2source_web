@@ -8,7 +8,8 @@ class AppRoutes {
   static const String login = '/login';
   static const String dashboard = '/dashboard';
   static const String register = '/register';
-  static const String spendingForm = '/spending_form'; // ✅ Add route name
+  static const String spendingForm = '/spending_form';
+  static const reportForm = '/report_form'; // ✅ Newly added
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {

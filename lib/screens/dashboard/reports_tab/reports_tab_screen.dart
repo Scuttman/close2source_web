@@ -10,7 +10,7 @@ class ReportsTabScreen extends StatefulWidget {
 
 class _ReportsTabScreenState extends State<ReportsTabScreen> {
   void _addNewReport() {
-    Navigator.pushNamed(context, 'report_form'); // ✅ This triggers navigation
+    Navigator.pushNamed(context, AppRoutes.reportForm); // ✅ Route fixed
   }
 
   @override
@@ -50,7 +50,7 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
                 ),
                 IconButton(
                   onPressed: _addNewReport,
-                  icon: const Icon(Icons.add), // ✅ Add icon
+                  icon: const Icon(Icons.add), // ✅ Add report icon
                 ),
               ],
             ),
@@ -58,17 +58,13 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
         ),
         const Divider(),
         Expanded(
-          flex: 2,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 20.0),
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: reports.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                return ReportCard(report: reports[index]);
-              },
-            ),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: reports.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              return ReportCard(report: reports[index]);
+            },
           ),
         ),
       ],

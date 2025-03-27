@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
-import '../../../imports.dart'; // Includes ProjectsProvider & themeGradientStart/themeGradientEnd
+import '../../../imports.dart';
 
 class ReportFormScreen extends StatefulWidget {
   const ReportFormScreen({super.key});
@@ -20,21 +21,52 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   final List<File> _selectedImages = [];
   bool _isUploading = false;
 
-  Future<void> _pickImage() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-    );
+  Future<void> _pickImage(ImageSource source) async {
+    final pickedFile = await ImagePicker().pickImage(source: source);
     if (pickedFile != null) {
       setState(() => _selectedImages.add(File(pickedFile.path)));
     }
   }
 
+  void _showImagePickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder:
+          (context) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.camera_alt),
+                    title: const Text('Camera'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImage(ImageSource.camera);
+                    },
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.photo_library),
+                    title: const Text('Gallery'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImage(ImageSource.gallery);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
   Future<List<String>> _uploadImages(String projectId) async {
     List<String> urls = [];
-    for (int i = 0; i < _selectedImages.length; i++) {
-      File imageFile = _selectedImages[i];
-      String fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-      Reference storageRef = FirebaseStorage.instance.ref().child(
+    for (var imageFile in _selectedImages) {
+      String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      Reference storageRef = FirebaseStorage.instance.ref(
         'reports/$projectId/$fileName',
       );
       UploadTask uploadTask = storageRef.putFile(imageFile);
@@ -73,16 +105,13 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
               ? await _uploadImages(project.projectId)
               : [];
 
-      List<String> updateTextList =
-          _updateTextController.text
-              .split('\n')
-              .map((line) => line.trim())
-              .where((line) => line.isNotEmpty)
-              .toList();
-
       final newReport = {
         "reportDate": Timestamp.fromDate(_selectedDate),
-        "updateText": updateTextList,
+        "updateText":
+            _updateTextController.text
+                .split('\n')
+                .where((e) => e.isNotEmpty)
+                .toList(),
         "reportPhotos": reportPhotos,
       };
 
@@ -104,15 +133,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     }
   }
 
-  Widget _buildCard(Widget child) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(padding: const EdgeInsets.all(16), child: child),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,8 +142,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [themeGradientStart, themeGradientEnd],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
             ),
           ),
         ),
@@ -132,158 +150,61 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            _buildCard(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Report Date",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: _selectDate,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        DateFormat('dd/MM/yyyy').format(_selectedDate),
-                      ),
-                    ),
-                  ),
-                ],
+            Card(
+              child: ListTile(
+                title: const Text("Report Date"),
+                trailing: Text(DateFormat('dd/MM/yyyy').format(_selectedDate)),
+                onTap: _selectDate,
               ),
             ),
-            _buildCard(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Update Text",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _updateTextController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: "Enter updates, one per line",
-                    ),
-                  ),
-                ],
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _updateTextController,
+                  maxLines: 5,
+                  decoration: const InputDecoration(hintText: "Enter updates"),
+                ),
               ),
             ),
-            _buildCard(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Card(
+              child: Column(
                 children: [
-                  const Text(
-                    "Report Photos",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children:
-                        _selectedImages.map((file) {
-                          return Stack(
-                            alignment: Alignment.topRight,
-                            children: [
-                              Image.file(
+                        _selectedImages
+                            .map(
+                              (file) => Image.file(
                                 file,
                                 width: 100,
                                 height: 100,
                                 fit: BoxFit.cover,
                               ),
-                              GestureDetector(
-                                onTap:
-                                    () => setState(
-                                      () => _selectedImages.remove(file),
-                                    ),
-                                child: Container(
-                                  color: Colors.black54,
-                                  child: const Icon(
-                                    Icons.close,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+                            )
+                            .toList(),
                   ),
-                  const SizedBox(height: 8),
                   ElevatedButton.icon(
-                    onPressed: _pickImage,
                     icon: const Icon(Icons.add_a_photo),
                     label: const Text("Add Image"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: themeGradientStart,
-                      foregroundColor: Colors.white,
-                    ),
+                    onPressed: _showImagePickerOptions,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            Center(
-              child:
-                  _isUploading
-                      ? const CircularProgressIndicator()
-                      : ElevatedButton.icon(
-                        onPressed: _submitReport,
-                        icon: const Icon(Icons.send),
-                        label: const Text("Submit Report"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: themeGradientEnd,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 32,
-                            vertical: 14,
-                          ),
-                        ),
-                      ),
-            ),
+            const SizedBox(height: 20),
+            _isUploading
+                ? const CircularProgressIndicator()
+                : ElevatedButton.icon(
+                  icon: const Icon(Icons.send),
+                  label: const Text("Submit Report"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: themeGradientEnd,
+                  ),
+                  onPressed: _submitReport,
+                ),
           ],
-        ),
-      ),
-      bottomNavigationBar: _bottomBar(),
-    );
-  }
-
-  Widget _bottomBar() {
-    return Material(
-      elevation: 4.0,
-      borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(20),
-        topRight: Radius.circular(20),
-      ),
-      child: Container(
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [themeGradientStart, themeGradientEnd],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: const Center(
-          child: Text(
-            '© Close2Source',
-            style: TextStyle(color: Colors.white70),
-          ),
         ),
       ),
     );

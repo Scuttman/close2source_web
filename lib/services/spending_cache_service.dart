@@ -1,50 +1,68 @@
+import 'dart:io';
 import 'package:hive/hive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../data/models/spending_entry.dart';
 
 class SpendingCacheService {
   static const _boxName = 'spending_cache';
+  static Box<SpendingEntry>? _box;
 
-  /// Initialize Hive box
+  /// Initialize Hive and open the spending cache box
   static Future<void> init() async {
-    if (!Hive.isAdapterRegistered(0)) {
+    if (!Hive.isAdapterRegistered(SpendingEntryAdapter().typeId)) {
       Hive.registerAdapter(SpendingEntryAdapter());
     }
-    await Hive.openBox<SpendingEntry>(_boxName);
+    _box = await Hive.openBox<SpendingEntry>(_boxName);
+
+    // Auto-sync on network reconnect
+    Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
+      if (result != ConnectivityResult.none) {
+        syncToFirestore();
+      }
+    });
   }
 
-  /// Save locally when offline or Firebase fails
+  /// Save spending entry locally (offline mode or Firestore failure)
   static Future<void> saveLocally(SpendingEntry entry) async {
-    final box = Hive.box<SpendingEntry>(_boxName);
-    await box.put(entry.id, entry);
+    await _box?.put(entry.id, entry);
+    print('✅ Saved locally: ${entry.id}');
   }
 
-  /// Get unsynced entries
+  /// Get all unsynced entries
   static List<SpendingEntry> getUnsyncedEntries() {
-    final box = Hive.box<SpendingEntry>(_boxName);
-    return box.values.toList();
+    return _box?.values.toList() ?? [];
   }
 
-  /// Sync all unsynced spendings to Firestore
+  /// Sync local entries with Firestore
   static Future<void> syncToFirestore() async {
-    final box = Hive.box<SpendingEntry>(_boxName);
-    final entries = box.values.toList();
+    if (_box == null) {
+      print('⚠️ Hive box not initialized.');
+      return;
+    }
+
+    final entries = _box!.values.toList();
 
     for (var entry in entries) {
       try {
-        // Upload receipt image
-        final receiptRef = FirebaseStorage.instance
-            .ref()
-            .child('receipts')
-            .child('${entry.id}.jpg');
+        String? receiptUrl;
 
-        final file = File(entry.localImagePath!);
-        await receiptRef.putFile(file);
-        final receiptUrl = await receiptRef.getDownloadURL();
+        if (entry.localImagePath != null && entry.localImagePath!.isNotEmpty) {
+          final file = File(entry.localImagePath!);
+          if (!await file.exists()) {
+            print('❌ Receipt file missing for ${entry.id}');
+            continue;
+          }
 
-        // Save to Firestore
+          final storageRef = FirebaseStorage.instance.ref(
+            'receipts/${entry.id}.jpg',
+          );
+
+          await storageRef.putFile(file);
+          receiptUrl = await storageRef.getDownloadURL();
+        }
+
         await FirebaseFirestore.instance
             .collection('spendings')
             .doc(entry.id)
@@ -53,22 +71,22 @@ class SpendingCacheService {
               'category': entry.category,
               'amount': entry.amount,
               'date': DateTime.parse(entry.date),
-              'receiptUrl': receiptUrl,
+              'receiptUrl': receiptUrl ?? '',
               'createdAt': FieldValue.serverTimestamp(),
             });
 
-        // Delete local copy if synced
-        await box.delete(entry.id);
-      } catch (e) {
-        print('❌ Sync failed for ${entry.id}: $e');
+        await _box!.delete(entry.id);
+        print('✅ Synced successfully: ${entry.id}');
+      } catch (e, stackTrace) {
+        print('❌ Error syncing ${entry.id}: $e\nStackTrace: $stackTrace');
         continue;
       }
     }
   }
 
-  /// Delete a local cache entry (optional use)
+  /// Delete an entry from local cache manually (if needed)
   static Future<void> delete(String id) async {
-    final box = Hive.box<SpendingEntry>(_boxName);
-    await box.delete(id);
+    await _box?.delete(id);
+    print('🗑️ Deleted locally: $id');
   }
 }

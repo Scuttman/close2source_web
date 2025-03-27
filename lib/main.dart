@@ -1,24 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-
-import 'firebase_options.dart';
 import 'imports.dart'; // ✅ This should export ReportFormScreen and other routes
-import 'data/models/spending_entry.dart';
 import 'services/spending_cache_service.dart';
-import 'services/auth_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Register Google Fonts license (for Amatic_SC)
+  // Register Google Fonts license
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString(
       'assets/fonts/Amatic_SC/OFL.txt',
@@ -35,16 +30,17 @@ void main() async {
     cacheSizeBytes: fs.Settings.CACHE_SIZE_UNLIMITED,
   );
 
-  // Initialize Hive & Cache Service
+  // Initialize Hive for local storage
   final appDir = await getApplicationDocumentsDirectory();
   await Hive.initFlutter(appDir.path);
-  Hive.registerAdapter(SpendingEntryAdapter());
   await SpendingCacheService.init();
 
-  // Run the app
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => ProjectsProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => ProjectsProvider()),
+        // Add more providers here if needed
+      ],
       child: const MyApp(),
     ),
   );
@@ -66,7 +62,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.login: (context) => const LoginScreen(),
         AppRoutes.register: (context) => const UserRegistrationForm(),
         AppRoutes.dashboard: (context) => const DashboardScreen(),
-        'report_form': (context) => const ReportFormScreen(), // ✅ Added route
+        AppRoutes.reportForm: (context) => const ReportFormScreen(),
       },
       home: const AuthGate(),
     );
@@ -88,15 +84,15 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Handle auth
+    // Check authentication state
     AuthService().handleAuthState(context);
 
-    // Listen to network changes and sync offline data
+    // Listen for connectivity changes and sync offline data
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       result,
     ) {
       if (result != ConnectivityResult.none) {
-        debugPrint("📶 Connectivity restored. Attempting sync...");
+        debugPrint('📶 Connectivity restored. Syncing cached data...');
         SpendingCacheService.syncToFirestore();
       }
     });
@@ -105,7 +101,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint("🔄 App resumed. Attempting sync...");
+      debugPrint('🔄 App resumed. Syncing cached data...');
       SpendingCacheService.syncToFirestore();
     }
   }
