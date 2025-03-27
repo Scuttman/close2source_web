@@ -1,124 +1,55 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../imports.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  //------------------------------------------------------------------------------
-  // 🔹 Listen to Auth State & Redirect
-  //------------------------------------------------------------------------------
+  /// Check if the user is currently authenticated
+  Future<bool> handleAuthState(BuildContext context) async {
+    final user = _auth.currentUser;
+    return user != null;
+  }
 
-  void handleAuthState(BuildContext context) {
+  /// Listen continuously to auth state changes (optional helper)
+  void authStateListener(BuildContext context) {
     _auth.authStateChanges().listen((User? user) {
-      if (!context.mounted) return;
-
-      if (user != null) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+      if (user == null) {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
       } else {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
       }
     });
   }
 
-  //------------------------------------------------------------------------------
-  // 🔹 Sign In User
-  //------------------------------------------------------------------------------
-
-  Future<void> signIn(
-    String email,
-    String password,
-    BuildContext context,
-  ) async {
+  /// Method to sign in with email/password
+  Future<User?> signIn(String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-      if (!context.mounted) return;
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential.user;
     } on FirebaseAuthException catch (e) {
-      _showError(context, e.message ?? "Login failed. Try again.");
+      debugPrint('❌ Sign-in error: ${e.message}');
+      return null;
     }
   }
 
-  //------------------------------------------------------------------------------
-  // 🔹 Register User and Save Profile + Upload Image
-  //------------------------------------------------------------------------------
-
-  Future<void> registerUser({
-    required String name,
-    required String organization,
-    required String contact,
-    required String email,
-    required String password,
-    required File? profileImage,
-    required BuildContext context,
-  }) async {
+  /// Method to register a new user
+  Future<User?> registerUser(String email, String password) async {
     try {
-      final UserCredential userCred = await _auth
+      UserCredential userCredential = await _auth
           .createUserWithEmailAndPassword(email: email, password: password);
-
-      final uid = userCred.user?.uid;
-      if (uid == null) {
-        throw FirebaseAuthException(
-          code: 'uid-null',
-          message: 'User ID is missing',
-        );
-      }
-
-      String? profileImageUrl;
-
-      // 🔸 Upload Profile Picture if provided
-      if (profileImage != null) {
-        final ref = FirebaseStorage.instance.ref().child(
-          'profile_images/$uid.jpg',
-        );
-        await ref.putFile(profileImage);
-        profileImageUrl = await ref.getDownloadURL();
-      }
-
-      // 🔥 Save profile to Firestore
-      await FirebaseFirestore.instance.collection('Users').doc(uid).set({
-        'uid': uid,
-        'name': name,
-        'organization': organization,
-        'contact': contact,
-        'email': email,
-        'role': 'admin', // default role
-        'profileImageUrl': profileImageUrl,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      if (!context.mounted) return;
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      return userCredential.user;
     } on FirebaseAuthException catch (e) {
-      _showError(context, e.message ?? "Registration failed. Try again.");
-    } catch (e) {
-      _showError(context, "Something went wrong. Please try again.");
+      debugPrint('❌ Registration error: ${e.message}');
+      return null;
     }
   }
 
-  //------------------------------------------------------------------------------
-  // 🔹 Sign Out User
-  //------------------------------------------------------------------------------
-
-  Future<void> signOut(BuildContext context) async {
+  /// Method to sign out
+  Future<void> signOut() async {
     await _auth.signOut();
-    if (!context.mounted) return;
-    Navigator.pushReplacementNamed(context, '/login');
-  }
-
-  //------------------------------------------------------------------------------
-  // 🔹 Show Error Message
-  //------------------------------------------------------------------------------
-
-  void _showError(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(color: Colors.white)),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
 }

@@ -1,69 +1,37 @@
-import '../../imports.dart';
+import 'package:flutter/material.dart';
+import '../imports.dart';
 
-class ScreenNormalAppBarWidget extends StatelessWidget {
-
+class ScreenNormalAppBar extends StatelessWidget
+    implements PreferredSizeWidget {
   final String title;
-  final bool? logOut;
-  const ScreenNormalAppBarWidget({super.key, required this.title, this.logOut});
+
+  const ScreenNormalAppBar({super.key, required this.title});
 
   @override
   Widget build(BuildContext context) {
-      double screenWidth = MediaQuery.of(context).size.width;
-      return Material(
-        elevation: 4.0,
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(0),
-          bottomRight: Radius.circular(0),
+    return AppBar(
+      title: Text(title),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.logout),
+          onPressed: () async {
+            await AuthService().signOut();
+            Navigator.pushReplacementNamed(context, AppRoutes.login);
+          },
         ),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 30.0),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                themeGradientStart,
-               themeGradientEnd,
-              ],
-            ),
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(0),
-              bottomRight: Radius.circular(0),
-            ),
-          ),
-          child: Column(
-            children: [
-              Container(height: 50.0),
-              SizedBox(
-                height: 60.0,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 15.0),
-                    Container(
-                        constraints: BoxConstraints(
-                            maxWidth: screenWidth - 80,
-                            minHeight: 10.0
-                        ),
-                        child: Text(title.toString(), style: AppTextService().courseTitle)),
-                    Expanded(child: Container()),
-                    IconButton(
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                      onPressed: () async {
-                        if(logOut == null) {
-                          Navigator.pop(context);
-                        } else {
-                          AuthService().signOut(context);
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 0.0),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 15.0),
-            ],
+      ],
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [themeGradientStart, themeGradientEnd],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }

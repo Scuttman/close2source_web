@@ -1,5 +1,6 @@
+import 'package:flutter/material.dart';
 import '../../imports.dart';
-
+import '../../widgets/screen_normal_appbar.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -11,11 +12,9 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final bool _isLoading = true;
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
   }
@@ -30,38 +29,39 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     double sw = MediaQuery.of(context).size.width;
     double sh = MediaQuery.of(context).size.height;
-    return  Stack(
+
+    return Stack(
       children: [
-      Container(
-      width: sw,
-      height: sh,
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/sitebg.jpg'),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child:Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ScreenNormalAppBarWidget(title: "close2source", logOut: true),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  HomeTabScreen(),
-                  ReportsTabScreen(),
-                  SpendingTabScreen(),
-                ],
-              ),
+        Container(
+          width: sw,
+          height: sh,
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/sitebg.jpg'),
+              fit: BoxFit.cover,
             ),
-          ],
+          ),
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: const ScreenNormalAppBar(title: "close2source"),
+            body: Column(
+              children: [
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: const [
+                      HomeTabScreen(),
+                      ReportsTabScreen(),
+                      SpendingTabScreen(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: _bottomTabBar(),
+          ),
         ),
-        bottomNavigationBar: _bottomTabBar(),
-      ),
-    )]
+      ],
     );
   }
 

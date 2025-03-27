@@ -7,13 +7,12 @@ import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'imports.dart'; // ✅ This should export ReportFormScreen and other routes
+import 'imports.dart';
 import 'services/spending_cache_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Register Google Fonts license
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString(
       'assets/fonts/Amatic_SC/OFL.txt',
@@ -21,26 +20,20 @@ Future<void> main() async {
     yield LicenseEntryWithLineBreaks(['google_fonts'], license);
   });
 
-  // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Enable Firestore offline persistence
   fs.FirebaseFirestore.instance.settings = const fs.Settings(
     persistenceEnabled: true,
     cacheSizeBytes: fs.Settings.CACHE_SIZE_UNLIMITED,
   );
 
-  // Initialize Hive for local storage
   final appDir = await getApplicationDocumentsDirectory();
   await Hive.initFlutter(appDir.path);
   await SpendingCacheService.init();
 
   runApp(
     MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ProjectsProvider()),
-        // Add more providers here if needed
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => ProjectsProvider())],
       child: const MyApp(),
     ),
   );
@@ -63,6 +56,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.register: (context) => const UserRegistrationForm(),
         AppRoutes.dashboard: (context) => const DashboardScreen(),
         AppRoutes.reportForm: (context) => const ReportFormScreen(),
+        AppRoutes.profileHome: (context) => const ProfileHomeScreen(),
       },
       home: const AuthGate(),
     );
@@ -84,10 +78,15 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Check authentication state
-    AuthService().handleAuthState(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      bool isAuthenticated = await AuthService().handleAuthState(context);
+      if (isAuthenticated) {
+        Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
+      } else {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
+    });
 
-    // Listen for connectivity changes and sync offline data
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       result,
     ) {

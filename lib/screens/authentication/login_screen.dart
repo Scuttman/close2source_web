@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../../imports.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -8,193 +9,157 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  String? _email;
-  String? _password;
-  bool _obscurePassword = true;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
+
+  Future<void> _signIn() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter email and password')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final user = await AuthService().signIn(email, password);
+    setState(() => _isLoading = false);
+
+    if (user != null) {
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.profileHome,
+      ); // ✅ profileHome
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login failed, please try again')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final screen = MediaQuery.of(context).size;
-
-    return Container(
-      width: screen.width,
-      height: screen.height,
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/sitebg.jpg'),
-          fit: BoxFit.cover,
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/sitebg.jpg'), // ✅ Your background image
+            fit: BoxFit.cover,
+          ),
         ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Center(
+        child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  const Text(
-                    'Welcome to',
-                    style: TextStyle(color: Colors.white, fontSize: 20.0),
-                  ),
-                  Text(
-                    'close2source',
-                    style: GoogleFonts.amaticSc(
-                      textStyle: const TextStyle(
-                        color: Colors.white,
-                        letterSpacing: 0.1,
-                        fontSize: 60.0,
+            padding: const EdgeInsets.all(24),
+            child: Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 8,
+              color: Colors.white.withOpacity(
+                0.85,
+              ), // Slightly transparent card
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Welcome Back!',
+                      style: TextStyle(
+                        fontSize: 26,
                         fontWeight: FontWeight.bold,
+                        color: Colors.deepOrange,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 30),
-
-                  /// 🟫 Combined Card for Email & Password
-                  _buildCard(
-                    Column(
-                      children: [
-                        TextFormField(
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: "Email Address",
-                            border: InputBorder.none,
-                          ),
-                          validator:
-                              (val) =>
-                                  val == null || !val.contains('@')
-                                      ? "Enter a valid email"
-                                      : null,
-                          onSaved: (val) => _email = val,
-                        ),
-                        const Divider(),
-                        TextFormField(
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            labelText: "Password",
-                            border: InputBorder.none,
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                            ),
-                          ),
-                          validator:
-                              (val) =>
-                                  val == null || val.length < 6
-                                      ? "Password must be at least 6 characters"
-                                      : null,
-                          onSaved: (val) => _password = val,
-                        ),
-                      ],
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.email),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
                     ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  /// 🟫 Login Button
-                  _buildActionCard(title: "Login", onTap: _loginUser),
-
-                  const SizedBox(height: 16),
-                  const Text(
-                    "Don't have an account?",
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                      obscureText: true,
                     ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  /// 🟫 Register Button
-                  _buildActionCard(
-                    title: "Register here",
-                    onTap:
-                        () => Navigator.pushNamed(context, AppRoutes.register),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        bottomNavigationBar: _bottomBar(),
-      ),
-    );
-  }
-
-  Widget _buildCard(Widget child) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: Colors.white.withOpacity(0.95),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: child,
-      ),
-    );
-  }
-
-  Widget _buildActionCard({
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return FractionallySizedBox(
-      widthFactor: 0.50,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          color: Colors.white.withOpacity(0.9),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            child: Center(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.brown,
-                  fontWeight: FontWeight.bold,
+                    const SizedBox(height: 24),
+                    _isLoading
+                        ? const CircularProgressIndicator()
+                        : ElevatedButton(
+                          onPressed: _signIn,
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 50),
+                            backgroundColor: themeGradientEnd,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Login'),
+                        ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, AppRoutes.register);
+                      },
+                      child: const Text(
+                        'Create Account',
+                        style: TextStyle(color: Colors.deepOrange),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         ),
       ),
+      bottomNavigationBar: _bottomBar(),
     );
   }
 
   Widget _bottomBar() {
     return Material(
-      color: Colors.transparent, // 👈 Transparent material
-      elevation: 0, // Optional: remove shadow if not needed
+      elevation: 4.0,
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(20),
+        topRight: Radius.circular(20),
+      ),
       child: Container(
         height: 60,
-        alignment: Alignment.center,
-        child: const Text(
-          '© Close2Source',
-          style: TextStyle(color: Colors.deepOrange),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [themeGradientStart, themeGradientEnd],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: const Center(
+          child: Text(
+            '© Close2Source',
+            style: TextStyle(color: Colors.white70),
+          ),
         ),
       ),
     );
-  }
-
-  void _loginUser() {
-    if (_formKey.currentState?.validate() ?? false) {
-      _formKey.currentState?.save();
-      if (_email != null && _password != null) {
-        AuthService().signIn(_email!, _password!, context);
-      }
-    }
   }
 }
