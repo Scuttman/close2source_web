@@ -134,76 +134,91 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add New Report'),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [themeGradientStart, themeGradientEnd],
+    return BackgroundScaffold(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text('Add New Report'),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [themeGradientStart, themeGradientEnd],
+              ),
             ),
           ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Card(
-              child: ListTile(
-                title: const Text("Report Date"),
-                trailing: Text(DateFormat('dd/MM/yyyy').format(_selectedDate)),
-                onTap: _selectDate,
-              ),
-            ),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: TextField(
-                  controller: _updateTextController,
-                  maxLines: 5,
-                  decoration: const InputDecoration(hintText: "Enter updates"),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Card(
+                child: ListTile(
+                  title: const Text("Report Date"),
+                  trailing: Text(
+                    DateFormat('dd/MM/yyyy').format(_selectedDate),
+                  ),
+                  onTap: _selectDate,
                 ),
               ),
-            ),
-            Card(
-              child: Column(
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        _selectedImages
-                            .map(
-                              (file) => Image.file(
-                                file,
-                                width: 100,
-                                height: 100,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                            .toList(),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: TextField(
+                    controller: _updateTextController,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      hintText: "Enter updates",
+                    ),
                   ),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add_a_photo),
-                    label: const Text("Add Image"),
-                    onPressed: _showImagePickerOptions,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _isUploading
-                ? const CircularProgressIndicator()
-                : ElevatedButton.icon(
-                  icon: const Icon(Icons.send),
-                  label: const Text("Submit Report"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: themeGradientEnd,
-                  ),
-                  onPressed: _submitReport,
                 ),
-          ],
+              ),
+              Card(
+                child: Column(
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children:
+                          _selectedImages
+                              .map(
+                                (file) => ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    file,
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                    ),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.add_a_photo),
+                      label: const Text("Add Image"),
+                      onPressed: _showImagePickerOptions,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _isUploading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton.icon(
+                    icon: const Icon(Icons.send),
+                    label: const Text("Submit Report"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: themeGradientEnd,
+                    ),
+                    onPressed: _submitReport,
+                  ),
+              const SizedBox(height: 80),
+              const Text(
+                '© Close2Source',
+                style: TextStyle(color: Colors.deepOrange),
+              ),
+            ],
+          ),
         ),
       ),
     );
