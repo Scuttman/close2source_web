@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
