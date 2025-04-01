@@ -19,6 +19,8 @@ export 'data/repositories/projects_repository.dart';
 export 'data/providers/project_selected_provider.dart';
 export 'data/models/spending_entry.dart';
 export 'data/models/user_profile.dart';
+export 'data/repositories/profile_repository.dart';
+export 'data/models/profile.dart';
 
 //------------------------------------------------------------------------------
 // Service Imports

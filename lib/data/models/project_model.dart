@@ -2,7 +2,9 @@ import '../data_imports.dart';
 
 class Project {
   final String projectId;
+  final String projectCode;
   final String projectName;
+  final String projectDesc;
   final String projectOwner;
   final String projectSponsor;
   final double projectBudget;
@@ -16,9 +18,14 @@ class Project {
   final String status;
   final List<dynamic> reportList;
   final List<dynamic> transactionList;
+  final List<dynamic> photoList;
+  final List<String> profileUsersIds;
+  final List<dynamic> profileUsers;
 
   Project({
     required this.projectId,
+    required this.projectCode,
+    required this.projectDesc,
     required this.projectName,
     required this.projectOwner,
     required this.projectSponsor,
@@ -33,6 +40,9 @@ class Project {
     required this.status,
     required this.reportList,
     required this.transactionList,
+    required this.photoList,
+    required this.profileUsersIds,
+    required this.profileUsers
   });
 
   /// Convert Firestore document to Project model
@@ -41,6 +51,8 @@ class Project {
     final data = doc.data() as Map<String, dynamic>;
     return Project(
       projectId: data['projectId'] ?? '',
+      projectCode: data['projectCode'] ?? '',
+      projectDesc: data['projectDesc'] ?? '',
       projectName: data['projectName'] ?? '',
       projectOwner: data['projectOwner'] ?? '',
       projectSponsor: data['projectSposor'] ?? '', // Keeping typo consistent
@@ -55,6 +67,9 @@ class Project {
       status: data['status'] ?? 'active',
       reportList: data['reportList'] ?? [],
       transactionList: data['transactionList'] ?? [],
+      photoList: data['photoList'] ?? [],
+      profileUsersIds: data['profileUsersIds'] ?? [],
+      profileUsers: data['profileUsers'] ?? []
     );
   }
 
@@ -76,6 +91,8 @@ class Project {
   Map<String, dynamic> toJson() {
     return {
       'projectId': projectId,
+      'projectCode': projectCode,
+      'projectDesc': projectDesc,
       'projectName': projectName,
       'projectOwner': projectOwner,
       'projectSposor': projectSponsor, // Keeping typo consistent
@@ -90,12 +107,16 @@ class Project {
       'status': status,
       'reportList': reportList,
       'transactionList': transactionList,
+      'photoList': photoList,
+      'profileUsersIds': profileUsersIds
     };
   }
 
   /// Create a new copy of the Project with modified fields
   Project copyWith({
     String? projectId,
+    String? projectCode,
+    String? projectDesc,
     String? projectName,
     String? projectOwner,
     String? projectSponsor,
@@ -110,9 +131,14 @@ class Project {
     String? status,
     List<dynamic>? reportList,
     List<dynamic>? transactionList,
+    List<dynamic>? photoList,
+    List<String>? profileUsersIds,
+    List<dynamic>? profileUsers
   }) {
     return Project(
       projectId: projectId ?? this.projectId,
+      projectCode: projectCode ?? this.projectCode,
+      projectDesc: projectDesc ?? this.projectDesc,
       projectName: projectName ?? this.projectName,
       projectOwner: projectOwner ?? this.projectOwner,
       projectSponsor: projectSponsor ?? this.projectSponsor,
@@ -127,6 +153,9 @@ class Project {
       status: status ?? this.status,
       reportList: reportList ?? this.reportList,
       transactionList: transactionList ?? this.transactionList,
+      photoList: photoList ?? this.photoList,
+      profileUsersIds: profileUsersIds ?? this.profileUsersIds,
+      profileUsers: profileUsers ?? this.profileUsers
     );
   }
 }

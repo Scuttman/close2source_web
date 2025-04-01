@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'imports.dart';
 import 'services/spending_cache_service.dart';
+import 'imports.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,13 +49,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
       ),
-      routes: {
-        AppRoutes.login: (context) => const LoginScreen(),
-        AppRoutes.register: (context) => const UserRegistrationForm(),
-        AppRoutes.dashboard: (context) => const DashboardScreen(),
-        AppRoutes.reportForm: (context) => const ReportFormScreen(),
-        AppRoutes.profileHome: (context) => const ProfileHomeScreen(),
-      },
+      onGenerateRoute: AppRoutes.generateRoute, // Use the route generator here.
       home: const AuthGate(),
     );
   }

@@ -15,6 +15,19 @@ class ProjectsRepository {
     });
   }
 
+  /// **📌 Fetch a Single Project by Code**
+  Future<Project?> getProjectByCode(String projectCode) async {
+    QuerySnapshot query = await _projectsCollection
+        .where('code', isEqualTo: projectCode)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return null;
+
+    DocumentSnapshot doc = query.docs.first;
+    return Project.fromFirestore(doc);
+  }
+
   /// **📌 Fetch All Projects as a Stream**
   Stream<List<Project>> getAllProjects() {
     return _projectsCollection.snapshots().map((snapshot) {

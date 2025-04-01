@@ -47,7 +47,8 @@ class AuthService {
   }
 
   /// Method to sign out
-  Future<void> signOut() async {
+  Future<void> signOut(context) async {
     await _auth.signOut();
+    Navigator.pushReplacementNamed(context, AppRoutes.login);
   }
 }

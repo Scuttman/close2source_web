@@ -1,7 +1,11 @@
 import '../../imports.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+
+  final String profileCode;
+  const DashboardScreen({super.key, required this.profileCode});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -11,10 +15,24 @@ class _DashboardScreenState extends State<DashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  Profile? _profileData;
+  bool _loadingProfile = true;
+
+  Future<void> _loadProfileData() async {
+    // Use the offline-first repository to retrieve the profile data for the given profileCode.
+    final Profile data = await ProfileRepository().getProfileByCode(widget.profileCode) as Profile;
+    setState(() {
+      _profileData = data;
+      _loadingProfile = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+  //  createDemoProject();
+    _loadProfileData();
   }
 
   @override
@@ -41,16 +59,17 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            appBar: const ScreenNormalAppBar(title: "close2source"),
+
             body: Column(
               children: [
-                Expanded(
+               if(_profileData != null)
+                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
-                    children: const [
-                      HomeTabScreen(),
-                      ReportsTabScreen(),
-                      SpendingTabScreen(),
+                    children: [
+                      HomeTabScreen(projectData: _profileData as Profile,),
+                      ReportsTabScreen(projectData: _profileData as Profile,),
+                      SpendingTabScreen(projectData: _profileData as Profile,),
                     ],
                   ),
                 ),
@@ -67,8 +86,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Material(
       elevation: 4.0,
       borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(20),
-        topRight: Radius.circular(20),
+        topLeft: Radius.circular(0),
+        topRight: Radius.circular(0),
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -78,8 +97,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             colors: [themeGradientStart, themeGradientEnd],
           ),
           borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
+            topLeft: Radius.circular(0),
+            topRight: Radius.circular(0),
           ),
         ),
         child: TabBar(
@@ -95,5 +114,68 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
       ),
     );
+  }
+
+
+
+  Future<void> createDemoProject() async {
+    // Get the current user.
+    final User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      print("No user is currently logged in.");
+      return;
+    }
+
+    // Generate a unique project ID.
+    final String projectId = Uuid().v4();
+
+    // Optionally, generate a project code (here we simply prepend "EPC" to a random string).
+    // You can customize this function as needed.
+    String generateProjectCode() {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      final random = Uuid().v4().substring(0, 6).toUpperCase();
+      return 'EPC$random';
+    }
+
+    final String projectCode = generateProjectCode();
+
+    // Create a new Project instance with demo details.
+    final demoProject = Project(
+      projectId: projectId,
+      projectCode: projectCode,
+      projectName: "Evolution Power Centre",
+      projectDesc:
+      "A vocational training college in the village of Chiwaya which will provide training to students after they complete primary education at Thanthwe.",
+      projectOwner: currentUser.uid,
+      projectSponsor: "None", // You can update this if needed.
+      projectBudget: 1000000.0, // Demo budget value.
+      projectBalance: "0",
+      projectCurrency: "USD",
+      projectStartDate: Timestamp.fromDate(DateTime.now()),
+      creationDate: Timestamp.fromDate(DateTime.now()),
+      lastUpdated: Timestamp.fromDate(DateTime.now()),
+      createdBy: currentUser.uid,
+      expiryDate: Timestamp.fromDate(DateTime.now().add(const Duration(days: 365))),
+      status: "active",
+      reportList: [],
+      transactionList: [],
+      photoList: [],
+      profileUsersIds: [currentUser.uid],
+      profileUsers: [
+        {
+          "email": "chris@cjsconsultingservices.com",
+          "role": "owner",
+          "uid": currentUser.uid,
+        }
+      ],
+    );
+
+    // Save the project to Firestore in the "Projects" collection.
+    await FirebaseFirestore.instance
+        .collection('Profiles')
+        .doc(projectId)
+        .set(demoProject.toJson());
+
+    print("Demo project created successfully with ID: $projectId");
   }
 }
