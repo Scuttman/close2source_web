@@ -10,8 +10,16 @@ class ProfileHomeScreen extends StatelessWidget {
     if (uid == null) return null;
 
     final doc =
-        await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        await FirebaseFirestore.instance
+            .collection('UserProfiles')
+            .doc(uid)
+            .get();
     return doc.data();
+  }
+
+  void _navigateToDashboard(BuildContext context) {
+    print("📌 Navigating to Dashboard...");
+    Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
   }
 
   @override
@@ -46,23 +54,46 @@ class ProfileHomeScreen extends StatelessWidget {
                     final email = userData['email'] ?? 'No email';
                     final photoUrl = userData['photoUrl'] as String?;
 
-                    return ListTile(
-                      tileColor: Colors.white.withOpacity(0.1),
-                      leading: CircleAvatar(
-                        radius: 30,
-                        backgroundImage:
-                            photoUrl != null ? NetworkImage(photoUrl) : null,
-                        child:
-                            photoUrl == null ? const Icon(Icons.person) : null,
-                      ),
-                      title: Text(
-                        displayName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(email),
-                      trailing: const Icon(
-                        Icons.verified_user,
-                        color: Colors.green,
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Card(
+                        color: Colors.deepOrangeAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 4,
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            radius: 30,
+                            backgroundImage:
+                                photoUrl != null
+                                    ? NetworkImage(photoUrl)
+                                    : null,
+                            child:
+                                photoUrl == null
+                                    ? const Icon(Icons.person)
+                                    : null,
+                          ),
+                          title: Text(
+                            displayName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          subtitle: Text(
+                            email,
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          trailing: const Icon(
+                            Icons.verified_user,
+                            color: Colors.white,
+                          ),
+                          onTap:
+                              () => _navigateToDashboard(
+                                context,
+                              ), // 👈 Navigates on tap
+                        ),
                       ),
                     );
                   },
@@ -85,14 +116,21 @@ class ProfileHomeScreen extends StatelessWidget {
                         return const Center(child: CircularProgressIndicator());
                       }
 
+                      // If no data or empty documents, show 'No users found'
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                        return const Center(child: Text('No users found'));
+                        return const Center(
+                          child: Text(
+                            'No users found',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        );
                       }
 
                       final users = snapshot.data!.docs;
 
                       return ListView.builder(
                         itemCount: users.length,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         itemBuilder: (context, index) {
                           final user = users[index];
                           final userData = user.data() as Map<String, dynamic>;
@@ -102,27 +140,52 @@ class ProfileHomeScreen extends StatelessWidget {
                               userData['email'] ?? 'No email provided';
                           final photoUrl = userData['photoUrl'] as String?;
 
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundImage:
-                                  photoUrl != null
-                                      ? NetworkImage(photoUrl)
-                                      : null,
-                              child:
-                                  photoUrl == null
-                                      ? const Icon(Icons.person)
-                                      : null,
-                            ),
-                            title: Text(displayName),
-                            subtitle: Text(email),
-                            onTap: () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const DashboardScreen(),
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Card(
+                              color: Colors.deepOrangeAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 6,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap:
+                                    () => _navigateToDashboard(
+                                      context,
+                                    ), // 👈 Navigates on tap
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    radius: 30,
+                                    backgroundImage:
+                                        photoUrl != null
+                                            ? NetworkImage(photoUrl)
+                                            : null,
+                                    child:
+                                        photoUrl == null
+                                            ? const Icon(Icons.person)
+                                            : null,
+                                  ),
+                                  title: Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    email,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.arrow_forward_ios,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              );
-                            },
+                              ),
+                            ),
                           );
                         },
                       );
@@ -143,7 +206,7 @@ class ProfileHomeScreen extends StatelessWidget {
           ),
         ),
 
-        // Logout Card Button (Positioned Top Right)
+        // Logout Button (Positioned Top Right)
         Positioned(
           top: 25,
           right: 10,
@@ -163,9 +226,8 @@ class ProfileHomeScreen extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
-                    Icon(Icons.logout, color: Colors.redAccent),
+                    Icon(Icons.logout, color: Colors.deepOrange),
                     SizedBox(width: 6),
-                    Text('Logout', style: TextStyle(color: Colors.redAccent)),
                   ],
                 ),
               ),

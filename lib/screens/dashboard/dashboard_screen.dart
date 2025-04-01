@@ -41,7 +41,28 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            appBar: const ScreenNormalAppBar(title: "close2source"),
+            appBar: AppBar(
+              backgroundColor: themeGradientStart, // Set background color
+              title: const Text("close2source"),
+              flexibleSpace: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [themeGradientStart, themeGradientEnd],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  Navigator.pushReplacementNamed(
+                    context,
+                    AppRoutes.profileHome,
+                  );
+                },
+              ),
+            ),
             body: Column(
               children: [
                 Expanded(

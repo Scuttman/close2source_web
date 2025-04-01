@@ -11,7 +11,8 @@ class AppRoutes {
   static const String dashboard = '/dashboard';
   static const String register = '/register';
   static const String spendingForm = '/spending_form';
-  static const String reportForm = '/report_form'; // ✅ Corrected to include type
+  static const String reportForm =
+      '/report_form'; // ✅ Corrected to include type
   static const String profileHome = '/profile_home'; // ✅ Newly added
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -27,12 +28,15 @@ class AppRoutes {
       case reportForm:
         return MaterialPageRoute(builder: (_) => const ReportFormScreen());
       case profileHome:
-        return MaterialPageRoute(builder: (_) => const ProfileHomeScreen()); // ✅ New Route
+        return MaterialPageRoute(
+          builder: (_) => const ProfileHomeScreen(),
+        ); // ✅ New Route
       default:
         return MaterialPageRoute(
-          builder: (_) => Scaffold(
-            body: Center(child: Text('Route not found: ${settings.name}')),
-          ),
+          builder:
+              (_) => Scaffold(
+                body: Center(child: Text('Route not found: ${settings.name}')),
+              ),
         );
     }
   }
