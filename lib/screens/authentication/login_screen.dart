@@ -29,7 +29,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (user != null) {
-      Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
+       Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
+
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Login failed, please try again')),
