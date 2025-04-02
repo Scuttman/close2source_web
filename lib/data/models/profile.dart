@@ -1,4 +1,5 @@
 import '../data_imports.dart';
+import '../models/spending_entry.dart';
 
 class Profile {
   final String profileId;
@@ -67,7 +68,9 @@ class Profile {
       status: data['status'] ?? 'active',
       profileType: data['profileType'] ?? 'General',
       reportList: data['reportList'] ?? [],
-      transactionList: data['transactionList'] ?? [],
+      transactionList:  (data['transactionList'] as List<dynamic>?)
+        ?.map((e) => SpendingEntry.fromJson(e as Map<String, dynamic>))
+        .toList() ?? [],
       photoList: data['photoList'] ?? [],
       profileUsersIds: List<String>.from(data['profileUsersIds'] ?? []),
       profileUsers: data['profileUsers'] ?? [],

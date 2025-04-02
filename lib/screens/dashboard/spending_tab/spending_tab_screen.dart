@@ -14,6 +14,7 @@ class SpendingTabScreen extends StatefulWidget {
 
 class _SpendingTabScreenState extends State<SpendingTabScreen> {
   List<dynamic> _transactions = [];
+  final ProfileRepository _repo = ProfileRepository();
 
   @override
   void initState() {
@@ -28,7 +29,6 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
         builder: (context) => SpendingFormScreen(profile: widget.projectData),
       ),
     );
-
   }
 
   double _calculateTotalSpending() {
@@ -70,8 +70,11 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.exit_to_app,
-                      color: Colors.white, size: 30.0),
+                  icon: const Icon(
+                    Icons.exit_to_app,
+                    color: Colors.white,
+                    size: 30.0,
+                  ),
                   onPressed: () {
                     Navigator.pop(context);
                   },
@@ -84,17 +87,47 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
               color: Colors.white.withOpacity(0.7),
               child: Column(
                 children: [
-                  Container(
-                    height: 30.0,
-                    color: Colors.black,
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left:10.0),
-                      child: Text(
-                        'Total Spending: MWK ${_calculateTotalSpending().toStringAsFixed(2)}',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
+                  StreamBuilder<DocumentSnapshot>(
+                    stream:
+                        FirebaseFirestore.instance
+                            .collection('Profiles')
+                            .doc(widget.projectData.profileId)
+                            .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data == null) {
+                        return const SizedBox(height: 30.0);
+                      }
+
+                      final profile = Profile.fromFirestore(snapshot.data!);
+                      final currency = profile.profileCurrency ?? 'MWK';
+
+                      final total = profile.transactionList.fold<double>(
+                        0.0,
+                        (sum, tx) => sum + (tx.amount ?? 0),
+                      );
+
+                      final formattedTotal = NumberFormat.currency(
+                        locale: 'en_US',
+                        symbol: '',
+                        decimalDigits: 2,
+                      ).format(total);
+
+                      return Container(
+                        height: 30.0,
+                        color: Colors.black,
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 10.0),
+                          child: Text(
+                            'Total Spending: $currency $formattedTotal',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   Container(
                     height: 40.0,
@@ -118,44 +151,78 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                   ),
                   const Divider(),
                   Expanded(
-                    child: _transactions.isEmpty
-                        ? const Center(child: Text('No transactions found.'))
-                        : ListView.builder(
-                      padding: const EdgeInsets.all(10),
-                      itemCount: _transactions.length,
-                      itemBuilder: (context, index) {
-                        final tx = _transactions[index];
-                        final ts = tx['date'];
-                        final date = ts is Timestamp
-                            ? ts.toDate()
-                            : DateTime.tryParse(ts.toString()) ??
-                            DateTime.now();
+                    child: StreamBuilder<DocumentSnapshot>(
+                      stream:
+                          FirebaseFirestore.instance
+                              .collection('Profiles')
+                              .doc(widget.projectData.profileId)
+                              .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
 
-                        return Card(
-                          margin:
-                          const EdgeInsets.symmetric(vertical: 8),
-                          elevation: 3,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "📅 ${DateFormat('dd/MM/yyyy').format(date)}",
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
+                        if (!snapshot.hasData || !snapshot.data!.exists) {
+                          return const Center(
+                            child: Text('No transactions found.'),
+                          );
+                        }
+
+                        final profile = Profile.fromFirestore(snapshot.data!);
+                        final transactions = profile.transactionList ?? [];
+
+                        if (transactions.isEmpty) {
+                          return const Center(
+                            child: Text('No transactions found.'),
+                          );
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.all(10),
+                          itemCount: transactions.length,
+                          itemBuilder: (context, index) {
+                            final tx = transactions[index];
+                            final date =
+                                tx.date is DateTime
+                                    ? tx.date
+                                    : DateTime.tryParse(tx.date.toString()) ??
+                                        DateTime.now();
+
+                            final formattedTotal = NumberFormat.currency(
+                              locale: 'en_US',
+                              symbol: '',
+                              decimalDigits: 2,
+                            ).format(tx.amount);
+
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              elevation: 3,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "📅 ${DateFormat('dd/MM/yyyy').format(date)}",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text("📝 ${tx.description}"),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      "💸 Amount: ${profile.profileCurrency} ${formattedTotal}",
+                                    ),
+                                    Text("📂 Category: ${tx.category}"),
+                                  ],
                                 ),
-                                const SizedBox(height: 8),
-                                Text("📝 ${tx['description']}"),
-                                const SizedBox(height: 6),
-                                Text(
-                                  "💸 Amount: MWK ${tx['amount']?.toStringAsFixed(2) ?? '0.00'}",
-                                ),
-                                Text("📂 Category: ${tx['category']}"),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
