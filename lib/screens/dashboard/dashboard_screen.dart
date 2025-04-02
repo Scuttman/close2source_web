@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../imports.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -23,6 +25,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     super.dispose();
   }
 
+  // Fetch user profile data (name & photo)
+  Future<Map<String, dynamic>> _getUserProfileData() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return {'displayName': 'User', 'photoUrl': null}; // Default values
+    }
+
+    final doc =
+        await FirebaseFirestore.instance
+            .collection('UserProfiles')
+            .doc(uid)
+            .get();
+
+    final data = doc.data();
+    return {
+      'displayName': data?['displayName'] ?? 'Unnamed User',
+      'photoUrl': data?['photoUrl'], // Can be null if no image is set
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     double sw = MediaQuery.of(context).size.width;
@@ -41,26 +63,66 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            appBar: AppBar(
-              backgroundColor: themeGradientStart, // Set background color
-              title: const Text("close2source"),
-              flexibleSpace: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [themeGradientStart, themeGradientEnd],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+            appBar: PreferredSize(
+              preferredSize: const Size.fromHeight(kToolbarHeight),
+              child: AppBar(
+                backgroundColor: Colors.black, // AppBar background
+                title: FutureBuilder<Map<String, dynamic>>(
+                  future: _getUserProfileData(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const CircularProgressIndicator(); // Show loading indicator
+                    }
+
+                    if (snapshot.hasError) {
+                      return const Text(
+                        'Error loading profile',
+                        style: TextStyle(color: Colors.deepOrange),
+                      );
+                    }
+
+                    // Extract user data
+                    final userProfile = snapshot.data!;
+                    final displayName = userProfile['displayName'];
+                    final photoUrl = userProfile['photoUrl'];
+
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: Colors.deepOrange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.grey.shade300,
+                          backgroundImage:
+                              photoUrl != null ? NetworkImage(photoUrl) : null,
+                          child:
+                              photoUrl == null
+                                  ? const Icon(
+                                    Icons.person,
+                                    color: Colors.black,
+                                  )
+                                  : null,
+                        ),
+                      ],
+                    );
+                  },
                 ),
-              ),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  Navigator.pushReplacementNamed(
-                    context,
-                    AppRoutes.profileHome,
-                  );
-                },
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  color: Colors.deepOrange, // Set back button color
+                  onPressed: () {
+                    Navigator.pushReplacementNamed(
+                      context,
+                      AppRoutes.profileHome,
+                    );
+                  },
+                ),
               ),
             ),
             body: Column(

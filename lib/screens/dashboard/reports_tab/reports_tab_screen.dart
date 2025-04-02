@@ -42,6 +42,7 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
                   padding: EdgeInsets.only(top: 4.0),
                   child: Text(
                     'Project Reports',
+
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18.0,
@@ -50,7 +51,10 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
                 ),
                 IconButton(
                   onPressed: _addNewReport,
-                  icon: const Icon(Icons.add), // ✅ Add report icon
+                  icon: const Icon(
+                    Icons.add,
+                    color: Colors.deepOrange,
+                  ), // ✅ Add report icon
                 ),
               ],
             ),

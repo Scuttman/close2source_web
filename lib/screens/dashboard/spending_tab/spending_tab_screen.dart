@@ -58,7 +58,7 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                 ),
                 IconButton(
                   onPressed: _addSpending,
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.add, color: Colors.deepOrange),
                 ),
               ],
             ),

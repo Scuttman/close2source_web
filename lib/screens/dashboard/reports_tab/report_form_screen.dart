@@ -138,14 +138,12 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Add New Report'),
-          flexibleSpace: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [themeGradientStart, themeGradientEnd],
-              ),
-            ),
+          backgroundColor: Colors.black,
+          title: const Text(
+            'Add New Report',
+            style: TextStyle(color: Colors.deepOrange),
           ),
+          iconTheme: const IconThemeData(color: Colors.deepOrange),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),

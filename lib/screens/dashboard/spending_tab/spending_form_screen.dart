@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as p;
-import '../../../services/spending_cache_service.dart';
 
 class SpendingFormScreen extends StatefulWidget {
   const SpendingFormScreen({super.key});
@@ -142,7 +141,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('📅 Please select a date'),
-          backgroundColor: Colors.orange,
+          backgroundColor: Colors.deepOrange,
         ),
       );
       return;
@@ -152,7 +151,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('📸 Please upload a receipt image'),
-          backgroundColor: Colors.orange,
+          backgroundColor: Colors.deepOrange,
         ),
       );
       return;
@@ -191,39 +190,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       debugPrint('🔥 Error saving spending: $e');
-
-      final localEntry = SpendingEntry(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        description: _descController.text.trim(),
-        category: _selectedCategory ?? '',
-        amount: double.tryParse(_totalController.text) ?? 0,
-        date: _selectedDate!.toIso8601String(),
-        localImagePath: _receiptImage?.path ?? '',
-      );
-
-      await SpendingCacheService.saveLocally(localEntry);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('📦 Saved offline – will sync later'),
-          backgroundColor: Colors.blueGrey,
-        ),
-      );
-
-      Navigator.of(context).pop();
     }
-  }
-
-  Widget _buildCard(Widget child) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: child,
-      ),
-    );
   }
 
   @override
@@ -232,10 +199,13 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: themeGradientStart,
-          title: const Text('Add Spending'),
+          backgroundColor: Colors.black,
+          title: const Text(
+            'Add Spending',
+            style: TextStyle(color: Colors.deepOrange),
+          ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.arrow_back, color: Colors.deepOrange),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -354,6 +324,18 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCard(Widget child) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: child,
       ),
     );
   }
