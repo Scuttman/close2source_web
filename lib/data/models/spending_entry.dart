@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class SpendingEntry {
   final String id;
   final String profileId;
@@ -32,16 +34,20 @@ class SpendingEntry {
   };
 
   // Convert from JSON
-  factory SpendingEntry.fromJson(Map<String, dynamic> json) => SpendingEntry(
-    id: json['id'],
-    profileId: json['profileId'],
-    description: json['description'],
-    category: json['category'],
-    amount: (json['amount'] as num).toDouble(),
-    date: DateTime.parse(json['date']),
-    receiptImages: List<String>.from(json['receiptImages'] ?? []),
-    isUploaded: json['isUploaded'] ?? false,
-  );
+  factory SpendingEntry.fromJson(Map<String, dynamic> json) {
+    return SpendingEntry(
+      id: json['id'] ?? '',
+      description: json['description'] ?? '',
+      category: json['category'] ?? '',
+      amount: (json['amount'] ?? 0).toDouble(),
+      date: json['date'] is Timestamp
+          ? (json['date'] as Timestamp).toDate()
+          : DateTime.tryParse(json['date']?.toString() ?? '') ?? DateTime.now(),
+      receiptImages: List<String>.from(json['receiptImages'] ?? []),
+      isUploaded: json['isUploaded'] ?? false,
+      profileId: json['profileId'] ?? '',
+    );
+  }
 
   // Optional: create a copy with updates
   SpendingEntry copyWith({

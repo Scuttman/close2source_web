@@ -90,25 +90,34 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate() ||
-        _selectedDate == null ||
-        _receiptImages.isEmpty) {
+    if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please complete all fields and add at least one image',
-          ),
-        ),
+        const SnackBar(content: Text('Please complete the form')),
       );
       return;
     }
 
+    if (_selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please pick a date')),
+      );
+      return;
+    }
+
+    if (_receiptImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add at least one image')),
+      );
+      return;
+    }
+
+    // ✅ Now it's safe to use _selectedDate!
     final spending = SpendingEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       description: _descController.text.trim(),
       category: _selectedCategory ?? '',
       amount: double.tryParse(_totalController.text) ?? 0,
-      date: _selectedDate!,
+      date: _selectedDate!, // Safe now
       receiptImages: _receiptImages,
       isUploaded: false,
       profileId: widget.profile.profileId,
@@ -128,7 +137,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
 
       Navigator.of(context).pop();
     } catch (e) {
-      // fallback or show error
+      debugPrint("Error saving: $e");
     }
   }
 
@@ -215,110 +224,124 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                 child: Container(
                   color: Colors.white.withOpacity(0.7),
                   padding: const EdgeInsets.all(0.0),
-                  child: ListView(
-                    children: [
-                      _buildCard(
-                        Row(
-                          children: [
-                            const Icon(Icons.calendar_today, color: Colors.deepOrange),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _selectedDate == null
-                                    ? 'Select Date'
-                                    : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
-                                style: const TextStyle(fontSize: 16),
+                  child: Form(
+                    key:   _formKey,
+                    child: ListView(
+                      children: [
+                        _buildCard(
+                          Row(
+                            children: [
+                              const Icon(Icons.calendar_today, color: Colors.deepOrange),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _selectedDate == null
+                                      ? 'Select Date'
+                                      : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _pickDate,
+                                child: const Text(
+                                  'Pick Date',
+                                  style: TextStyle(color: Colors.deepOrange),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _buildCard(
+                          TextFormField(
+                            controller: _descController,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              labelText: 'Description',
+                              prefixIcon: const Icon(Icons.description, color: Colors.deepOrange),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(color: Colors.deepOrange),
                               ),
                             ),
-                            TextButton(
-                              onPressed: _pickDate,
-                              child: const Text(
-                                'Pick Date',
-                                style: TextStyle(color: Colors.deepOrange),
+                            validator: (val) =>
+                            val == null || val.isEmpty ? 'Enter a description' : null,
+                          ),
+                        ),
+                        _buildCard(
+                          DropdownButtonFormField<String>(
+                            value: _selectedCategory,
+                            items: _categories
+                                .map(
+                                  (cat) => DropdownMenuItem(
+                                value: cat,
+                                child: Text(cat),
+                              ),
+                            )
+                                .toList(),
+                            onChanged: (val) => setState(() => _selectedCategory = val),
+                            decoration: InputDecoration(
+                              labelText: 'Budget Category',
+                              prefixIcon: const Icon(Icons.category, color: Colors.deepOrange),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(color: Colors.deepOrange),
+                              ),
+                            ),
+                            validator: (val) => val == null ? 'Select a category' : null,
+                          ),
+                        ),
+                        _buildCard(
+                          TextFormField(
+                            controller: _totalController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Total Amount',
+                              prefixIcon: const Icon(Icons.attach_money, color: Colors.deepOrange),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(color: Colors.deepOrange),
+                              ),
+                            ),
+                            validator: (val) =>
+                            val == null || val.isEmpty ? 'Enter total amount' : null,
+                          ),
+                        ),
+                        _buildCard(_buildImageGrid()),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(right:15.0),
+                              child: Container(
+                                width: 150.0,
+                                child: ElevatedButton.icon(
+                                  onPressed: _submitForm,
+                                  icon: const Icon(Icons.send, color: Colors.white,),
+                                  label: const Text('Submit', style: TextStyle(color:Colors.white)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepOrange,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      _buildCard(
-                        TextFormField(
-                          controller: _descController,
-                          maxLines: 3,
-                          decoration: InputDecoration(
-                            labelText: 'Description',
-                            prefixIcon: const Icon(Icons.description, color: Colors.deepOrange),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                              borderSide: const BorderSide(color: Colors.deepOrange),
-                            ),
-                          ),
-                          validator: (val) =>
-                          val == null || val.isEmpty ? 'Enter a description' : null,
-                        ),
-                      ),
-                      _buildCard(
-                        DropdownButtonFormField<String>(
-                          value: _selectedCategory,
-                          items: _categories
-                              .map(
-                                (cat) => DropdownMenuItem(
-                              value: cat,
-                              child: Text(cat),
-                            ),
-                          )
-                              .toList(),
-                          onChanged: (val) => setState(() => _selectedCategory = val),
-                          decoration: InputDecoration(
-                            labelText: 'Budget Category',
-                            prefixIcon: const Icon(Icons.category, color: Colors.deepOrange),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                              borderSide: const BorderSide(color: Colors.deepOrange),
-                            ),
-                          ),
-                          validator: (val) => val == null ? 'Select a category' : null,
-                        ),
-                      ),
-                      _buildCard(
-                        TextFormField(
-                          controller: _totalController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Total Amount',
-                            prefixIcon: const Icon(Icons.attach_money, color: Colors.deepOrange),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10.0),
-                              borderSide: const BorderSide(color: Colors.deepOrange),
-                            ),
-                          ),
-                          validator: (val) =>
-                          val == null || val.isEmpty ? 'Enter total amount' : null,
-                        ),
-                      ),
-                      _buildCard(_buildImageGrid()),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _submitForm,
-                        icon: const Icon(Icons.send),
-                        label: const Text('Submit'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: themeGradientEnd,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               )
