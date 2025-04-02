@@ -1,5 +1,6 @@
 import '../../../imports.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../../data/models/spending_entry.dart';
 import 'package:intl/intl.dart';
@@ -20,6 +21,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   String? _selectedCategory;
   final TextEditingController _totalController = TextEditingController();
   final List<String> _receiptImages = [];
+  final ImagePicker _picker = ImagePicker();
 
   final List<String> _categories = [
     'Travel',
@@ -75,17 +77,14 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   }
 
   Future<void> _pickImage({required bool fromCamera}) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      allowMultiple: false,
-      withData: false,
-      allowCompression: true,
-      withReadStream: false,
+    final pickedFile = await _picker.pickImage(
+      source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+      imageQuality: 85,
     );
 
-    if (result != null && result.files.isNotEmpty) {
+    if (pickedFile != null) {
       setState(() {
-        _receiptImages.add(result.files.single.path!);
+        _receiptImages.add(pickedFile.path);
       });
     }
   }
