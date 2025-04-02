@@ -50,6 +50,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
             IconButton(
               icon: Icon(Icons.exit_to_app, color: Colors.white, size: 30.0,),
               onPressed: (){
+         //       ProfileRepository().createDemoProfile(uid: FirebaseAuth.instance.currentUser!.uid.toString(), email: FirebaseAuth.instance.currentUser!.email.toString());
                 Navigator.pop(context);
               },
             )

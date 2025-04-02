@@ -197,28 +197,33 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                               decimalDigits: 2,
                             ).format(tx.amount);
 
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 8),
-                              elevation: 3,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "📅 ${DateFormat('dd/MM/yyyy').format(date)}",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
+                            return GestureDetector(
+                              onTap: (){
+                                SpendingSyncService().syncPendingTransactions();
+                              },
+                              child: Card(
+                                margin: const EdgeInsets.symmetric(vertical: 8),
+                                elevation: 3,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "📅 ${DateFormat('dd/MM/yyyy').format(date)}",
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text("📝 ${tx.description}"),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      "💸 Amount: ${profile.profileCurrency} ${formattedTotal}",
-                                    ),
-                                    Text("📂 Category: ${tx.category}"),
-                                  ],
+                                      const SizedBox(height: 8),
+                                      Text("📝 ${tx.description}"),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        "💸 Amount: ${profile.profileCurrency} ${formattedTotal}",
+                                      ),
+                                      Text("📂 Category: ${tx.category}"),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );

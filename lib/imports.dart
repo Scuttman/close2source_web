@@ -31,6 +31,7 @@ export 'services/app_text_service.dart';
 export 'services/constants_service.dart';
 export 'services/url_service.dart';
 export 'routes.dart';
+export 'services/spending_sync_service.dart';
 
 //------------------------------------------------------------------------------
 // Design Packages & Imports

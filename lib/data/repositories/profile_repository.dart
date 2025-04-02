@@ -135,11 +135,11 @@ class ProfileRepository {
     final now = Timestamp.now();
     final demoProfile = Profile(
       profileId: _firestore.collection('Profiles').doc().id,
-      profileCode: 'EPC-${now.seconds}',
-      profileName: 'Evolution Power Centre',
-      profileDesc: 'Vocational training for students post-primary in Chiwaya',
+      profileCode: 'PYWELVO',
+      profileName: 'The Piggery Project',
+      profileDesc: 'The Dogo family have been farming for a number of years in Malawi and using the proceeds to support their work as YWAM Missionaries. Robert leads on sustainable missions and is active in drilling boreholes for communities around the country.\n\nThe piggery project will help the Dogo family expand their impact as they scale their small animal smallholding into a farm that can cope with 500 pigs at once. This projects will create a greater income stream and be an example for others to follow. The farm also provides employment for local workers.',
       profileOwner: uid,
-      profileSponsor: 'Thanthwe Partners',
+      profileSponsor: 'Sustainable Missions',
       profileBudget: 0.0,
       profileBalance: '0',
       profileCurrency: 'MWK',
