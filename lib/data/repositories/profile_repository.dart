@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/profile.dart';
+import '../models/spending_entry.dart';
 
 class ProfileRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -163,5 +164,24 @@ class ProfileRepository {
     );
 
     await saveProfile(demoProfile);
+  }
+
+  Future<void> addTransactionToProfile({
+    required String profileId,
+    required SpendingEntry transaction,
+  }) async {
+    try {
+      final docRef = _firestore.collection('Profiles').doc(profileId);
+
+      await docRef.update({
+        'transactionList': FieldValue.arrayUnion([transaction.toJson()]),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Transaction added to profile $profileId');
+    } catch (e) {
+      print('❌ Error adding transaction to profile: $e');
+      rethrow;
+    }
   }
 }
