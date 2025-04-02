@@ -1,6 +1,6 @@
 import '../../../imports.dart';
-import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import '../../dashboard/reports_tab/report_form_screen.dart'; // Import your ReportFormScreen
 
 class ReportsTabScreen extends StatefulWidget {
   final Profile projectData;
@@ -20,22 +20,28 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
     _reports = List.from(widget.projectData.reportList);
   }
 
+  // Navigate to the ReportFormScreen when the Add button is pressed
   Future<void> _addNewReport() async {
-    // Simulated new report
-    final newReport = {
-      'title': 'New Report ${_reports.length + 1}',
-      'timestamp': Timestamp.now(),
-      'summary': 'This is a test summary',
-    };
+    // Navigate to ReportFormScreen and wait for the new report
+    final newReport = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ReportFormScreen()),
+    );
 
-    setState(() {
-      _reports.add(newReport);
-    });
+    // If a new report is returned, update the list and save it
+    if (newReport != null) {
+      setState(() {
+        _reports.add(newReport);
+      });
 
-    final updatedProfile = widget.projectData.copyWith(reportList: _reports);
+      final updatedProfile = widget.projectData.copyWith(reportList: _reports);
+      await ProfileRepository().saveProfile(updatedProfile);
 
-    await ProfileRepository().saveProfile(updatedProfile);
-
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Report added successfully!')),
+      );
+    }
   }
 
   @override
@@ -84,10 +90,7 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
               color: Colors.white.withOpacity(0.7),
               child: Column(
                 children: [
-                  Container(
-                    height: 20.0,
-                    color: Colors.black,
-                  ),
+                  Container(height: 20.0, color: Colors.black),
                   Container(
                     height: 40.0,
                     padding: const EdgeInsets.only(top: 10.0, left: 15.0),
@@ -110,18 +113,19 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
                   ),
                   const Divider(),
                   Expanded(
-                    child: _reports.isEmpty
-                        ? const Center(child: Text('No reports found.'))
-                        : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _reports.length,
-                      separatorBuilder: (_, __) =>
-                      const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final report = _reports[index];
-                        return ReportCard(report: report);
-                      },
-                    ),
+                    child:
+                        _reports.isEmpty
+                            ? const Center(child: Text('No reports found.'))
+                            : ListView.separated(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _reports.length,
+                              separatorBuilder:
+                                  (_, __) => const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final report = _reports[index];
+                                return ReportCard(report: report);
+                              },
+                            ),
                   ),
                 ],
               ),

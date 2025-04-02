@@ -1,222 +1,205 @@
-import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-
+import 'dart:io';
 import '../../../imports.dart';
 
 class ReportFormScreen extends StatefulWidget {
-  const ReportFormScreen({super.key});
+  const ReportFormScreen({Key? key}) : super(key: key);
 
   @override
-  State<ReportFormScreen> createState() => _ReportFormScreenState();
+  _ReportFormScreenState createState() => _ReportFormScreenState();
 }
 
 class _ReportFormScreenState extends State<ReportFormScreen> {
-  final TextEditingController _updateTextController = TextEditingController();
-  DateTime _selectedDate = DateTime.now();
-  final List<File> _selectedImages = [];
-  bool _isUploading = false;
+  final _formKey = GlobalKey<FormState>();
+  String _reportTitle = '';
+  String _reportSummary = '';
+  List<File> _selectedImages = []; // Changed to a list of images
 
-  Future<void> _pickImage(ImageSource source) async {
-    final pickedFile = await ImagePicker().pickImage(source: source);
+  Future<void> _pickImage() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+    );
     if (pickedFile != null) {
-      setState(() => _selectedImages.add(File(pickedFile.path)));
+      setState(() {
+        _selectedImages.add(
+          File(pickedFile.path),
+        ); // Add selected image to the list
+      });
     }
-  }
-
-  void _showImagePickerOptions() {
-    showModalBottomSheet(
-      context: context,
-      builder:
-          (context) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.camera_alt),
-                    title: const Text('Camera'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.camera);
-                    },
-                  ),
-                ),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.photo_library),
-                    title: const Text('Gallery'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.gallery);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-    );
-  }
-
-  Future<List<String>> _uploadImages(String projectId) async {
-    List<String> urls = [];
-    for (var imageFile in _selectedImages) {
-      String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      Reference storageRef = FirebaseStorage.instance.ref(
-        'reports/$projectId/$fileName',
-      );
-      UploadTask uploadTask = storageRef.putFile(imageFile);
-      TaskSnapshot snapshot = await uploadTask;
-      urls.add(await snapshot.ref.getDownloadURL());
-    }
-    return urls;
-  }
-
-  Future<void> _selectDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _submitReport() async {
-    final project =
-        Provider.of<ProjectsProvider>(context, listen: false).selectedProject;
-
-    if (project == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("❌ No project selected!")));
-      return;
-    }
-
-    setState(() => _isUploading = true);
-
-    try {
-      List<String> reportPhotos =
-          _selectedImages.isNotEmpty
-              ? await _uploadImages(project.projectId)
-              : [];
-
+    if (_formKey.currentState?.validate() ?? false) {
       final newReport = {
-        "reportDate": Timestamp.fromDate(_selectedDate),
-        "updateText":
-            _updateTextController.text
-                .split('\n')
-                .where((e) => e.isNotEmpty)
-                .toList(),
-        "reportPhotos": reportPhotos,
+        'title': _reportTitle,
+        'timestamp': Timestamp.now(),
+        'summary': _reportSummary,
+        'images':
+            _selectedImages
+                .map((image) => image.path)
+                .toList(), // Save image paths
       };
 
-      await ProjectsRepository().addReportToProject(
-        project.projectId,
-        newReport,
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Report added successfully!")),
-      );
-      Navigator.pop(context);
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("❌ Failed to add report!")));
-    } finally {
-      setState(() => _isUploading = false);
+      Navigator.pop(context, newReport);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return BackgroundScaffold(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          title: const Text(
-            'Add New Report',
-            style: TextStyle(color: Colors.deepOrange),
-          ),
-          iconTheme: const IconThemeData(color: Colors.deepOrange),
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.only(
+          left: 10.0,
+          right: 10.0,
+          top: 50.0,
+          bottom: 10.0,
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Card(
-                child: ListTile(
-                  title: const Text("Report Date"),
-                  trailing: Text(
-                    DateFormat('dd/MM/yyyy').format(_selectedDate),
-                  ),
-                  onTap: _selectDate,
-                ),
-              ),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: TextField(
-                    controller: _updateTextController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      hintText: "Enter updates",
+        child: Column(
+          children: [
+            Container(
+              color: Colors.deepOrange.withOpacity(0.7),
+              padding: const EdgeInsets.only(left: 10.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'CLOSE2SOURCE',
+                    style: GoogleFonts.amaticSc(
+                      textStyle: const TextStyle(
+                        color: Colors.white,
+                        letterSpacing: 0.1,
+                        fontSize: 40.0,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.exit_to_app,
+                      color: Colors.white,
+                      size: 30.0,
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
               ),
-              Card(
+            ),
+            Expanded(
+              child: Form(
+                key: _formKey,
                 child: Column(
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children:
-                          _selectedImages
-                              .map(
-                                (file) => ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    file,
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              )
-                              .toList(),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Report Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a title';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        _reportTitle = value;
+                      },
                     ),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.add_a_photo),
-                      label: const Text("Add Image"),
-                      onPressed: _showImagePickerOptions,
+                    const SizedBox(height: 20.0),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Report Summary',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 5,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a summary';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        _reportSummary = value;
+                      },
+                    ),
+                    const SizedBox(height: 20.0),
+
+                    // Image Upload Container
+                    Container(
+                      padding: const EdgeInsets.all(10.0),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(10.0),
+                      ),
+                      child: Column(
+                        children: [
+                          // Ensure the ListView builder has constraints
+                          SizedBox(
+                            height: 100,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _selectedImages.length,
+                              itemBuilder: (context, index) {
+                                return Stack(
+                                  children: [
+                                    Container(
+                                      margin: const EdgeInsets.all(5),
+                                      width: 100, // Explicit width
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        image: DecorationImage(
+                                          image: FileImage(
+                                            _selectedImages[index],
+                                          ),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 0,
+                                      right: 0,
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.cancel,
+                                          color: Colors.red,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _selectedImages.removeAt(index);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _pickImage,
+                            icon: const Icon(Icons.add_a_photo),
+                            label: const Text("Add Image"),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20.0),
+
+                    // Submit Button
+                    ElevatedButton(
+                      onPressed: _submitReport,
+                      child: const Text('Submit Report'),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              _isUploading
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton.icon(
-                    icon: const Icon(Icons.send),
-                    label: const Text("Submit Report"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: themeGradientEnd,
-                    ),
-                    onPressed: _submitReport,
-                  ),
-              const SizedBox(height: 80),
-              const Text(
-                '© Close2Source',
-                style: TextStyle(color: Colors.deepOrange),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
