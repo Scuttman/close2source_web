@@ -14,7 +14,7 @@ class ScreenNormalAppBar extends StatelessWidget
         IconButton(
           icon: const Icon(Icons.logout),
           onPressed: () async {
-            await AuthService().signOut();
+            await AuthService().signOut(context);
             Navigator.pushReplacementNamed(context, AppRoutes.login);
           },
         ),

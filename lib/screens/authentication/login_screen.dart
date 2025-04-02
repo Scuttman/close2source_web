@@ -61,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                SizedBox(height: 60.0,),
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -72,14 +73,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
-                          'Welcome Back!',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.deepOrange,
-                          ),
-                        ),
+                        Text(
+                            'CLOSE2SOURCE',
+                            style: GoogleFonts.amaticSc(
+                                textStyle: TextStyle(
+                                  color: Colors.deepOrange,
+                                  letterSpacing: 0.1,
+                                  fontSize: 50.0,
+                                  fontWeight: FontWeight.bold,
+                                )
+                            )),
                         const SizedBox(height: 20),
                         TextField(
                           controller: _emailController,
@@ -99,17 +102,32 @@ class _LoginScreenState extends State<LoginScreen> {
                           obscureText: true,
                         ),
                         const SizedBox(height: 24),
-                        _isLoading
-                            ? const CircularProgressIndicator()
-                            : ElevatedButton(
-                              onPressed: _signIn,
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size(double.infinity, 50),
-                                backgroundColor: themeGradientEnd,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text('Login'),
-                            ),
+                        Container(
+                          constraints: BoxConstraints(
+                            minHeight: 20.0
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _isLoading
+                                  ? Container(
+                                  width: 120, height: 40.0,
+                                  child: const CircularProgressIndicator())
+                                  : Container(
+                                width: 120.0,
+                                    child: ElevatedButton(
+                                      onPressed: _signIn,
+                                      style: ElevatedButton.styleFrom(
+                                        minimumSize: const Size(double.infinity, 50),
+                                        backgroundColor: themeGradientEnd,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text('Login'),
+                                    ),
+                                  ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 12),
                         TextButton(
                           onPressed: () {

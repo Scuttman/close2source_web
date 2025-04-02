@@ -5,9 +5,12 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as p;
+import '../../../services/spending_cache_service.dart';
 
 class SpendingFormScreen extends StatefulWidget {
-  const SpendingFormScreen({super.key});
+  final Profile profile;
+
+  const SpendingFormScreen({super.key, required this.profile});
 
   @override
   State<SpendingFormScreen> createState() => _SpendingFormScreenState();
@@ -15,7 +18,6 @@ class SpendingFormScreen extends StatefulWidget {
 
 class _SpendingFormScreenState extends State<SpendingFormScreen> {
   final _formKey = GlobalKey<FormState>();
-
   DateTime? _selectedDate;
   final TextEditingController _descController = TextEditingController();
   String? _selectedCategory;
@@ -30,65 +32,18 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     'Other',
   ];
 
-  Future<void> _pickReceiptImage() async {
-    showModalBottomSheet(
+  Future<void> _pickDate() async {
+    final DateTime? picked = await showDatePicker(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildImageOption(
-                icon: Icons.camera_alt,
-                text: "Take Photo",
-                onTap: () => _pickAndCrop(ImageSource.camera),
-              ),
-              const SizedBox(height: 12),
-              _buildImageOption(
-                icon: Icons.photo_library,
-                text: "Choose from Gallery",
-                onTap: () => _pickAndCrop(ImageSource.gallery),
-              ),
-            ],
-          ),
-        );
-      },
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
     );
-  }
-
-  Widget _buildImageOption({
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(context);
-        onTap();
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.brown.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.brown.shade200),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-        child: Row(
-          children: [
-            Icon(icon, size: 28, color: Colors.brown),
-            const SizedBox(width: 16),
-            Text(
-              text,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 
   Future<void> _pickAndCrop(ImageSource source) async {
@@ -120,39 +75,19 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-      });
-    }
-  }
-
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('📅 Please select a date'),
-          backgroundColor: Colors.deepOrange,
-        ),
+        const SnackBar(content: Text('📅 Please select a date')),
       );
       return;
     }
 
     if (_receiptImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('📸 Please upload a receipt image'),
-          backgroundColor: Colors.deepOrange,
-        ),
+        const SnackBar(content: Text('📸 Please upload a receipt image')),
       );
       return;
     }
@@ -162,27 +97,35 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       final ext = p.extension(_receiptImage!.path);
       final receiptRef = FirebaseStorage.instance
           .ref()
-          .child('receipts')
-          .child('$spendingId$ext');
+          .child('receipts/${widget.profile.profileCode}/$spendingId$ext');
 
       await receiptRef.putFile(_receiptImage!);
       final receiptUrl = await receiptRef.getDownloadURL();
 
+      final newTransaction = {
+        'id': spendingId,
+        'description': _descController.text.trim(),
+        'category': _selectedCategory,
+        'amount': double.tryParse(_totalController.text),
+        'date': _selectedDate!.toIso8601String(),
+        'receiptUrl': receiptUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      final updatedTransactions = List.from(widget.profile.transactionList)
+        ..add(newTransaction);
+
       await FirebaseFirestore.instance
-          .collection('spendings')
-          .doc(spendingId)
-          .set({
-            'description': _descController.text.trim(),
-            'category': _selectedCategory,
-            'amount': double.tryParse(_totalController.text),
-            'date': _selectedDate,
-            'receiptUrl': receiptUrl,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+          .collection('Profiles')
+          .doc(widget.profile.profileId)
+          .update({
+        'transactionList': updatedTransactions,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Spending submitted and saved!'),
+          content: Text('✅ Spending saved to profile!'),
           backgroundColor: Colors.green,
         ),
       );
@@ -190,7 +133,39 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       debugPrint('🔥 Error saving spending: $e');
+
+      final localEntry = SpendingEntry(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        description: _descController.text.trim(),
+        category: _selectedCategory ?? '',
+        amount: double.tryParse(_totalController.text) ?? 0,
+        date: _selectedDate!.toIso8601String(),
+        localImagePath: _receiptImage?.path ?? '',
+      );
+
+      await SpendingCacheService.saveLocally(localEntry);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📦 Saved offline – will sync later'),
+          backgroundColor: Colors.blueGrey,
+        ),
+      );
+
+      Navigator.of(context).pop();
     }
+  }
+
+  Widget _buildCard(Widget child) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: child,
+      ),
+    );
   }
 
   @override
@@ -199,13 +174,10 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: Colors.black,
-          title: const Text(
-            'Add Spending',
-            style: TextStyle(color: Colors.deepOrange),
-          ),
+          backgroundColor: themeGradientStart,
+          title: const Text('Add Spending'),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.deepOrange),
+            icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -222,9 +194,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                         child: Text(
                           _selectedDate == null
                               ? 'Select Date'
-                              : 'Date: ${_selectedDate!.toLocal()}'.split(
-                                ' ',
-                              )[0],
+                              : 'Date: ${_selectedDate!.toLocal()}'.split(' ')[0],
                         ),
                       ),
                       TextButton(
@@ -238,45 +208,31 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                   TextFormField(
                     controller: _descController,
                     decoration: const InputDecoration(labelText: 'Description'),
-                    validator:
-                        (val) =>
-                            val == null || val.isEmpty
-                                ? 'Enter a description'
-                                : null,
+                    validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter a description' : null,
                   ),
                 ),
                 _buildCard(
                   DropdownButtonFormField<String>(
                     value: _selectedCategory,
-                    items:
-                        _categories
-                            .map(
-                              (cat) => DropdownMenuItem(
-                                value: cat,
-                                child: Text(cat),
-                              ),
-                            )
-                            .toList(),
+                    items: _categories
+                        .map((cat) => DropdownMenuItem(
+                      value: cat,
+                      child: Text(cat),
+                    ))
+                        .toList(),
                     onChanged: (val) => setState(() => _selectedCategory = val),
-                    decoration: const InputDecoration(
-                      labelText: 'Budget Category',
-                    ),
-                    validator:
-                        (val) => val == null ? 'Select a category' : null,
+                    decoration: const InputDecoration(labelText: 'Budget Category'),
+                    validator: (val) => val == null ? 'Select a category' : null,
                   ),
                 ),
                 _buildCard(
                   TextFormField(
                     controller: _totalController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Total Amount',
-                    ),
-                    validator:
-                        (val) =>
-                            val == null || val.isEmpty
-                                ? 'Enter total amount'
-                                : null,
+                    decoration: const InputDecoration(labelText: 'Total Amount'),
+                    validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter total amount' : null,
                   ),
                 ),
                 _buildCard(
@@ -284,7 +240,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ElevatedButton(
-                        onPressed: _pickReceiptImage,
+                        onPressed: () => _pickAndCrop(ImageSource.camera),
                         child: const Text('Upload Receipt'),
                       ),
                       const SizedBox(height: 8),
@@ -324,18 +280,6 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildCard(Widget child) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: child,
       ),
     );
   }
