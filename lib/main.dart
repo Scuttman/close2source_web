@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:provider/provider.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'imports.dart';
-import 'services/spending_cache_service.dart';
 import 'imports.dart';
 
 Future<void> main() async {
@@ -26,8 +23,7 @@ Future<void> main() async {
   );
 
   final appDir = await getApplicationDocumentsDirectory();
-  await Hive.initFlutter(appDir.path);
-  await SpendingCacheService.init();
+
 
   runApp(
     MultiProvider(
@@ -79,22 +75,12 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       }
     });
 
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      result,
-    ) {
-      if (result != ConnectivityResult.none) {
-        debugPrint('📶 Connectivity restored. Syncing cached data...');
-        SpendingCacheService.syncToFirestore();
-      }
-    });
+
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      debugPrint('🔄 App resumed. Syncing cached data...');
-      SpendingCacheService.syncToFirestore();
-    }
+
   }
 
   @override

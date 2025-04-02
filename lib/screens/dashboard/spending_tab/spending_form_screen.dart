@@ -1,11 +1,8 @@
 import '../../../imports.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as p;
-import '../../../services/spending_cache_service.dart';
+import '../../../data/models/spending_entry.dart';
+import 'package:intl/intl.dart';
 
 class SpendingFormScreen extends StatefulWidget {
   final Profile profile;
@@ -22,7 +19,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   final TextEditingController _descController = TextEditingController();
   String? _selectedCategory;
   final TextEditingController _totalController = TextEditingController();
-  File? _receiptImage;
+  final List<String> _receiptImages = [];
 
   final List<String> _categories = [
     'Travel',
@@ -46,125 +43,127 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     }
   }
 
-  Future<void> _pickAndCrop(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      imageQuality: 85,
+  Future<void> _showImagePickerOptions() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take Photo'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _pickImage(fromCamera: true);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _pickImage(fromCamera: false);
+              },
+            ),
+          ],
+        );
+      },
     );
-    if (picked != null) {
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        compressQuality: 80,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Receipt',
-            toolbarColor: themeGradientStart,
-            statusBarColor: themeGradientStart,
-            toolbarWidgetColor: Colors.white,
-            backgroundColor: Colors.white,
-            lockAspectRatio: false,
-          ),
-        ],
-      );
+  }
 
-      if (cropped != null) {
-        setState(() {
-          _receiptImage = File(cropped.path);
-        });
-      }
+  Future<void> _pickImage({required bool fromCamera}) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: false,
+      allowCompression: true,
+      withReadStream: false,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _receiptImages.add(result.files.single.path!);
+      });
     }
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (_selectedDate == null) {
+    if (!_formKey.currentState!.validate() ||
+        _selectedDate == null ||
+        _receiptImages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('📅 Please select a date')),
+        const SnackBar(
+          content: Text(
+            'Please complete all fields and add at least one image',
+          ),
+        ),
       );
       return;
     }
 
-    if (_receiptImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('📸 Please upload a receipt image')),
-      );
-      return;
-    }
+    final spending = SpendingEntry(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      description: _descController.text.trim(),
+      category: _selectedCategory ?? '',
+      amount: double.tryParse(_totalController.text) ?? 0,
+      date: _selectedDate!,
+      receiptImages: _receiptImages,
+      isUploaded: false,
+      profileId: widget.profile.profileId,
+    );
 
     try {
-      final spendingId = DateTime.now().millisecondsSinceEpoch.toString();
-      final ext = p.extension(_receiptImage!.path);
-      final receiptRef = FirebaseStorage.instance
-          .ref()
-          .child('receipts/${widget.profile.profileCode}/$spendingId$ext');
-
-      await receiptRef.putFile(_receiptImage!);
-      final receiptUrl = await receiptRef.getDownloadURL();
-
-      final newTransaction = {
-        'id': spendingId,
-        'description': _descController.text.trim(),
-        'category': _selectedCategory,
-        'amount': double.tryParse(_totalController.text),
-        'date': _selectedDate!.toIso8601String(),
-        'receiptUrl': receiptUrl,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
-
-      final updatedTransactions = List.from(widget.profile.transactionList)
-        ..add(newTransaction);
-
-      await FirebaseFirestore.instance
-          .collection('Profiles')
-          .doc(widget.profile.profileId)
-          .update({
-        'transactionList': updatedTransactions,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      });
+      await ProfileRepository().addTransactionToProfile(
+        profileId: widget.profile.profileId,
+        transaction: spending,
+      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Spending saved to profile!'),
-          backgroundColor: Colors.green,
+          content: Text('✅ Saved locally. Will sync when online.'),
         ),
       );
 
       Navigator.of(context).pop();
     } catch (e) {
-      debugPrint('🔥 Error saving spending: $e');
-
-      final localEntry = SpendingEntry(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        description: _descController.text.trim(),
-        category: _selectedCategory ?? '',
-        amount: double.tryParse(_totalController.text) ?? 0,
-        date: _selectedDate!.toIso8601String(),
-        localImagePath: _receiptImage?.path ?? '',
-      );
-
-      await SpendingCacheService.saveLocally(localEntry);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('📦 Saved offline – will sync later'),
-          backgroundColor: Colors.blueGrey,
-        ),
-      );
-
-      Navigator.of(context).pop();
+      // fallback or show error
     }
   }
 
-  Widget _buildCard(Widget child) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: child,
-      ),
+  Widget _buildImageGrid() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        ..._receiptImages.map(
+          (path) => ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(path),
+              height: 80,
+              width: 80,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: _showImagePickerOptions,
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Icon(Icons.add, size: 30, color: Colors.black54),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -173,114 +172,169 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     return BackgroundScaffold(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: themeGradientStart,
-          title: const Text('Add Spending'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
+
+        body: Padding(
+          padding: const EdgeInsets.only(
+            left: 10.0,
+            right: 10.0,
+            top: 10.0,
+            bottom: 10.0,
           ),
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                _buildCard(
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _selectedDate == null
-                              ? 'Select Date'
-                              : 'Date: ${_selectedDate!.toLocal()}'.split(' ')[0],
+          child: Column(
+            children: [
+              Container(
+                color: Colors.deepOrange.withOpacity(0.7),
+                padding: const EdgeInsets.only(left: 10.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'CLOSE2SOURCE',
+                      style: GoogleFonts.amaticSc(
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          letterSpacing: 0.1,
+                          fontSize: 40.0,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      TextButton(
-                        onPressed: _pickDate,
-                        child: const Text('Pick Date'),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildCard(
-                  TextFormField(
-                    controller: _descController,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                    validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter a description' : null,
-                  ),
-                ),
-                _buildCard(
-                  DropdownButtonFormField<String>(
-                    value: _selectedCategory,
-                    items: _categories
-                        .map((cat) => DropdownMenuItem(
-                      value: cat,
-                      child: Text(cat),
-                    ))
-                        .toList(),
-                    onChanged: (val) => setState(() => _selectedCategory = val),
-                    decoration: const InputDecoration(labelText: 'Budget Category'),
-                    validator: (val) => val == null ? 'Select a category' : null,
-                  ),
-                ),
-                _buildCard(
-                  TextFormField(
-                    controller: _totalController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Total Amount'),
-                    validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter total amount' : null,
-                  ),
-                ),
-                _buildCard(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _pickAndCrop(ImageSource.camera),
-                        child: const Text('Upload Receipt'),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_receiptImage != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            _receiptImage!,
-                            height: 150,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      else
-                        const Text('No file selected'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _submitForm,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Submit'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: themeGradientEnd,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
                     ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.exit_to_app,
+                        color: Colors.white,
+                        size: 30.0,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Container(
+                  color: Colors.white.withOpacity(0.7),
+                  padding: const EdgeInsets.all(0.0),
+                  child: ListView(
+                    children: [
+                      _buildCard(
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today, color: Colors.deepOrange),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _selectedDate == null
+                                    ? 'Select Date'
+                                    : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _pickDate,
+                              child: const Text(
+                                'Pick Date',
+                                style: TextStyle(color: Colors.deepOrange),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildCard(
+                        TextFormField(
+                          controller: _descController,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: 'Description',
+                            prefixIcon: const Icon(Icons.description, color: Colors.deepOrange),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                              borderSide: const BorderSide(color: Colors.deepOrange),
+                            ),
+                          ),
+                          validator: (val) =>
+                          val == null || val.isEmpty ? 'Enter a description' : null,
+                        ),
+                      ),
+                      _buildCard(
+                        DropdownButtonFormField<String>(
+                          value: _selectedCategory,
+                          items: _categories
+                              .map(
+                                (cat) => DropdownMenuItem(
+                              value: cat,
+                              child: Text(cat),
+                            ),
+                          )
+                              .toList(),
+                          onChanged: (val) => setState(() => _selectedCategory = val),
+                          decoration: InputDecoration(
+                            labelText: 'Budget Category',
+                            prefixIcon: const Icon(Icons.category, color: Colors.deepOrange),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                              borderSide: const BorderSide(color: Colors.deepOrange),
+                            ),
+                          ),
+                          validator: (val) => val == null ? 'Select a category' : null,
+                        ),
+                      ),
+                      _buildCard(
+                        TextFormField(
+                          controller: _totalController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Total Amount',
+                            prefixIcon: const Icon(Icons.attach_money, color: Colors.deepOrange),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                              borderSide: const BorderSide(color: Colors.deepOrange),
+                            ),
+                          ),
+                          validator: (val) =>
+                          val == null || val.isEmpty ? 'Enter total amount' : null,
+                        ),
+                      ),
+                      _buildCard(_buildImageGrid()),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _submitForm,
+                        icon: const Icon(Icons.send),
+                        label: const Text('Submit'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: themeGradientEnd,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 30),
-                const Text(
-                  '© Close2Source',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ],
-            ),
+              )
+            ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildCard(Widget child) {
+    return  Padding(padding: const EdgeInsets.only(
+      left:16,
+      right: 16.0,
+      top: 6.0, bottom: 6.0
+    ), child: child);
   }
 }
