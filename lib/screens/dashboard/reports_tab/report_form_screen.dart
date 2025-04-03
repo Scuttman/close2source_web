@@ -1,9 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../../imports.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 class ReportFormScreen extends StatefulWidget {
@@ -132,17 +130,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     );
   }
 
-  Widget _buildCard(Widget child) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-      child: Material(
-        elevation: 2,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(padding: const EdgeInsets.all(12.0), child: child),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return BackgroundScaffold(
@@ -183,65 +170,133 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                 ),
               ),
               Expanded(
-                child: Form(
-                  key: _formKey,
-                  child: ListView(
-                    children: [
-                      _buildCard(
+                child: Container(
+                  color: Colors.white.withOpacity(0.7),
+                  padding: const EdgeInsets.all(0.0),
+                  child: Form(
+                    key: _formKey,
+                    child: ListView(
+                      children: [
+                        // Moved Date Picker outside the Card widget
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 6.0,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_today,
+                                color: Colors.deepOrange,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _selectedDate == null
+                                      ? 'Select Date'
+                                      : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _pickDate,
+                                child: const Text(
+                                  'Pick Date',
+                                  style: TextStyle(color: Colors.deepOrange),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Removed the Card around TextFormField for Report Title
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 6.0,
+                          ),
+                          child: TextFormField(
+                            decoration: InputDecoration(
+                              labelText: 'Report Title',
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
+                              ),
+                            ),
+                            onChanged: (value) => _reportTitle = value,
+                          ),
+                        ),
+                        // Removed the Card around TextFormField for Report Summary
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 6.0,
+                          ),
+                          child: TextFormField(
+                            decoration: InputDecoration(
+                              labelText: 'Report Summary',
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
+                              ),
+                            ),
+                            maxLines: 3,
+                            onChanged: (value) => _reportSummary = value,
+                          ),
+                        ),
+                        // Image Grid (not inside Card now)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 6.0,
+                          ),
+                          child: _buildImageGrid(),
+                        ),
+                        const SizedBox(height: 24),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Icon(
-                              Icons.calendar_today,
-                              color: Colors.deepOrange,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              _selectedDate == null
-                                  ? 'Select Date'
-                                  : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
-                            ),
-                            TextButton(
-                              onPressed: _pickDate,
-                              child: const Text(
-                                'Pick Date',
-                                style: TextStyle(color: Colors.deepOrange),
+                            Padding(
+                              padding: const EdgeInsets.only(right: 15.0),
+                              child: Container(
+                                width: 150.0,
+                                child: ElevatedButton.icon(
+                                  onPressed: _submitReport,
+                                  icon: const Icon(
+                                    Icons.send,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Submit',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepOrange,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      _buildCard(
-                        TextFormField(
-                          decoration: const InputDecoration(
-                            labelText: 'Report Title',
-                          ),
-                          onChanged: (value) => _reportTitle = value,
-                        ),
-                      ),
-                      _buildCard(
-                        TextFormField(
-                          decoration: const InputDecoration(
-                            labelText: 'Report Summary',
-                          ),
-                          maxLines: 3,
-                          onChanged: (value) => _reportSummary = value,
-                        ),
-                      ),
-                      _buildCard(_buildImageGrid()),
-                      _buildCard(
-                        ElevatedButton.icon(
-                          onPressed: _submitReport,
-                          icon: const Icon(Icons.send, color: Colors.white),
-                          label: const Text(
-                            'Submit',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.deepOrange,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

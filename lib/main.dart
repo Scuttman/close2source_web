@@ -24,7 +24,6 @@ Future<void> main() async {
 
   final appDir = await getApplicationDocumentsDirectory();
 
-
   runApp(
     MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => ProjectsProvider())],
@@ -74,14 +73,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     });
-
-
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
   @override
   void dispose() {
