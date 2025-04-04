@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../../imports.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ReportFormScreen extends StatefulWidget {
   const ReportFormScreen({Key? key}) : super(key: key);
@@ -63,7 +64,36 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     );
   }
 
+  Future<bool> _requestPermissions({required bool fromCamera}) async {
+    if (fromCamera) {
+      final status = await Permission.camera.request();
+      return status.isGranted;
+    } else {
+      if (Platform.isAndroid) {
+        if (Platform.version.startsWith('13')) {
+          final status = await Permission.photos.request();
+          return status.isGranted;
+        } else {
+          final status = await Permission.storage.request();
+          return status.isGranted;
+        }
+      } else {
+        final status = await Permission.photos.request();
+        return status.isGranted;
+      }
+    }
+  }
+
   Future<void> _pickImage({required bool fromCamera}) async {
+    bool granted = await _requestPermissions(fromCamera: fromCamera);
+
+    if (!granted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Permission denied')));
+      return;
+    }
+
     final pickedFile = await ImagePicker().pickImage(
       source: fromCamera ? ImageSource.camera : ImageSource.gallery,
       maxWidth: 800,
@@ -99,34 +129,32 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   Widget _buildImageGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-      ),
-      itemCount: _selectedImages.length + 1,
-      itemBuilder: (context, index) {
-        if (index == _selectedImages.length) {
-          return GestureDetector(
-            onTap: _showImagePickerOptions,
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(
-                child: Icon(Icons.add, size: 30, color: Colors.black54),
-              ),
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        ..._selectedImages.map(
+          (file) => ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(file, height: 80, width: 80, fit: BoxFit.cover),
+          ),
+        ),
+
+        GestureDetector(
+          onTap: _showImagePickerOptions,
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(8),
             ),
-          );
-        }
-        return Image.file(_selectedImages[index], fit: BoxFit.cover);
-      },
+            child: const Center(
+              child: Icon(Icons.add, size: 30, color: Colors.black54),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

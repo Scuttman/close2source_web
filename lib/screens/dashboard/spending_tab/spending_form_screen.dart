@@ -1,8 +1,6 @@
 import '../../../imports.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../../../data/models/spending_entry.dart';
 import 'package:intl/intl.dart';
 
 class SpendingFormScreen extends StatefulWidget {
