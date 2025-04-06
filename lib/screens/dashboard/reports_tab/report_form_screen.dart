@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class ReportFormScreen extends StatefulWidget {
-  const ReportFormScreen({Key? key}) : super(key: key);
+  const ReportFormScreen({super.key});
 
   @override
   _ReportFormScreenState createState() => _ReportFormScreenState();
@@ -16,7 +16,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   final _formKey = GlobalKey<FormState>();
   String _reportTitle = '';
   String _reportSummary = '';
-  List<File> _selectedImages = [];
+  final List<File> _selectedImages = [];
   DateTime? _selectedDate;
 
   Future<void> _pickDate() async {
@@ -116,11 +116,17 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
         return;
       }
 
+      // Create a new report with a unique date
       final newReport = {
         'title': _reportTitle,
         'timestamp': Timestamp.now(),
         'summary': _reportSummary,
-        'date': _selectedDate,
+        'date':
+            _selectedDate != null
+                ? DateTime.fromMillisecondsSinceEpoch(
+                  _selectedDate!.millisecondsSinceEpoch,
+                )
+                : null,
         'images': _selectedImages.map((image) => image.path).toList(),
       };
 
@@ -205,7 +211,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                     key: _formKey,
                     child: ListView(
                       children: [
-                        // Moved Date Picker outside the Card widget
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16.0,
@@ -236,7 +241,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                             ],
                           ),
                         ),
-                        // Removed the Card around TextFormField for Report Title
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16.0,
@@ -260,7 +264,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                             onChanged: (value) => _reportTitle = value,
                           ),
                         ),
-                        // Removed the Card around TextFormField for Report Summary
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16.0,
@@ -285,7 +288,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                             onChanged: (value) => _reportSummary = value,
                           ),
                         ),
-                        // Image Grid (not inside Card now)
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16.0,
@@ -299,7 +301,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                           children: [
                             Padding(
                               padding: const EdgeInsets.only(right: 15.0),
-                              child: Container(
+                              child: SizedBox(
                                 width: 150.0,
                                 child: ElevatedButton.icon(
                                   onPressed: _submitReport,

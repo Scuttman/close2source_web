@@ -1,5 +1,5 @@
-import '../imports.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 class ReportCard extends StatelessWidget {
@@ -9,82 +9,154 @@ class ReportCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Safely extract and convert the report date.
-    final reportDate =
-        report['reportDate'] is Timestamp
-            ? (report['reportDate'] as Timestamp).toDate()
-            : DateTime.now();
+    final DateTime reportDate =
+        report['date'] is DateTime
+            ? report['date']
+            : DateTime.tryParse(report['date'].toString()) ?? DateTime.now();
 
-    // Extract update texts and photos, falling back to empty lists if necessary.
-    final List<String> updateText =
-        (report['updateText'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        [];
-    final List<String> reportPhotos =
-        (report['reportPhotos'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        [];
+    final String title = report['title'] ?? 'Untitled Report';
+    final String summary = report['summary'] ?? 'No summary available.';
+    final List<dynamic> imageList = report['images'] ?? [];
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+        side: BorderSide(color: Colors.grey.shade300, width: 1.2),
+      ),
+      color: Colors.white,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: ExpansionTile(
-        leading: Icon(Icons.report, color: Theme.of(context).primaryColor),
-        title: Text(
-          "Report Date: ${DateFormat('dd/MM/yyyy').format(reportDate)}",
-          style: TextStyle(fontWeight: FontWeight.bold),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leading: const Icon(
+          Icons.assignment,
+          size: 32,
+          color: Colors.deepOrange,
         ),
-        subtitle: updateText.isNotEmpty ? Text(updateText.first) : null,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                DateFormat(
+                  'EEEE, dd MMM yyyy',
+                ).format(reportDate).toLowerCase(), // Date in lowercase
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            title.toUpperCase(), // Title in uppercase
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black54,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.grey.shade50,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Display each update text with a leading icon.
-                ...updateText.map(
-                  (text) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 16,
-                          color: Colors.green,
-                        ),
-                        SizedBox(width: 6),
-                        Expanded(child: Text(text)),
-                      ],
-                    ),
+                const Text(
+                  "Summary",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3,
+                    color: Colors.black87,
                   ),
                 ),
-                if (reportPhotos.isNotEmpty) ...[
-                  SizedBox(height: 12),
-                  Text(
-                    "Report Photos:",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.text_snippet,
+                      size: 20,
+                      color: Colors.deepOrange,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        summary,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (imageList.isNotEmpty) ...[
+                  const Text(
+                    "Attached Photos",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                      letterSpacing: 0.3,
+                    ),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: 100,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      itemCount: reportPhotos.length,
-                      separatorBuilder: (context, _) => SizedBox(width: 8),
-                      itemBuilder: (context, photoIndex) {
+                      itemCount: imageList.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final path = imageList[index];
+                        final isLocal = !(path.toString().startsWith('http'));
+
                         return ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            reportPhotos[photoIndex],
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                            errorBuilder:
-                                (context, error, stackTrace) =>
-                                    Icon(Icons.image_not_supported),
-                          ),
+                          child:
+                              isLocal
+                                  ? Image.file(
+                                    File(path),
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (_, __, ___) => Container(
+                                          width: 100,
+                                          height: 100,
+                                          color: Colors.grey.shade200,
+                                          child: const Icon(
+                                            Icons.broken_image,
+                                            color: Colors.deepOrange,
+                                          ),
+                                        ),
+                                  )
+                                  : Image.network(
+                                    path,
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (_, __, ___) => Container(
+                                          width: 100,
+                                          height: 100,
+                                          color: Colors.grey.shade200,
+                                          child: const Icon(
+                                            Icons.broken_image,
+                                            color: Colors.deepOrange,
+                                          ),
+                                        ),
+                                  ),
                         );
                       },
                     ),

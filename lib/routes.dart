@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:close2source/screens/authentication/user_registration_form.dart';
 import 'package:close2source/screens/dashboard/dashboard_screen.dart';
 import 'package:close2source/screens/authentication/login_screen.dart';
-import 'package:close2source/screens/dashboard/spending_tab/spending_form_screen.dart';
 import 'package:close2source/screens/dashboard/reports_tab/report_form_screen.dart';
 import 'package:close2source/screens/profile_home/profile_home.dart'; // ✅ Added this import
 class AppRoutes {

@@ -110,10 +110,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               _isLoading
-                                  ? Container(
+                                  ? SizedBox(
                                   width: 120, height: 40.0,
                                   child: const CircularProgressIndicator())
-                                  : Container(
+                                  : SizedBox(
                                 width: 120.0,
                                     child: ElevatedButton(
                                       onPressed: _signIn,

@@ -53,8 +53,8 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
       child: Column(
         children: [
           Container(
-            color: Colors.deepOrange.withOpacity(0.7),
-            padding: const EdgeInsets.only(left: 10.0),
+            color: Colors.deepOrange.withOpacity(0.8),
+            padding: const EdgeInsets.only(left: 10.0, right: 10.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -84,7 +84,7 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
           ),
           Expanded(
             child: Container(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withOpacity(0.95),
               child: Column(
                 children: [
                   StreamBuilder<DocumentSnapshot>(
@@ -113,16 +113,17 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                       ).format(total);
 
                       return Container(
-                        height: 30.0,
+                        height: 40.0,
                         color: Colors.black,
                         alignment: Alignment.centerLeft,
                         child: Padding(
-                          padding: const EdgeInsets.only(left: 10.0),
+                          padding: const EdgeInsets.only(left: 15.0),
                           child: Text(
                             'Total Spending: $currency $formattedTotal',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
                           ),
                         ),
@@ -130,13 +131,13 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                     },
                   ),
                   Container(
-                    height: 40.0,
+                    height: 50.0,
                     padding: const EdgeInsets.only(top: 10.0, left: 15.0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          'Spending',
+                          'Spending Transactions',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18.0,
@@ -198,30 +199,76 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                             ).format(tx.amount);
 
                             return GestureDetector(
-                              onTap: (){
+                              onTap: () {
                                 SpendingSyncService().syncPendingTransactions();
                               },
                               child: Card(
                                 margin: const EdgeInsets.symmetric(vertical: 8),
-                                elevation: 3,
+                                elevation: 4,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                ),
                                 child: Padding(
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(15),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         "📅 ${DateFormat('dd/MM/yyyy').format(date)}",
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
+                                          fontSize: 16,
                                         ),
                                       ),
                                       const SizedBox(height: 8),
-                                      Text("📝 ${tx.description}"),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        "💸 Amount: ${profile.profileCurrency} ${formattedTotal}",
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.text_snippet,
+                                            size: 18,
+                                            color: Colors.blue,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              "📝 ${tx.description}",
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      Text("📂 Category: ${tx.category}"),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.attach_money,
+                                            size: 18,
+                                            color: Colors.green,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            "💸 Amount: ${profile.profileCurrency} $formattedTotal",
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.category,
+                                            size: 18,
+                                            color: Colors.orange,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text("📂 Category: ${tx.category}"),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ),

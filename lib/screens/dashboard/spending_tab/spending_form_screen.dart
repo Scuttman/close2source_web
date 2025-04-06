@@ -320,7 +320,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                           children: [
                             Padding(
                               padding: const EdgeInsets.only(right:15.0),
-                              child: Container(
+                              child: SizedBox(
                                 width: 150.0,
                                 child: ElevatedButton.icon(
                                   onPressed: _submitForm,
