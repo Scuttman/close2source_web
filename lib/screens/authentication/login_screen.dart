@@ -29,8 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (user != null) {
-       Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
-
+      Navigator.pushReplacementNamed(context, AppRoutes.profileHome);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Login failed, please try again')),
@@ -61,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SizedBox(height: 60.0,),
+                SizedBox(height: 60.0),
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -74,15 +73,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                            'CLOSE2SOURCE',
-                            style: GoogleFonts.amaticSc(
-                                textStyle: TextStyle(
-                                  color: Colors.deepOrange,
-                                  letterSpacing: 0.1,
-                                  fontSize: 50.0,
-                                  fontWeight: FontWeight.bold,
-                                )
-                            )),
+                          'CLOSE2SOURCE',
+                          style: GoogleFonts.amaticSc(
+                            textStyle: TextStyle(
+                              color: Colors.deepOrange,
+                              letterSpacing: 0.1,
+                              fontSize: 50.0,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 20),
                         TextField(
                           controller: _emailController,
@@ -103,22 +103,25 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 24),
                         Container(
-                          constraints: BoxConstraints(
-                            minHeight: 20.0
-                          ),
+                          constraints: BoxConstraints(minHeight: 20.0),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               _isLoading
                                   ? SizedBox(
-                                  width: 120, height: 40.0,
-                                  child: const CircularProgressIndicator())
+                                    width: 120,
+                                    height: 40.0,
+                                    child: const CircularProgressIndicator(),
+                                  )
                                   : SizedBox(
-                                width: 120.0,
+                                    width: 120.0,
                                     child: ElevatedButton(
                                       onPressed: _signIn,
                                       style: ElevatedButton.styleFrom(
-                                        minimumSize: const Size(double.infinity, 50),
+                                        minimumSize: const Size(
+                                          double.infinity,
+                                          50,
+                                        ),
                                         backgroundColor: themeGradientEnd,
                                         foregroundColor: Colors.white,
                                       ),
@@ -131,7 +134,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 12),
                         TextButton(
                           onPressed: () {
-                            Navigator.pushNamed(context, AppRoutes.register);
+                            // Navigator.pushNamed(context, AppRoutes.register);
                           },
                           child: const Text(
                             'Create Account',

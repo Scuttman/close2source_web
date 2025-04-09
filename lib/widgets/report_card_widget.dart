@@ -19,15 +19,15 @@ class ReportCard extends StatelessWidget {
     final List<dynamic> imageList = report['images'] ?? [];
 
     return Card(
-      elevation: 8,
+      elevation: 5,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: Colors.grey.shade300, width: 1.2),
       ),
-      color: Colors.white,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      color: Colors.white70,
+      margin: const EdgeInsets.symmetric(horizontal: 1.2, vertical: 1.2),
       child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         leading: const Icon(
           Icons.assignment,
           size: 32,
@@ -38,9 +38,7 @@ class ReportCard extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                DateFormat(
-                  'EEEE, dd MMM yyyy',
-                ).format(reportDate).toLowerCase(), // Date in lowercase
+                DateFormat('dd/MM/yyyy').format(reportDate),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -54,7 +52,7 @@ class ReportCard extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            title.toUpperCase(), // Title in uppercase
+            title.toUpperCase(),
             style: const TextStyle(
               fontSize: 14,
               color: Colors.black54,
