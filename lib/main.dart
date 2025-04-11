@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'imports.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,12 @@ Future<void> main() async {
   });
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.debug, // 👈 for dev
+    appleProvider: AppleProvider.debug,
+  );
 
   fs.FirebaseFirestore.instance.settings = const fs.Settings(
     persistenceEnabled: true,

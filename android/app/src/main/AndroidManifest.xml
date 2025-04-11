@@ -11,6 +11,7 @@
     <application
         android:label="close2source"
         android:name="${applicationName}"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher">
 
         <activity

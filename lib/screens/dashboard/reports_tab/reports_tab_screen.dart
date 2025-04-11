@@ -46,40 +46,40 @@ class _ReportsTabScreenState extends State<ReportsTabScreen> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(
-        left: 10.0,
-        right: 10.0,
-        top: 50.0,
-        bottom: 10.0,
-      ),
+      padding: const EdgeInsets.only(left: 0, right: 0, top: 0, bottom: 0),
       child: Column(
         children: [
           Container(
             color: Colors.deepOrange.withOpacity(0.7),
             padding: const EdgeInsets.only(left: 10.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                Text(
-                  'CLOSE2SOURCE',
-                  style: GoogleFonts.amaticSc(
-                    textStyle: const TextStyle(
-                      color: Colors.white,
-                      letterSpacing: 0.1,
-                      fontSize: 40.0,
-                      fontWeight: FontWeight.bold,
+                SizedBox(height: 25.0),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'CLOSE2SOURCE',
+                      style: GoogleFonts.amaticSc(
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          letterSpacing: 0.1,
+                          fontSize: 40.0,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.exit_to_app,
-                    color: Colors.white,
-                    size: 30.0,
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
+                    IconButton(
+                      icon: const Icon(
+                        Icons.exit_to_app,
+                        color: Colors.white,
+                        size: 30.0,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),

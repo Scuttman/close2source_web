@@ -12,14 +12,14 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
   Map<String, dynamic>? _userData;
   bool _loading = true;
 
-
   Future<void> _fetchUserData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      final doc = await FirebaseFirestore.instance
-          .collection('UserProfiles')
-          .doc(uid)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('UserProfiles')
+              .doc(uid)
+              .get();
       setState(() {
         _userData = doc.data();
         _loading = false;
@@ -42,9 +42,8 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
       return const Center(child: Text('User data not found.'));
     }
 
-    final String displayName = (_userData!['forename'] ?? '') +
-        ' ' +
-        (_userData!['surname'] ?? '');
+    final String displayName =
+        (_userData!['forename'] ?? '') + ' ' + (_userData!['surname'] ?? '');
     final String email = _userData!['email'] ?? 'No email provided';
     final String? photoUrl = _userData!['profilePicUrl'] as String?;
 
@@ -53,13 +52,12 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
       constraints: BoxConstraints(minHeight: 20.0),
       child: Column(
         children: [
-          SizedBox(height: 10.0,),
+          SizedBox(height: 10.0),
           ListTile(
             tileColor: Colors.white.withOpacity(0.9),
             leading: CircleAvatar(
               radius: 30,
-              backgroundImage:
-              photoUrl != null ? NetworkImage(photoUrl) : null,
+              backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
               child: photoUrl == null ? const Icon(Icons.person) : null,
             ),
             title: Text(
@@ -67,10 +65,7 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
 
-            trailing: const Icon(
-              Icons.verified_user,
-              color: Colors.green,
-            ),
+            trailing: const Icon(Icons.verified_user, color: Colors.green),
             onTap: () {
               // Handle tap if needed.
             },
@@ -78,11 +73,9 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(email),
-            )
-          ],)
+              Padding(padding: const EdgeInsets.all(8.0), child: Text(email)),
+            ],
+          ),
         ],
       ),
     );
@@ -97,47 +90,55 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
             backgroundColor: Colors.transparent,
 
             body: Padding(
-              padding: EdgeInsets.all(10.0),
+              padding: EdgeInsets.all(0.0),
               child: Container(
                 child: Column(
                   children: [
-                  Container(
-                    color: Colors.deepOrange.withOpacity(0.7),
-                    padding: EdgeInsets.only(left: 10.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                        'CLOSE2SOURCE',
-                        style: GoogleFonts.amaticSc(
-                          textStyle: TextStyle(
-                            color: Colors.white,
-                            letterSpacing: 0.1,
-                            fontSize: 40.0,
-                            fontWeight: FontWeight.bold,
-                          )
-                        )),
-                        IconButton(
-                          icon: Icon(Icons.exit_to_app, color: Colors.white, size: 30.0,),
-                          onPressed: (){
-                            AuthService().signOut(context);
-                          },
-                        )
-                      ],
+                    Container(
+                      color: Colors.deepOrange.withOpacity(0.7),
+                      padding: EdgeInsets.only(left: 10.0),
+                      child: Column(
+                        children: [
+                          // SizedBox(height: 25),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'CLOSE2SOURCE',
+                                style: GoogleFonts.amaticSc(
+                                  textStyle: TextStyle(
+                                    color: Colors.white,
+                                    letterSpacing: 0.1,
+                                    fontSize: 40.0,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.exit_to_app,
+                                  color: Colors.white,
+                                  size: 30.0,
+                                ),
+                                onPressed: () {
+                                  AuthService().signOut(context);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                     Expanded(
                       child: Container(
                         color: Colors.white.withOpacity(0.7),
                         child: Column(
                           children: [
-
-                            Container(
-                              height: 20.0,
-                              color: Colors.black,
-                            ),
+                            Container(height: 20.0, color: Colors.black),
                             _loading
-                                ? const Center(child: CircularProgressIndicator())
+                                ? const Center(
+                                  child: CircularProgressIndicator(),
+                                )
                                 : _buildUserTile(),
                             const Divider(
                               color: Colors.white38,
@@ -147,23 +148,40 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
                             ),
                             const SizedBox(height: 10),
                             Padding(
-                              padding: const EdgeInsets.only(left:15.0, right: 15.0),
+                              padding: const EdgeInsets.only(
+                                left: 15.0,
+                                right: 15.0,
+                              ),
                               child: Row(
                                 children: [
-                                  Text('My Registered Profiles', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.0),),
+                                  Text(
+                                    'My Registered Profiles',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18.0,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
                             Expanded(
                               child: FutureBuilder<List<Profile>>(
-                                future: ProfileRepository().getProfilesForCurrentUser(),
+                                future:
+                                    ProfileRepository()
+                                        .getProfilesForCurrentUser(),
                                 builder: (context, snapshot) {
-                                  if (snapshot.connectionState == ConnectionState.waiting) {
-                                    return const Center(child: CircularProgressIndicator());
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
                                   }
 
-                                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                                    return const Center(child: Text('No profiles found'));
+                                  if (!snapshot.hasData ||
+                                      snapshot.data!.isEmpty) {
+                                    return const Center(
+                                      child: Text('No profiles found'),
+                                    );
                                   }
 
                                   final profiles = snapshot.data!;
@@ -179,8 +197,7 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
                                             title: Text(profile.profileName),
                                             subtitle: Text(profile.profileType),
                                             onTap: () {
-
-                                             Navigator.pushNamed(
+                                              Navigator.pushNamed(
                                                 context,
                                                 '/dashboard',
                                                 arguments: profile.profileCode,
@@ -206,7 +223,7 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
               height: 30,
               child: Center(
                 child: Padding(
-                  padding: EdgeInsets.only(bottom:8.0),
+                  padding: EdgeInsets.only(bottom: 8.0),
                   child: Text(
                     '© CLOSE2SOURCE 2025',
                     style: TextStyle(color: Colors.deepOrange),
@@ -216,8 +233,6 @@ class _ProfileHomeScreenState extends State<ProfileHomeScreen> {
             ),
           ),
         ),
-
-
       ],
     );
   }

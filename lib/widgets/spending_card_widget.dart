@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../../imports.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io'; // Import for Image.file
+import '../data/models/spending_entry.dart'; // Adjust this import path to the actual location of your SpendingEntry class
 
 class SpendingCardWidget extends StatefulWidget {
   final SpendingEntry tx;
   final String currency;
 
-  const SpendingCardWidget({Key? key, required this.tx, required this.currency})
-    : super(key: key);
+  const SpendingCardWidget({
+    super.key,
+    required this.tx,
+    required this.currency,
+  });
 
   @override
   State<SpendingCardWidget> createState() => _SpendingCardWidgetState();
@@ -16,6 +22,44 @@ class SpendingCardWidget extends StatefulWidget {
 class _SpendingCardWidgetState extends State<SpendingCardWidget> {
   bool _isExpanded = false;
   String? _selectedImage; // <-- full view image
+
+  // Helper method to handle both network and local images
+  Widget _buildImage(
+    String path, {
+    double height = 100,
+    double width = 100,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    try {
+      final isNetwork = path.startsWith('http') || path.startsWith('https');
+
+      return isNetwork
+          ? CachedNetworkImage(
+            imageUrl: path,
+            height: height,
+            width: width,
+            fit: fit,
+            placeholder: (context, url) => const CircularProgressIndicator(),
+            errorWidget: (context, url, error) {
+              print('Error loading network image: $path');
+              return const Icon(Icons.broken_image);
+            },
+          )
+          : Image.file(
+            File(path),
+            height: height,
+            width: width,
+            fit: fit,
+            errorBuilder: (context, error, stackTrace) {
+              print('Error loading local image: $path');
+              return const Icon(Icons.broken_image);
+            },
+          );
+    } catch (e) {
+      print('Exception building image widget: $e');
+      return const Icon(Icons.broken_image);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,15 +157,14 @@ class _SpendingCardWidgetState extends State<SpendingCardWidget> {
                             ),
                             const SizedBox(height: 10),
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
+                              borderRadius: BorderRadius.circular(
+                                16,
+                              ), // Rounded corners
+                              child: _buildImage(
                                 _selectedImage!,
                                 height: 250,
                                 width: double.infinity,
                                 fit: BoxFit.contain,
-                                errorBuilder:
-                                    (_, __, ___) =>
-                                        const Icon(Icons.broken_image),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -158,16 +201,10 @@ class _SpendingCardWidgetState extends State<SpendingCardWidget> {
                                       });
                                     },
                                     child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Image.network(
-                                        path,
-                                        height: 100,
-                                        width: 100,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (_, __, ___) =>
-                                                const Icon(Icons.broken_image),
-                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        10,
+                                      ), // Rounded corners for thumbnails
+                                      child: _buildImage(path),
                                     ),
                                   );
                                 }).toList(),

@@ -166,40 +166,51 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    double sw = MediaQuery.of(context).size.width;
     return BackgroundScaffold(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Padding(
-          padding: const EdgeInsets.all(10.0),
+          padding: const EdgeInsets.all(0.0),
           child: Column(
             children: [
               Container(
                 color: Colors.deepOrange.withOpacity(0.7),
-                padding: const EdgeInsets.only(left: 10.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                padding: const EdgeInsets.only(left: 0.0),
+                child: Column(
                   children: [
-                    Text(
-                      'CLOSE2SOURCE',
-                      style: GoogleFonts.amaticSc(
-                        textStyle: const TextStyle(
-                          color: Colors.white,
-                          letterSpacing: 0.1,
-                          fontSize: 40.0,
-                          fontWeight: FontWeight.bold,
+                    SizedBox(height: 0.0),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(left: 10.0),
+                          child: Text(
+                            'CLOSE2SOURCE',
+                            style: GoogleFonts.amaticSc(
+                              textStyle: const TextStyle(
+                                color: Colors.white,
+                                letterSpacing: 0.1,
+                                fontSize: 40.0,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+
+                        IconButton(
+                          icon: const Icon(
+                            Icons.exit_to_app,
+                            color: Colors.white,
+                            size: 30.0,
+                          ),
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.exit_to_app,
-                        color: Colors.white,
-                        size: 30.0,
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                    ),
+                    Container(height: 20.0, width: sw, color: Colors.black),
                   ],
                 ),
               ),

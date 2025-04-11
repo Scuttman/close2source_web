@@ -2,6 +2,7 @@ import '../../../imports.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 
 class SpendingFormScreen extends StatefulWidget {
   final Profile profile;
@@ -15,6 +16,7 @@ class SpendingFormScreen extends StatefulWidget {
 class _SpendingFormScreenState extends State<SpendingFormScreen> {
   final _formKey = GlobalKey<FormState>();
   DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
   final TextEditingController _descController = TextEditingController();
   String? _selectedCategory;
   final TextEditingController _totalController = TextEditingController();
@@ -39,6 +41,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
+        _selectedTime = TimeOfDay.now(); // Auto set current time
       });
     }
   }
@@ -74,6 +77,14 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     );
   }
 
+  Future<String> saveToPermanentStorage(File imageFile) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final fileName = imageFile.path.split('/').last;
+    final newPath = '${appDir.path}/$fileName';
+    final newImage = await imageFile.copy(newPath);
+    return newImage.path;
+  }
+
   Future<void> _pickImage({required bool fromCamera}) async {
     final pickedFile = await _picker.pickImage(
       source: fromCamera ? ImageSource.camera : ImageSource.gallery,
@@ -81,23 +92,25 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
     );
 
     if (pickedFile != null) {
+      final imageFile = File(pickedFile.path);
+      final permanentPath = await saveToPermanentStorage(imageFile);
       setState(() {
-        _receiptImages.add(pickedFile.path);
+        _receiptImages.add(permanentPath);
       });
     }
   }
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete the form')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please complete the form')));
       return;
     }
 
-    if (_selectedDate == null) {
+    if (_selectedDate == null || _selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please pick a date')),
+        const SnackBar(content: Text('Please pick date and time')),
       );
       return;
     }
@@ -109,13 +122,19 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
       return;
     }
 
-    // ✅ Now it's safe to use _selectedDate!
     final spending = SpendingEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       description: _descController.text.trim(),
       category: _selectedCategory ?? '',
       amount: double.tryParse(_totalController.text) ?? 0,
-      date: _selectedDate!, // Safe now
+      date: DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedTime?.hour ?? 0,
+        _selectedTime?.minute ?? 0,
+      ),
+
       receiptImages: _receiptImages,
       isUploaded: false,
       profileId: widget.profile.profileId,
@@ -127,15 +146,18 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
         transaction: spending,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Saved locally. Will sync when online.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('✅ Report submitted')));
 
-      Navigator.of(context).pop();
+      Future.delayed(const Duration(milliseconds: 300), () {
+        Navigator.of(context).pop();
+      });
     } catch (e) {
       debugPrint("Error saving: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('❌ Error submitting report')),
+      );
     }
   }
 
@@ -175,17 +197,12 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    double sw = MediaQuery.of(context).size.width;
     return BackgroundScaffold(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-
         body: Padding(
-          padding: const EdgeInsets.only(
-            left: 10.0,
-            right: 10.0,
-            top: 10.0,
-            bottom: 10.0,
-          ),
+          padding: const EdgeInsets.all(0.0),
           child: Column(
             children: [
               Container(
@@ -218,18 +235,21 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                   ],
                 ),
               ),
+              Container(height: 20.0, width: sw, color: Colors.black),
               Expanded(
                 child: Container(
                   color: Colors.white.withOpacity(0.7),
-                  padding: const EdgeInsets.all(0.0),
                   child: Form(
-                    key:   _formKey,
+                    key: _formKey,
                     child: ListView(
                       children: [
                         _buildCard(
                           Row(
                             children: [
-                              const Icon(Icons.calendar_today, color: Colors.deepOrange),
+                              const Icon(
+                                Icons.calendar_today,
+                                color: Colors.deepOrange,
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -249,49 +269,68 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                             ],
                           ),
                         ),
+
                         _buildCard(
                           TextFormField(
                             controller: _descController,
                             maxLines: 3,
                             decoration: InputDecoration(
                               labelText: 'Description',
-                              prefixIcon: const Icon(Icons.description, color: Colors.deepOrange),
+                              prefixIcon: const Icon(
+                                Icons.description,
+                                color: Colors.deepOrange,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
-                                borderSide: const BorderSide(color: Colors.deepOrange),
+                                borderSide: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
                               ),
                             ),
-                            validator: (val) =>
-                            val == null || val.isEmpty ? 'Enter a description' : null,
+                            validator:
+                                (val) =>
+                                    val == null || val.isEmpty
+                                        ? 'Enter a description'
+                                        : null,
                           ),
                         ),
                         _buildCard(
                           DropdownButtonFormField<String>(
                             value: _selectedCategory,
-                            items: _categories
-                                .map(
-                                  (cat) => DropdownMenuItem(
-                                value: cat,
-                                child: Text(cat),
-                              ),
-                            )
-                                .toList(),
-                            onChanged: (val) => setState(() => _selectedCategory = val),
+                            items:
+                                _categories
+                                    .map(
+                                      (cat) => DropdownMenuItem(
+                                        value: cat,
+                                        child: Text(cat),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged:
+                                (val) =>
+                                    setState(() => _selectedCategory = val),
                             decoration: InputDecoration(
                               labelText: 'Budget Category',
-                              prefixIcon: const Icon(Icons.category, color: Colors.deepOrange),
+                              prefixIcon: const Icon(
+                                Icons.category,
+                                color: Colors.deepOrange,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
-                                borderSide: const BorderSide(color: Colors.deepOrange),
+                                borderSide: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
                               ),
                             ),
-                            validator: (val) => val == null ? 'Select a category' : null,
+                            validator:
+                                (val) =>
+                                    val == null ? 'Select a category' : null,
                           ),
                         ),
                         _buildCard(
@@ -300,17 +339,25 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               labelText: 'Total Amount',
-                              prefixIcon: const Icon(Icons.attach_money, color: Colors.deepOrange),
+                              prefixIcon: const Icon(
+                                Icons.attach_money,
+                                color: Colors.deepOrange,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10.0),
-                                borderSide: const BorderSide(color: Colors.deepOrange),
+                                borderSide: const BorderSide(
+                                  color: Colors.deepOrange,
+                                ),
                               ),
                             ),
-                            validator: (val) =>
-                            val == null || val.isEmpty ? 'Enter total amount' : null,
+                            validator:
+                                (val) =>
+                                    val == null || val.isEmpty
+                                        ? 'Enter total amount'
+                                        : null,
                           ),
                         ),
                         _buildCard(_buildImageGrid()),
@@ -319,13 +366,19 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Padding(
-                              padding: const EdgeInsets.only(right:15.0),
+                              padding: const EdgeInsets.only(right: 15.0),
                               child: SizedBox(
                                 width: 150.0,
                                 child: ElevatedButton.icon(
                                   onPressed: _submitForm,
-                                  icon: const Icon(Icons.send, color: Colors.white,),
-                                  label: const Text('Submit', style: TextStyle(color:Colors.white)),
+                                  icon: const Icon(
+                                    Icons.send,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Submit',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.deepOrange,
                                     padding: const EdgeInsets.symmetric(
@@ -342,7 +395,7 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
                     ),
                   ),
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -351,10 +404,9 @@ class _SpendingFormScreenState extends State<SpendingFormScreen> {
   }
 
   Widget _buildCard(Widget child) {
-    return  Padding(padding: const EdgeInsets.only(
-      left:16,
-      right: 16.0,
-      top: 6.0, bottom: 6.0
-    ), child: child);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: child,
+    );
   }
 }
