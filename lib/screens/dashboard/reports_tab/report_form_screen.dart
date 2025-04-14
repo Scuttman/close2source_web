@@ -1,9 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../../../imports.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../../imports.dart';
 
 class ReportFormScreen extends StatefulWidget {
   const ReportFormScreen({super.key});
@@ -18,6 +22,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   String _reportSummary = '';
   final List<File> _selectedImages = [];
   DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
 
   Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
@@ -29,6 +34,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
+        _selectedTime = TimeOfDay.now(); // Automatically pick current time
       });
     }
   }
@@ -86,7 +92,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
 
   Future<void> _pickImage({required bool fromCamera}) async {
     bool granted = await _requestPermissions(fromCamera: fromCamera);
-
     if (!granted) {
       ScaffoldMessenger.of(
         context,
@@ -101,36 +106,57 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     );
 
     if (pickedFile != null) {
+      final File imageFile = File(pickedFile.path);
+      final directory = await getApplicationDocumentsDirectory();
+      final savedImage = await imageFile.copy(
+        '${directory.path}/${DateTime.now().millisecondsSinceEpoch}_${pickedFile.name}',
+      );
       setState(() {
-        _selectedImages.add(File(pickedFile.path));
+        _selectedImages.add(savedImage);
       });
     }
   }
 
   Future<void> _submitReport() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      if (_selectedDate == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Please pick a date')));
-        return;
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedDate == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please pick a date')));
+      return;
+    }
+
+    try {
+      List<String> imageUrls = [];
+      for (File image in _selectedImages) {
+        String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+        Reference ref = FirebaseStorage.instance.ref().child(
+          'report_images/$fileName',
+        );
+        await ref.putFile(image);
+        String downloadUrl = await ref.getDownloadURL();
+        imageUrls.add(downloadUrl);
       }
 
-      // Create a new report with a unique date
-      final newReport = {
+      await FirebaseFirestore.instance.collection('reports').add({
         'title': _reportTitle,
-        'timestamp': Timestamp.now(),
         'summary': _reportSummary,
-        'date':
-            _selectedDate != null
-                ? DateTime.fromMillisecondsSinceEpoch(
-                  _selectedDate!.millisecondsSinceEpoch,
-                )
-                : null,
-        'images': _selectedImages.map((image) => image.path).toList(),
-      };
+        'timestamp': Timestamp.now(),
+        'date': _selectedDate,
+        'images': imageUrls,
+        'time': _selectedTime?.format(context) ?? '',
+      });
 
-      Navigator.pop(context, newReport);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Report submitted successfully.')),
+      );
+      await Future.delayed(const Duration(milliseconds: 300));
+      Navigator.pop(context, true);
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
     }
   }
 
@@ -145,7 +171,6 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
             child: Image.file(file, height: 80, width: 80, fit: BoxFit.cover),
           ),
         ),
-
         GestureDetector(
           onTap: _showImagePickerOptions,
           child: Container(
@@ -170,180 +195,139 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     return BackgroundScaffold(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Padding(
-          padding: const EdgeInsets.all(0.0),
-          child: Column(
-            children: [
-              Container(
-                color: Colors.deepOrange.withOpacity(0.7),
-                padding: const EdgeInsets.only(left: 0.0),
-                child: Column(
-                  children: [
-                    SizedBox(height: 0.0),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 10.0),
-                          child: Text(
-                            'CLOSE2SOURCE',
-                            style: GoogleFonts.amaticSc(
-                              textStyle: const TextStyle(
-                                color: Colors.white,
-                                letterSpacing: 0.1,
-                                fontSize: 40.0,
-                                fontWeight: FontWeight.bold,
-                              ),
+        body: Column(
+          children: [
+            Container(
+              color: Colors.deepOrange.withOpacity(0.7),
+              child: Column(
+                children: [
+                  const SizedBox(height: 0),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 10.0),
+                        child: Text(
+                          'CLOSE2SOURCE',
+                          style: GoogleFonts.amaticSc(
+                            textStyle: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 40,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-
-                        IconButton(
-                          icon: const Icon(
-                            Icons.exit_to_app,
-                            color: Colors.white,
-                            size: 30.0,
-                          ),
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.exit_to_app,
+                          color: Colors.white,
+                          size: 30,
                         ),
-                      ],
-                    ),
-                    Container(height: 20.0, width: sw, color: Colors.black),
-                  ],
-                ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  Container(height: 20, width: sw, color: Colors.black),
+                ],
               ),
-              Expanded(
-                child: Container(
-                  color: Colors.white.withOpacity(0.7),
-                  padding: const EdgeInsets.all(0.0),
-                  child: Form(
-                    key: _formKey,
-                    child: ListView(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 6.0,
+            ),
+            Expanded(
+              child: Container(
+                color: Colors.white.withOpacity(0.7),
+                child: Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_today,
+                            color: Colors.deepOrange,
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.calendar_today,
-                                color: Colors.deepOrange,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _selectedDate == null
-                                      ? 'Select Date'
-                                      : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}',
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _pickDate,
-                                child: const Text(
-                                  'Pick Date',
-                                  style: TextStyle(color: Colors.deepOrange),
-                                ),
-                              ),
-                            ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _selectedDate == null
+                                  ? 'Select Date'
+                                  : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)} at ${_selectedTime?.format(context) ?? ''}',
+                              style: const TextStyle(fontSize: 16),
+                            ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 6.0,
+                          TextButton(
+                            onPressed: _pickDate,
+                            child: const Text(
+                              'Pick Date',
+                              style: TextStyle(color: Colors.deepOrange),
+                            ),
                           ),
-                          child: TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Report Title',
-                              filled: true,
-                              fillColor: Colors.transparent,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10.0),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        decoration: _inputDecoration('Report Title'),
+                        onChanged: (value) => _reportTitle = value,
+                        validator:
+                            (value) =>
+                                value!.isEmpty ? 'Please enter a title' : null,
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        maxLines: 3,
+                        decoration: _inputDecoration('Report Summary'),
+                        onChanged: (value) => _reportSummary = value,
+                        validator:
+                            (value) =>
+                                value!.isEmpty
+                                    ? 'Please enter a summary'
+                                    : null,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildImageGrid(),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          SizedBox(
+                            width: 150,
+                            child: ElevatedButton.icon(
+                              onPressed: _submitReport,
+                              icon: const Icon(Icons.send, color: Colors.white),
+                              label: const Text(
+                                'Submit',
+                                style: TextStyle(color: Colors.white),
                               ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10.0),
-                                borderSide: const BorderSide(
-                                  color: Colors.deepOrange,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepOrange,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
                                 ),
                               ),
                             ),
-                            onChanged: (value) => _reportTitle = value,
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 6.0,
-                          ),
-                          child: TextFormField(
-                            decoration: InputDecoration(
-                              labelText: 'Report Summary',
-                              filled: true,
-                              fillColor: Colors.transparent,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10.0),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10.0),
-                                borderSide: const BorderSide(
-                                  color: Colors.deepOrange,
-                                ),
-                              ),
-                            ),
-                            maxLines: 3,
-                            onChanged: (value) => _reportSummary = value,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 6.0,
-                          ),
-                          child: _buildImageGrid(),
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(right: 15.0),
-                              child: SizedBox(
-                                width: 150.0,
-                                child: ElevatedButton.icon(
-                                  onPressed: _submitReport,
-                                  icon: const Icon(
-                                    Icons.send,
-                                    color: Colors.white,
-                                  ),
-                                  label: const Text(
-                                    'Submit',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.deepOrange,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.transparent,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Colors.deepOrange),
       ),
     );
   }

@@ -1,11 +1,98 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ReportCard extends StatelessWidget {
   final Map<String, dynamic> report;
 
   const ReportCard({super.key, required this.report});
+
+  void _showFullImage(BuildContext context, String path) {
+    showDialog(
+      context: context,
+      builder:
+          (_) => GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Dialog(
+              backgroundColor: Colors.black87,
+              insetPadding: const EdgeInsets.all(10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      'Full Report Image View:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: _buildImage(
+                      path,
+                      height: 250,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Tap image to close full view',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  static Widget _buildImage(
+    String path, {
+    double height = 100,
+    double width = 100,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    try {
+      final isNetwork = path.startsWith('http') || path.startsWith('https');
+
+      return isNetwork
+          ? CachedNetworkImage(
+            imageUrl: path,
+            height: height,
+            width: width,
+            fit: fit,
+            placeholder:
+                (context, url) =>
+                    const Center(child: CircularProgressIndicator()),
+            errorWidget: (context, url, error) {
+              print('Error loading network image: $path');
+              return const Icon(Icons.broken_image);
+            },
+          )
+          : Image.file(
+            File(path),
+            height: height,
+            width: width,
+            fit: fit,
+            errorBuilder: (context, error, stackTrace) {
+              print('Error loading local image: $path');
+              return const Icon(Icons.broken_image);
+            },
+          );
+    } catch (e) {
+      print('Exception building image widget: $e');
+      return const Icon(Icons.broken_image);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,44 +204,12 @@ class ReportCard extends StatelessWidget {
                       separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, index) {
                         final path = imageList[index];
-                        final isLocal = !(path.toString().startsWith('http'));
-
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child:
-                              isLocal
-                                  ? Image.file(
-                                    File(path),
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (_, __, ___) => Container(
-                                          width: 100,
-                                          height: 100,
-                                          color: Colors.grey.shade200,
-                                          child: const Icon(
-                                            Icons.broken_image,
-                                            color: Colors.deepOrange,
-                                          ),
-                                        ),
-                                  )
-                                  : Image.network(
-                                    path,
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (_, __, ___) => Container(
-                                          width: 100,
-                                          height: 100,
-                                          color: Colors.grey.shade200,
-                                          child: const Icon(
-                                            Icons.broken_image,
-                                            color: Colors.deepOrange,
-                                          ),
-                                        ),
-                                  ),
+                        return GestureDetector(
+                          onTap: () => _showFullImage(context, path),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: _buildImage(path),
+                          ),
                         );
                       },
                     ),
