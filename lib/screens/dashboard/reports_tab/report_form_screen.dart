@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -18,14 +16,19 @@ class ReportFormScreen extends StatefulWidget {
 
 class _ReportFormScreenState extends State<ReportFormScreen> {
   final _formKey = GlobalKey<FormState>();
+
   String _reportTitle = '';
   String _reportSummary = '';
   final List<File> _selectedImages = [];
+
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
 
+  bool _isUploading = false; // progress flag
+
+  /*──────── date picker ───────*/
   Future<void> _pickDate() async {
-    final DateTime? picked = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime(2020),
@@ -34,39 +37,39 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
-        _selectedTime = TimeOfDay.now(); // Automatically pick current time
+        _selectedTime = TimeOfDay.now();
       });
     }
   }
 
+  /*──────── image-picker helpers (unchanged) ───────*/
   Future<void> _showImagePickerOptions() async {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        return Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take Photo'),
-              onTap: () async {
-                Navigator.pop(context);
-                await _pickImage(fromCamera: true);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () async {
-                Navigator.pop(context);
-                await _pickImage(fromCamera: false);
-              },
-            ),
-          ],
-        );
-      },
+      builder:
+          (context) => Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take Photo'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickImage(fromCamera: true);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickImage(fromCamera: false);
+                },
+              ),
+            ],
+          ),
     );
   }
 
@@ -76,6 +79,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       return status.isGranted;
     } else {
       if (Platform.isAndroid) {
+        // Android 13+ uses the “photos” permission
         if (Platform.version.startsWith('13')) {
           final status = await Permission.photos.request();
           return status.isGranted;
@@ -91,7 +95,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   Future<void> _pickImage({required bool fromCamera}) async {
-    bool granted = await _requestPermissions(fromCamera: fromCamera);
+    final granted = await _requestPermissions(fromCamera: fromCamera);
     if (!granted) {
       ScaffoldMessenger.of(
         context,
@@ -99,76 +103,96 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       return;
     }
 
-    final pickedFile = await ImagePicker().pickImage(
+    final picked = await ImagePicker().pickImage(
       source: fromCamera ? ImageSource.camera : ImageSource.gallery,
       maxWidth: 800,
       maxHeight: 800,
     );
 
-    if (pickedFile != null) {
-      final File imageFile = File(pickedFile.path);
-      final directory = await getApplicationDocumentsDirectory();
-      final savedImage = await imageFile.copy(
-        '${directory.path}/${DateTime.now().millisecondsSinceEpoch}_${pickedFile.name}',
+    if (picked != null) {
+      final file = File(picked.path);
+      final dir = await getApplicationDocumentsDirectory();
+      final saved = await file.copy(
+        '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${picked.name}',
       );
-      setState(() {
-        _selectedImages.add(savedImage);
-      });
+      setState(() => _selectedImages.add(saved));
     }
   }
 
+  /*──────────────── submit / upload (ONLY logic we changed) ───────────────*/
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedDate == null) {
+
+    if (_selectedDate == null || _selectedTime == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please pick a date')));
+      ).showSnackBar(const SnackBar(content: Text('Please pick date & time')));
+      return;
+    }
+    if (_selectedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please attach at least one image')),
+      );
       return;
     }
 
+    setState(() => _isUploading = true);
+
     try {
-      List<String> imageUrls = [];
-      for (File image in _selectedImages) {
-        String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-        Reference ref = FirebaseStorage.instance.ref().child(
-          'report_images/$fileName',
-        );
-        await ref.putFile(image);
-        String downloadUrl = await ref.getDownloadURL();
-        imageUrls.add(downloadUrl);
+      // 1️⃣ upload images
+      final urls = <String>[];
+      for (final img in _selectedImages) {
+        final name =
+            '${DateTime.now().millisecondsSinceEpoch}_${img.path.split('/').last}';
+        final ref = FirebaseStorage.instance.ref('report_images/$name');
+        await ref.putFile(img);
+        urls.add(await ref.getDownloadURL());
       }
 
+      // 2️⃣ create combined dateTime
+      final combined = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedTime!.hour,
+        _selectedTime!.minute,
+      );
+
+      // 3️⃣ Firestore write
       await FirebaseFirestore.instance.collection('reports').add({
-        'title': _reportTitle,
-        'summary': _reportSummary,
-        'timestamp': Timestamp.now(),
-        'date': _selectedDate,
-        'images': imageUrls,
-        'time': _selectedTime?.format(context) ?? '',
+        'title': _reportTitle.trim(),
+        'summary': _reportSummary.trim(),
+        'dateTime': combined,
+        'imageUrls': urls,
+        'createdAt': Timestamp.now(),
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Report submitted successfully.')),
-      );
-      await Future.delayed(const Duration(milliseconds: 300));
-      Navigator.pop(context, true);
-    } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+      ).showSnackBar(const SnackBar(content: Text('✅ Report submitted')));
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
+  /*──────── miniature gallery ───────*/
   Widget _buildImageGrid() {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: [
         ..._selectedImages.map(
-          (file) => ClipRRect(
+          (f) => ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.file(file, height: 80, width: 80, fit: BoxFit.cover),
+            child: Image.file(f, width: 80, height: 80, fit: BoxFit.cover),
           ),
         ),
         GestureDetector(
@@ -189,136 +213,157 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     );
   }
 
+  /*──────── UI scaffold ───────*/
   @override
   Widget build(BuildContext context) {
-    double sw = MediaQuery.of(context).size.width;
-    return BackgroundScaffold(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Column(
-          children: [
-            Container(
-              color: Colors.deepOrange.withOpacity(0.7),
-              child: Column(
-                children: [
-                  const SizedBox(height: 0),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final sw = MediaQuery.of(context).size.width;
+
+    return Stack(
+      children: [
+        BackgroundScaffold(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Column(
+              children: [
+                /* header */
+                Container(
+                  color: Colors.deepOrange.withOpacity(0.7),
+                  child: Column(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10.0),
-                        child: Text(
-                          'CLOSE2SOURCE',
-                          style: GoogleFonts.amaticSc(
-                            textStyle: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 40,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.exit_to_app,
-                          color: Colors.white,
-                          size: 30,
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  Container(height: 20, width: sw, color: Colors.black),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Container(
-                color: Colors.white.withOpacity(0.7),
-                child: Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16.0),
-                    children: [
+                      const SizedBox(height: 0),
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Icon(
-                            Icons.calendar_today,
-                            color: Colors.deepOrange,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
+                          Padding(
+                            padding: const EdgeInsets.only(left: 10),
                             child: Text(
-                              _selectedDate == null
-                                  ? 'Select Date'
-                                  : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)} at ${_selectedTime?.format(context) ?? ''}',
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _pickDate,
-                            child: const Text(
-                              'Pick Date',
-                              style: TextStyle(color: Colors.deepOrange),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        decoration: _inputDecoration('Report Title'),
-                        onChanged: (value) => _reportTitle = value,
-                        validator:
-                            (value) =>
-                                value!.isEmpty ? 'Please enter a title' : null,
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        maxLines: 3,
-                        decoration: _inputDecoration('Report Summary'),
-                        onChanged: (value) => _reportSummary = value,
-                        validator:
-                            (value) =>
-                                value!.isEmpty
-                                    ? 'Please enter a summary'
-                                    : null,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildImageGrid(),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          SizedBox(
-                            width: 150,
-                            child: ElevatedButton.icon(
-                              onPressed: _submitReport,
-                              icon: const Icon(Icons.send, color: Colors.white),
-                              label: const Text(
-                                'Submit',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepOrange,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                              'CLOSE2SOURCE',
+                              style: GoogleFonts.amaticSc(
+                                textStyle: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
                           ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.exit_to_app,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                          ),
                         ],
                       ),
+                      Container(height: 20, width: sw, color: Colors.black),
                     ],
                   ),
                 ),
-              ),
+                /* form area */
+                Expanded(
+                  child: Container(
+                    color: Colors.white.withOpacity(0.7),
+                    child: Form(
+                      key: _formKey,
+                      child: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          /* date row */
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_today,
+                                color: Colors.deepOrange,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _selectedDate == null
+                                      ? 'Select Date'
+                                      : 'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)} at ${_selectedTime?.format(context) ?? ''}',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _pickDate,
+                                child: const Text(
+                                  'Pick Date',
+                                  style: TextStyle(color: Colors.deepOrange),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          /* title */
+                          TextFormField(
+                            decoration: _inputDecoration('Report Title'),
+                            onChanged: (v) => _reportTitle = v,
+                            validator:
+                                (v) =>
+                                    v!.isEmpty ? 'Please enter a title' : null,
+                          ),
+                          const SizedBox(height: 10),
+                          /* summary */
+                          TextFormField(
+                            maxLines: 3,
+                            decoration: _inputDecoration('Report Summary'),
+                            onChanged: (v) => _reportSummary = v,
+                            validator:
+                                (v) =>
+                                    v!.isEmpty
+                                        ? 'Please enter a summary'
+                                        : null,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildImageGrid(),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              SizedBox(
+                                width: 150,
+                                child: ElevatedButton.icon(
+                                  onPressed:
+                                      _isUploading ? null : _submitReport,
+                                  icon: const Icon(
+                                    Icons.send,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Submit',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepOrange,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        if (_isUploading)
+          Container(
+            color: Colors.black45,
+            child: const Center(child: CircularProgressIndicator()),
+          ),
+      ],
     );
   }
 
+  /*──────── decoration helper ───────*/
   InputDecoration _inputDecoration(String label) {
     return InputDecoration(
       labelText: label,

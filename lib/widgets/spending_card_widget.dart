@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:io'; // Import for Image.file
 import '../data/models/spending_entry.dart'; // Adjust this import path to the actual location of your SpendingEntry class

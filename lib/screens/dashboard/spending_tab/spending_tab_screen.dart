@@ -120,7 +120,7 @@ class _SpendingTabScreenState extends State<SpendingTabScreen> {
                             fontSize: 18.0,
                           ),
                         ),
-                        Container(
+                        SizedBox(
                           width: 100.0,
                           child: Row(
                             children: [
