@@ -1,0 +1,14 @@
+<svg width="800" height="480" viewBox="0 0 800 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="480" rx="32" fill="#FF6A1A"/>
+  <ellipse cx="400" cy="400" rx="320" ry="60" fill="#81B29A"/>
+  <path d="M180 400 Q220 320 300 340 Q340 350 400 320 Q460 290 500 340 Q580 320 620 400" stroke="#FAF9F6" stroke-width="12" fill="none"/>
+  <circle cx="220" cy="320" r="36" fill="#F2CC8F" stroke="#1D3557" stroke-width="6"/>
+  <rect x="210" y="340" width="20" height="60" rx="8" fill="#E07A5F"/>
+  <circle cx="580" cy="320" r="36" fill="#F2CC8F" stroke="#1D3557" stroke-width="6"/>
+  <rect x="570" y="340" width="20" height="60" rx="8" fill="#E07A5F"/>
+  <rect x="370" y="260" width="60" height="80" rx="16" fill="#FAF9F6" stroke="#1D3557" stroke-width="4"/>
+  <rect x="390" y="320" width="20" height="40" rx="8" fill="#E07A5F"/>
+  <circle cx="400" cy="260" r="20" fill="#F2CC8F" stroke="#1D3557" stroke-width="4"/>
+  <text x="400" y="120" text-anchor="middle" fill="#FAF9F6" font-size="48" font-family="Arial, sans-serif" font-weight="bold">Projects in Africa</text>
+  <text x="400" y="170" text-anchor="middle" fill="#FAF9F6" font-size="24" font-family="Arial, sans-serif">(Placeholder Image)</text>
+</svg>

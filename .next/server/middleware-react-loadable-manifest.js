@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"components/NavBar.tsx -> ./UserHero\":{\"id\":\"components/NavBar.tsx -> ./UserHero\",\"files\":[\"static/chunks/_app-pages-browser_components_UserHero_tsx.js\"]}}"
