@@ -27,7 +27,8 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!role) return setError("Please select a role.");
+  // If no role is selected, default to 'User'
+  const userRole = role || "User";
     if (!name.trim() || !surname.trim()) return setError("Please enter your name and surname.");
     if (password !== repeatPassword) return setError("Passwords do not match.");
     try {
@@ -36,7 +37,7 @@ export default function RegisterPage() {
         email,
         name,
         surname,
-        role,
+        role: userRole,
         createdAt: new Date().toISOString(),
       });
       setSuccess("Registration successful! You can now log in.");

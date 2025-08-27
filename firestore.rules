@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function isSignedIn() { return request.auth != null; }
+
+    function memberDoc(projectId, uid) {
+      return get(/databases/$(database)/documents/Projects/$(projectId)/members/$(uid));
+    }
+
+    function isMember(projectId) {
+      return isSignedIn() && memberDoc(projectId, request.auth.uid).exists();
+    }
+
+    function roleOf(projectId) {
+      return isMember(projectId) ? memberDoc(projectId, request.auth.uid).data.role : null;
+    }
+
+    function isAdmin(projectId) {
+      return roleOf(projectId) in ["owner", "admin"];
+    }
+
+    // ── User profiles ─────────────────────────────────────────────
+    match /users/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow read, update, delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ── Projects (first-class, user-independent) ──────────────────────────────
+    match /Projects/{projectId} {
+      // Anyone signed-in can create a project; client should also create their membership as owner.
+      allow create: if isSignedIn();
+
+      // Only members can read project data (set to 'true' if you want public projects).
+      allow read: if isMember(projectId)
+            || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+
+      // Only admins/owners can update/delete project doc.
+      allow update, delete: if isAdmin(projectId);
+
+      // Membership management
+      match /members/{uid} {
+        // Members can see the member list.
+        allow read: if isMember(projectId);
+
+        // Admins/owners can invite/change roles/remove anyone.
+        allow create, update, delete: if isAdmin(projectId);
+
+        // ✅ Self-join: allow a user to create their OWN membership doc (no extra existence check).
+        allow create: if isSignedIn() && request.auth.uid == uid;
+
+        // Any member can leave (delete their own membership).
+        allow delete: if isSignedIn() && request.auth.uid == uid;
+      }
+
+      // Project updates
+      match /updates/{updateId} {
+        allow read: if isMember(projectId);
+        // Post updates: owner/admin/staff
+        allow create: if isMember(projectId) && (roleOf(projectId) in ["owner","admin","staff"]);
+        // Edit/delete updates: admins/owners only
+        allow update, delete: if isAdmin(projectId);
+      }
+
+      // Project finance
+      match /finance/{entryId} {
+        allow read: if isMember(projectId);
+        // Add entries: owner/admin/staff
+        allow create: if isMember(projectId) && (roleOf(projectId) in ["owner","admin","staff"]);
+        // Edit/delete: admins/owners
+        allow update, delete: if isAdmin(projectId);
+      }
+    }
+
+    // ── Legacy/lookup Profiles by code (as before) ────────────────────────────
+    match /Profiles/{profileId} {
+      // Public read for discovery; change to isSignedIn() if needed.
+      allow read: if true;
+      // Signed-in users may write; tighten later per role if you wire it to Projects.
+      allow write, update, delete: if isSignedIn();
+    }
+  }
+}
+

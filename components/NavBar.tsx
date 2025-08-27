@@ -7,7 +7,7 @@ const UserHero = dynamic(() => import("./UserHero"), { ssr: false });
 export default function NavBar() {
   return (
     <nav className="flex items-center justify-between py-4">
-      <div className="font-bold text-xl text-white">Close2Source</div>
+  <div className="font-thin text-4xl text-white lowercase tracking-wide">close2source</div>
       <div className="flex items-center gap-6">
         <ul className="flex gap-6 text-white font-medium">
           <li><Link href="/">Home</Link></li>

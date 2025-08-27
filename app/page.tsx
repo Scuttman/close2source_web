@@ -12,18 +12,10 @@ export default function Home() {
   }, []);
 
   return (
-    <section
-      className="flex flex-col items-center justify-center min-h-[60vh] gap-10 relative w-full"
-      style={{
-        backgroundImage: 'url(/images/africa-projects-placeholder.svg)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
+    <section className="flex flex-col items-center justify-center min-h-screen gap-10 w-full">
       <div className="w-full max-w-2xl text-center space-y-6 bg-white/90 rounded-xl p-8 mt-8">
-        <h1 className="text-5xl md:text-6xl font-extrabold text-brand-main drop-shadow-sm">
-          Welcome to <span className="text-brand-dark">Close2Source</span>
+        <h1 className="text-5xl md:text-6xl text-brand-dark drop-shadow-sm">
+          <span className="font-bold">Welcome to</span> <span className="font-thin text-brand-main lowercase tracking-wide">close2source</span>
         </h1>
         <p className="text-lg md:text-xl text-brand-dark font-medium">
           Connect directly with projects and individuals making a difference.<br />
