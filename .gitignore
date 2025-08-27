@@ -1,1 +1,5 @@
+# Ignore environment variable files containing secrets
+.env
+.env.*
+.env.local
 node_modules
