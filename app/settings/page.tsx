@@ -24,11 +24,17 @@ export default function SettingsPage() {
   const [costCreateFundraisingProfile, setCostCreateFundraisingProfile] = useState<number>(50);
   const [costCreateProjectProfile, setCostCreateProjectProfile] = useState<number>(50);
   const [costImprovePost, setCostImprovePost] = useState<number>(10);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
+        // Inspect token claims for role
+        try {
+          const token = await u.getIdTokenResult();
+          setIsSuperAdmin(token.claims.role === 'SuperAdmin' || token.claims.admin === true);
+        } catch { setIsSuperAdmin(false); }
         setDisplayName(u.displayName || "");
         setPhotoURL(u.photoURL || "");
         // Optionally pull extra profile data from Firestore
@@ -155,22 +161,26 @@ export default function SettingsPage() {
           <form onSubmit={handleSavePricing} className="space-y-5">
             <div className="grid md:grid-cols-2 gap-6">
               <label className="text-sm font-semibold flex flex-col gap-2">Individual Profile Cost
-                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateIndividualProfile} onChange={e=>setCostCreateIndividualProfile(Number(e.target.value))} />
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateIndividualProfile} onChange={e=>setCostCreateIndividualProfile(Number(e.target.value))} disabled={!isSuperAdmin} />
               </label>
               <label className="text-sm font-semibold flex flex-col gap-2">Fundraising Profile Cost
-                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateFundraisingProfile} onChange={e=>setCostCreateFundraisingProfile(Number(e.target.value))} />
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateFundraisingProfile} onChange={e=>setCostCreateFundraisingProfile(Number(e.target.value))} disabled={!isSuperAdmin} />
               </label>
               <label className="text-sm font-semibold flex flex-col gap-2">Project Profile Cost
-                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateProjectProfile} onChange={e=>setCostCreateProjectProfile(Number(e.target.value))} />
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateProjectProfile} onChange={e=>setCostCreateProjectProfile(Number(e.target.value))} disabled={!isSuperAdmin} />
               </label>
               <label className="text-sm font-semibold flex flex-col gap-2">Improve Post Cost
-                <input type="number" min={0} className="border rounded px-3 py-2" value={costImprovePost} onChange={e=>setCostImprovePost(Number(e.target.value))} />
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costImprovePost} onChange={e=>setCostImprovePost(Number(e.target.value))} disabled={!isSuperAdmin} />
               </label>
             </div>
             <div className="flex items-center gap-3">
-              <button type="submit" disabled={pricingSaving} className="px-6 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition disabled:opacity-60">
-                {pricingSaving ? 'Saving...' : 'Save Pricing'}
-              </button>
+              {isSuperAdmin ? (
+                <button type="submit" disabled={pricingSaving} className="px-6 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition disabled:opacity-60">
+                  {pricingSaving ? 'Saving...' : 'Save Pricing'}
+                </button>
+              ) : (
+                <span className="text-xs text-gray-500 italic">View only. SuperAdmin role required to change pricing.</span>
+              )}
               {pricingMessage && <span className="text-green-600 text-sm">{pricingMessage}</span>}
               {pricingError && <span className="text-red-600 text-sm">{pricingError}</span>}
             </div>

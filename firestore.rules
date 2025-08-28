@@ -1,10 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner() { return isSignedIn() && request.auth.uid == resource.data.ownerUid; }
+    // Mark certain users or custom claims as admins (add your real admin UIDs below)
+  function isAdmin() { return isSignedIn() && (request.auth.token.admin == true || request.auth.token.role == 'SuperAdmin'); }
+  function isSuperAdmin() { return isSignedIn() && (request.auth.token.role == 'SuperAdmin'); }
     // User profile
     match /users/{userId} {
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow read, update: if isSignedIn() && request.auth.uid == userId;
     }
 
     // Project profiles (public read is optional)
@@ -16,15 +22,22 @@ service cloud.firestore {
     // ── Individual profiles ─────────────────────────────
     match /individuals/{individualId} {
       allow create: if isSignedIn();
-      allow read: if true; // or isSignedIn() if you want only signed-in users to read
-      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerUid;
+      allow read: if true; // make private by switching to isSignedIn()
+      allow update, delete: if isOwner() || isAdmin();
     }
     
     // Project profiles (public read is optional)
     match /projects/{allPaths=**} {
-  		allow write: if request.auth != null;
-  		allow read: if true;
-		}
+      allow write: if isSignedIn();
+      allow read: if true;
+    }
+
+    // Config (pricing etc.) restricted
+    match /config/{docId} {
+      allow read: if true;
+      // Only SuperAdmin can modify pricing/config
+      allow write: if isSuperAdmin();
+    }
 
     // Updates and finance (require auth for now)
     match /updates/{id} {
