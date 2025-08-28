@@ -24,9 +24,9 @@ function CookieBanner() {
   };
   if (!show) return null;
   return (
-    <div className="w-full bg-yellow-100 border-b border-yellow-300 text-yellow-900 text-sm flex items-center justify-between px-4 py-3 z-20">
+    <div className="w-full bg-transparent text-brand-dark text-sm flex items-center justify-between px-4 py-3 z-20 border-b border-brand-100">
       <span>By continuing to use this site, you agree to the use of cookies and local storage on your device.</span>
-      <button onClick={handleClose} className="ml-4 px-3 py-1 rounded bg-yellow-300 hover:bg-yellow-400 text-yellow-900 font-semibold transition">Close</button>
+      <button onClick={handleClose} className="ml-4 px-3 py-1 rounded bg-brand-100 hover:bg-brand-main/10 text-brand-dark font-semibold transition">Close</button>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <CookieBanner />
-        <main className="mx-auto max-w-[1200px] w-full px-4 py-2 flex-1 relative z-10">{children}</main>
+  <main className="mx-auto max-w-[1200px] w-full px-4 pt-4 pb-6 flex-1 relative z-10">{children}</main>
         <footer className="border-t-0 bg-black relative z-10">
           <div className="absolute top-0 left-0 w-full h-2 bg-brand-main" style={{height: '8px'}} />
           <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10">

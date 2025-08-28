@@ -38,6 +38,9 @@ export default function CreateIndividualProfileForm() {
         createdAt: serverTimestamp(),
         individualId: generatedId,
         ownerUid: user.uid,
+        updates: [],
+        prayerRequests: [],
+        financeSummary: [],
       });
       // Log credit spend
       await logCreditTransaction(user.uid, "spend", 50, `Created ${type} profile: ${name}`);

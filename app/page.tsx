@@ -35,10 +35,7 @@ export default function Home() {
     <section className="flex flex-col md:flex-row items-start justify-center min-h-screen gap-10 w-full">
       {/* Main content */}
       <div className="flex-1 flex flex-col items-center">
-        <div className="w-full max-w-2xl text-center space-y-6 bg-white/90 rounded-xl p-8 mt-8">
-          <div className="mb-4 p-3 bg-yellow-100 border-l-4 border-yellow-400 text-yellow-800 text-sm rounded">
-            <strong>Notice:</strong> Some data is saved in your local browser storage to support your usage of this site. If you clear your browser data, you may lose unsaved progress or preferences.
-          </div>
+  <div className="w-full max-w-2xl text-center space-y-6 bg-white/90 rounded-xl p-8 mt-8">
           <h1 className="text-5xl md:text-6xl text-brand-dark drop-shadow-sm">
             <span className="font-bold">Welcome to</span> <span className="font-thin text-brand-main lowercase tracking-wide">close2source</span>
           </h1>
