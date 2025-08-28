@@ -5,6 +5,7 @@ import { getAuth } from "firebase/auth";
 import { db, storage } from "../../../src/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, runTransaction, serverTimestamp, collection } from "firebase/firestore";
+import PageShell from "../../../components/PageShell";
 
 export default function RegisterProject() {
   const [step, setStep] = useState(1);
@@ -88,7 +89,7 @@ export default function RegisterProject() {
   };
 
   return (
-    <div className="max-w-lg mx-auto mt-10 p-6 bg-white rounded shadow">
+    <PageShell title={<span>Register Project</span>} contentClassName="p-6 md:p-8">
       <h1 className="text-2xl font-bold mb-4">Register a New Project</h1>
       {step === 1 && (
         <div>
@@ -162,6 +163,6 @@ export default function RegisterProject() {
         </div>
       )}
       {error && <div className="text-red-600 mt-4">{error}</div>}
-    </div>
+    </PageShell>
   );
 }
