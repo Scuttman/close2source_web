@@ -15,6 +15,7 @@ export default function NavBar() {
           <li><Link href="/individuals">Individuals</Link></li>
           <li><Link href="/about">About</Link></li>
           <li><Link href="/contact">Contact</Link></li>
+          <li><Link href="/settings">Settings</Link></li>
         </ul>
         <div className="ml-6"><UserHero /></div>
       </div>
