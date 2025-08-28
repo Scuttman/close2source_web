@@ -54,16 +54,46 @@ type LayoutConfig<Route extends LayoutRoutes = LayoutRoutes> = {
   handler satisfies AppPageConfig<"/credits">
 }
 
+// Validate ../../app/i/page.tsx
+{
+  const handler = {} as typeof import("../../app/i/page.js")
+  handler satisfies AppPageConfig<"/i">
+}
+
+// Validate ../../app/individuals/create/page.tsx
+{
+  const handler = {} as typeof import("../../app/individuals/create/page.js")
+  handler satisfies AppPageConfig<"/individuals/create">
+}
+
+// Validate ../../app/individuals/i/page.tsx
+{
+  const handler = {} as typeof import("../../app/individuals/i/page.js")
+  handler satisfies AppPageConfig<"/individuals/i">
+}
+
 // Validate ../../app/individuals/page.tsx
 {
   const handler = {} as typeof import("../../app/individuals/page.js")
   handler satisfies AppPageConfig<"/individuals">
 }
 
+// Validate ../../app/individuals/profile/page.tsx
+{
+  const handler = {} as typeof import("../../app/individuals/profile/page.js")
+  handler satisfies AppPageConfig<"/individuals/profile">
+}
+
 // Validate ../../app/login/page.tsx
 {
   const handler = {} as typeof import("../../app/login/page.js")
   handler satisfies AppPageConfig<"/login">
+}
+
+// Validate ../../app/p/page.tsx
+{
+  const handler = {} as typeof import("../../app/p/page.js")
+  handler satisfies AppPageConfig<"/p">
 }
 
 // Validate ../../app/page.tsx
@@ -78,10 +108,22 @@ type LayoutConfig<Route extends LayoutRoutes = LayoutRoutes> = {
   handler satisfies AppPageConfig<"/profile">
 }
 
+// Validate ../../app/projects/[id]/page.tsx
+{
+  const handler = {} as typeof import("../../app/projects/[id]/page.js")
+  handler satisfies AppPageConfig<"/projects/[id]">
+}
+
 // Validate ../../app/projects/page.tsx
 {
   const handler = {} as typeof import("../../app/projects/page.js")
   handler satisfies AppPageConfig<"/projects">
+}
+
+// Validate ../../app/projects/register/page.tsx
+{
+  const handler = {} as typeof import("../../app/projects/register/page.js")
+  handler satisfies AppPageConfig<"/projects/register">
 }
 
 // Validate ../../app/register/page.tsx

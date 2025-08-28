@@ -4,7 +4,7 @@ import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
 import { app } from "../src/lib/firebase";
 import Link from "next/link";
 import Image from "next/image";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot } from "firebase/firestore";
 
 export default function UserHero() {
   const [user, setUser] = useState<User | null>(null);
@@ -13,21 +13,31 @@ export default function UserHero() {
   const db = getFirestore(app);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeSnap: (() => void) | null = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
+      if (unsubscribeSnap) {
+        unsubscribeSnap();
+        unsubscribeSnap = null;
+      }
       if (firebaseUser) {
-        // Fetch credits from Firestore
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          setCredits(userDoc.data().credits ?? 0);
-        } else {
-          setCredits(0);
-        }
+        // Listen to credits in real-time
+        const userRef = doc(db, "users", firebaseUser.uid);
+        unsubscribeSnap = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setCredits(docSnap.data().credits ?? 0);
+          } else {
+            setCredits(0);
+          }
+        });
       } else {
         setCredits(null);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnap) unsubscribeSnap();
+    };
   }, [auth, db]);
 
   if (!user) {

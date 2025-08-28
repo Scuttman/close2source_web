@@ -1,4 +1,14 @@
 {
+  "app/individuals/create/page.tsx -> ./form": {
+    "id": "app/individuals/create/page.tsx -> ./form",
+    "files": [
+      "static/chunks/_app-pages-browser_app_individuals_create_form_tsx.js"
+    ]
+  },
+  "app/projects/register/page.tsx -> firebase/firestore": {
+    "id": "app/projects/register/page.tsx -> firebase/firestore",
+    "files": []
+  },
   "components/NavBar.tsx -> ./UserHero": {
     "id": "components/NavBar.tsx -> ./UserHero",
     "files": [
