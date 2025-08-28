@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged, updateProfile, User } from "firebase/auth";
-import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { app } from "../../src/lib/firebase";
 import PageShell from "../../components/PageShell";
 
@@ -15,6 +15,15 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  // Pricing config state
+  const [pricingLoading, setPricingLoading] = useState(true);
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [pricingError, setPricingError] = useState("");
+  const [pricingMessage, setPricingMessage] = useState("");
+  const [costCreateIndividualProfile, setCostCreateIndividualProfile] = useState<number>(50);
+  const [costCreateFundraisingProfile, setCostCreateFundraisingProfile] = useState<number>(50);
+  const [costCreateProjectProfile, setCostCreateProjectProfile] = useState<number>(50);
+  const [costImprovePost, setCostImprovePost] = useState<number>(10);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -31,6 +40,21 @@ export default function SettingsPage() {
             if (typeof data.displayName === 'string' && !displayName) setDisplayName(data.displayName);
           }
         } catch { /* ignore */ }
+        // Load pricing config
+        try {
+          const pricingRef = doc(db, "config", "pricing");
+          const pSnap = await getDoc(pricingRef);
+          if (pSnap.exists()) {
+            const d: any = pSnap.data();
+            if (typeof d.costCreateIndividualProfile === 'number') setCostCreateIndividualProfile(d.costCreateIndividualProfile);
+            if (typeof d.costCreateFundraisingProfile === 'number') setCostCreateFundraisingProfile(d.costCreateFundraisingProfile);
+            if (typeof d.costCreateProjectProfile === 'number') setCostCreateProjectProfile(d.costCreateProjectProfile);
+            if (typeof d.costImprovePost === 'number') setCostImprovePost(d.costImprovePost);
+          }
+        } catch (e) { /* ignore pricing load errors */ }
+        finally { setPricingLoading(false); }
+      } else {
+        setPricingLoading(false);
       }
       setLoading(false);
     });
@@ -56,12 +80,38 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSavePricing(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setPricingSaving(true);
+    setPricingError("");
+    setPricingMessage("");
+    try {
+      // Basic validation non-negative
+      const values = [costCreateIndividualProfile, costCreateFundraisingProfile, costCreateProjectProfile, costImprovePost];
+      if (values.some(v => isNaN(v) || v < 0)) throw new Error("Costs must be non-negative numbers.");
+      const pricingRef = doc(db, "config", "pricing");
+      await setDoc(pricingRef, {
+        costCreateIndividualProfile,
+        costCreateFundraisingProfile,
+        costCreateProjectProfile,
+        costImprovePost,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      setPricingMessage("Pricing saved.");
+    } catch (err: any) {
+      setPricingError(err.message || "Failed to save pricing.");
+    } finally {
+      setPricingSaving(false);
+    }
+  }
+
   if (loading) return <div className="text-center py-10">Loading...</div>;
   if (!user) return <div className="text-center py-10">Please log in to manage settings.</div>;
 
   return (
     <PageShell title={<span>Settings</span>} contentClassName="p-6 md:p-8">
-      <form onSubmit={handleSave} className="space-y-6 max-w-xl">
+      <form onSubmit={handleSave} className="space-y-6 max-w-xl mb-12">
         <div>
           <label className="block font-semibold mb-1">Display Name</label>
           <input
@@ -97,6 +147,37 @@ export default function SettingsPage() {
           {error && <span className="text-red-600 text-sm">{error}</span>}
         </div>
       </form>
+      <div className="max-w-2xl">
+        <h2 className="text-xl font-bold mb-4 text-brand-main">Credit Costs</h2>
+        {pricingLoading ? (
+          <div className="text-sm text-gray-500">Loading pricing...</div>
+        ) : (
+          <form onSubmit={handleSavePricing} className="space-y-5">
+            <div className="grid md:grid-cols-2 gap-6">
+              <label className="text-sm font-semibold flex flex-col gap-2">Individual Profile Cost
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateIndividualProfile} onChange={e=>setCostCreateIndividualProfile(Number(e.target.value))} />
+              </label>
+              <label className="text-sm font-semibold flex flex-col gap-2">Fundraising Profile Cost
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateFundraisingProfile} onChange={e=>setCostCreateFundraisingProfile(Number(e.target.value))} />
+              </label>
+              <label className="text-sm font-semibold flex flex-col gap-2">Project Profile Cost
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costCreateProjectProfile} onChange={e=>setCostCreateProjectProfile(Number(e.target.value))} />
+              </label>
+              <label className="text-sm font-semibold flex flex-col gap-2">Improve Post Cost
+                <input type="number" min={0} className="border rounded px-3 py-2" value={costImprovePost} onChange={e=>setCostImprovePost(Number(e.target.value))} />
+              </label>
+            </div>
+            <div className="flex items-center gap-3">
+              <button type="submit" disabled={pricingSaving} className="px-6 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition disabled:opacity-60">
+                {pricingSaving ? 'Saving...' : 'Save Pricing'}
+              </button>
+              {pricingMessage && <span className="text-green-600 text-sm">{pricingMessage}</span>}
+              {pricingError && <span className="text-red-600 text-sm">{pricingError}</span>}
+            </div>
+            <p className="text-xs text-gray-500">These values control how many credits are deducted for each action across the platform.</p>
+          </form>
+        )}
+      </div>
     </PageShell>
   );
 }
