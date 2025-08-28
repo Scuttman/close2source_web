@@ -5,6 +5,7 @@ import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { logCreditTransaction, getCreditStatement } from "../../src/lib/credits";
 import { useRouter } from "next/navigation";
 import { app } from "../../src/lib/firebase";
+import PageShell from "../../components/PageShell";
 
 
 export default function CreditsPage() {
@@ -64,7 +65,7 @@ export default function CreditsPage() {
   if (!user) return <div className="text-center py-20">Please log in to purchase credits.</div>;
 
   return (
-  <div className="max-w-[1200px] mx-auto mt-16 bg-white p-8 rounded-xl shadow-lg border border-brand-100">
+    <PageShell title={<span>Credits</span>} contentClassName="p-6 md:p-8">
       <h1 className="text-2xl font-bold mb-6 text-brand-main text-center">Buy Credits</h1>
       <div className="mb-4 text-center text-brand-dark font-medium">You have <span className="font-bold text-brand-main">{credits}</span> credits</div>
       <form className="space-y-4" onSubmit={handlePurchase}>
@@ -139,6 +140,6 @@ export default function CreditsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </PageShell>
   );
 }

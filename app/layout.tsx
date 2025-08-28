@@ -50,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <CookieBanner />
-  <main className="mx-auto max-w-[1200px] w-full px-4 pt-4 pb-6 flex-1 relative z-10">{children}</main>
+  <main className="flex-1 relative z-10 py-4">{children}</main>
         <footer className="border-t-0 bg-black relative z-10">
           <div className="absolute top-0 left-0 w-full h-2 bg-brand-main" style={{height: '8px'}} />
           <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10">

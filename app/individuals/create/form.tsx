@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../../src/lib/firebase";
 import { logCreditTransaction } from "../../../src/lib/credits";
+import PageShell from "../../../components/PageShell";
 
 export default function CreateIndividualProfileForm() {
   const searchParams = useSearchParams();
@@ -56,7 +57,7 @@ export default function CreateIndividualProfileForm() {
   }
 
   return (
-    <div className="max-w-xl mx-auto mt-16 bg-white rounded-xl shadow p-8">
+    <PageShell title={<span>Create Profile</span>} contentClassName="p-6 md:p-8">
       <h1 className="text-2xl font-bold text-brand-main mb-4">Create a {type === "fundraising" ? "Fundraising" : "Personal Updates"} Profile</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="font-semibold">Name
@@ -86,6 +87,6 @@ export default function CreateIndividualProfileForm() {
         {error && <div className="text-red-600 mt-2">{error}</div>}
         {success && <div className="text-green-700 mt-2">Profile created! Redirecting...</div>}
       </form>
-    </div>
+    </PageShell>
   );
 }

@@ -7,6 +7,7 @@ import { collection, doc, getDocs, query, updateDoc, where } from "firebase/fire
 import { getAuth } from "firebase/auth";
 import { UserCircleIcon, InformationCircleIcon, ArrowPathIcon, HeartIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 import CreatePostModal from "../../../components/CreatePostModal";
+import PageShell from "../../../components/PageShell";
 import { db } from "../../../src/lib/firebase";
 
 function SidebarSearchTags({ updates, searchValue, setSearchValue, tagFilter, setTagFilter }: any) {
@@ -104,7 +105,7 @@ export default function ProfilePage() {
   ];
 
   return (
-    <div className="p-6">
+    <PageShell title={<span>{individual?.name || 'Profile'}</span>} contentClassName="p-6">
       {loading && <div className="text-gray-500 text-sm">Loading...</div>}
       {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
       {!loading && !error && !individual && <div className="text-gray-500">Not found.</div>}
@@ -218,6 +219,6 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
