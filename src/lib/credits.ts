@@ -20,3 +20,8 @@ export async function getCreditStatement(uid: string) {
   const snap = await getDocs(q);
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
+
+export function formatMoney(v: number | undefined | null, currency: string = 'USD'){ 
+  const n = typeof v === 'number' ? v : 0; 
+  try { return new Intl.NumberFormat('en-US',{ style:'currency', currency }).format(n); } catch { return `$${n.toFixed(2)}`; }
+}

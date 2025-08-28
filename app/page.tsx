@@ -79,6 +79,68 @@ export default function Home() {
               <a href="/individuals" className="inline-block px-4 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition w-full text-center mt-2">Meet Individuals</a>
             </div>
           </div>
+          {/* Quotes / Testimonials Section (modernized) */}
+          <div className="mt-20 w-full max-w-6xl mx-auto">
+            <h2 className="text-3xl md:text-4xl font-bold text-center mb-3">
+              <span className="bg-gradient-to-r from-brand-main via-brand-main/80 to-brand-main/50 bg-clip-text text-transparent">What People Are Saying</span>
+            </h2>
+            <p className="text-center text-brand-dark/70 mb-10 max-w-2xl mx-auto text-sm md:text-base">Real voices from project leads, supporters, and volunteers using Close2Source.</p>
+            <div className="grid md:grid-cols-3 gap-7">
+              {[
+                {
+                  quote: "Close2Source lets our donors see exactly what their support unlocks – transparency builds trust.",
+                  name: "Lina A.",
+                  role: "Project Lead – Community Well"
+                },
+                {
+                  quote: "I love following field updates and knowing my contribution reaches real people fast.",
+                  name: "Michael T.",
+                  role: "Supporter"
+                },
+                {
+                  quote: "Setting up our project page was simple. The live finance view is a game changer for reporting.",
+                  name: "Grace K.",
+                  role: "NGO Coordinator"
+                },
+                {
+                  quote: "It feels personal – I can message, read updates, and share impact stories instantly.",
+                  name: "Ravi P.",
+                  role: "Monthly Donor"
+                },
+                {
+                  quote: "The project code shortcut makes it so easy for field teams to show progress on the spot.",
+                  name: "Sarah W.",
+                  role: "Field Volunteer"
+                },
+                {
+                  quote: "Being this close to the source motivates me to keep giving.",
+                  name: "Jonas L.",
+                  role: "Recurring Supporter"
+                }
+              ].map((t, i) => (
+                <figure
+                  key={i}
+                  className="group relative overflow-hidden rounded-2xl border border-brand-main/10 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-xl transition-all duration-300 p-6 flex flex-col"
+                >
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.9),rgba(255,255,255,0))]"></div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-brand-main to-brand-main/60 flex items-center justify-center text-white text-xl font-bold shadow-inner shadow-brand-main/40">“”</div>
+                    <div className="flex-1 h-px bg-gradient-to-r from-brand-main/30 to-transparent" />
+                  </div>
+                  <blockquote className="text-[15px] leading-relaxed text-brand-dark/90 font-medium relative">
+                    <span className="text-brand-main select-none mr-1" aria-hidden="true">“</span>
+                    {t.quote.trim()}
+                    <span className="text-brand-main select-none ml-1" aria-hidden="true">”</span>
+                  </blockquote>
+                  <figcaption className="mt-6 pt-4 border-t border-brand-main/10 text-[11px] tracking-wide font-semibold text-brand-main/90">
+                    {t.name}
+                    <div className="normal-case font-normal text-brand-dark/60 mt-0.5 text-[12px]">{t.role}</div>
+                  </figcaption>
+                  <div className="absolute -bottom-16 -right-10 text-[160px] leading-none font-serif text-brand-main/5 group-hover:text-brand-main/10 transition-colors select-none" aria-hidden="true">”</div>
+                </figure>
+              ))}
+            </div>
+          </div>
         </div>
   <aside className="w-full lg:w-80 flex-shrink-0">
           <div className="bg-white/70 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/30">

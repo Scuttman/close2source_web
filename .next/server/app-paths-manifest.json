@@ -1,9 +1,7 @@
 {
-  "/individuals/create/page": "app/individuals/create/page.js",
-  "/credits/page": "app/credits/page.js",
-  "/projects/page": "app/projects/page.js",
-  "/i/page": "app/i/page.js",
-  "/projects/[id]/page": "app/projects/[id]/page.js",
   "/page": "app/page.js",
-  "/projects/register/page": "app/projects/register/page.js"
+  "/login/page": "app/login/page.js",
+  "/projects/register/page": "app/projects/register/page.js",
+  "/projects/[id]/page": "app/projects/[id]/page.js",
+  "/projects/page": "app/projects/page.js"
 }
