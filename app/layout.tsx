@@ -38,8 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Global background image and overlay */}
         <div className="fixed inset-0 -z-10 w-full h-full">
           <img
-            src="/images/african-farming-bg.png"
-            alt="African farming landscape background"
+            src="/images/sitebg.jpg"
+            alt="Site background"
             className="w-full h-full object-cover object-center opacity-70"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/10" />
@@ -50,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <CookieBanner />
-  <main className="flex-1 relative z-10 py-4">{children}</main>
+  <main className="flex-1 relative z-10 py-4 flex flex-col min-h-0">{children}</main>
         <footer className="border-t-0 bg-black relative z-10">
           <div className="absolute top-0 left-0 w-full h-2 bg-brand-main" style={{height: '8px'}} />
           <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10">

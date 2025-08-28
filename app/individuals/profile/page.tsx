@@ -139,7 +139,7 @@ export default function ProfilePage() {
             {activeTab==='updates' && (
               <div ref={updatesPanelRef} className="flex flex-col lg:flex-row gap-8">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-200">
                     <h2 className="font-bold text-lg">Updates</h2>
                     <button onClick={()=>setShowPostModal(true)} className="inline-flex items-center gap-1 px-3 py-2 rounded bg-brand-main text-white text-sm font-semibold hover:bg-brand-dark">
                       + New

@@ -80,11 +80,20 @@ export default function Home() {
             </div>
           </div>
         </div>
-        {user && (
-          <aside className="w-full lg:w-80 flex-shrink-0">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/30">
-              <h2 className="text-xl font-bold text-brand-main mb-4">My Projects</h2>
-              {myProjects.length === 0 ? (
+  <aside className="w-full lg:w-80 flex-shrink-0">
+          <div className="bg-white/70 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/30">
+            <h2 className="text-xl font-bold text-brand-main mb-4">My Projects</h2>
+            {!user && (
+              <div className="text-brand-dark text-sm mb-4 space-y-2">
+                <p className="font-medium">Sign in to view and manage your projects.</p>
+                <div className="flex gap-2">
+                  <a href="/login" className="flex-1 text-center px-3 py-2 rounded bg-brand-main text-white text-sm font-semibold hover:bg-brand-dark transition">Login</a>
+                  <a href="/register" className="flex-1 text-center px-3 py-2 rounded bg-brand-main/80 text-white text-sm font-semibold hover:bg-brand-dark transition">Register</a>
+                </div>
+              </div>
+            )}
+            {user && (
+              myProjects.length === 0 ? (
                 <div className="text-brand-dark text-sm mb-4">No projects found.</div>
               ) : (
                 <div className="flex flex-col gap-4 mb-4">
@@ -116,17 +125,17 @@ export default function Home() {
                     </a>
                   ))}
                 </div>
-              )}
-              <a
-                href="/projects/register"
-                className="block w-full text-center px-4 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition mb-2"
-              >
-                Register New Project
-              </a>
-              <p className="text-sm text-brand-dark mt-2">Create a new project and become an admin.</p>
-            </div>
-          </aside>
-        )}
+              )
+            )}
+            <a
+              href="/projects/register"
+              className="block w-full text-center px-4 py-2 rounded bg-brand-main text-white font-semibold hover:bg-brand-dark transition mb-2"
+            >
+              Register New Project
+            </a>
+            <p className="text-sm text-brand-dark mt-2">Create a new project and become an admin.</p>
+          </div>
+        </aside>
       </div>
     </PageShell>
   );
