@@ -2,6 +2,10 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && (request.auth.token.admin == true || request.auth.token.role == 'SuperAdmin'); }
+    function isIndividualOwner(individualId) {
+      return isSignedIn() && get(/databases/(default)/documents/individuals/$(individualId)).data.ownerUid == request.auth.uid;
+    }
     match /profile-pics/{userId} {
       allow write: if isSignedIn() && request.auth.uid == userId;
       allow read: if true;
@@ -13,6 +17,12 @@ service firebase.storage {
     match /individuals/updates/{allPaths=**} {
       allow write: if isSignedIn();
       allow read: if true;
+    }
+
+    // Funding need images: path pattern individuals/{individualId}/fundingNeeds/{needId}/...
+    match /individuals/{individualId}/fundingNeeds/{allPaths=**} {
+      allow write: if isSignedIn() && (isAdmin() || isIndividualOwner(individualId));
+      allow read: if true; // make stricter if needed
     }
   }
 }

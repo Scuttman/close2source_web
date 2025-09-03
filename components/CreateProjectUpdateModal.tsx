@@ -9,7 +9,7 @@ interface CreateProjectUpdateModalProps {
   open: boolean;
   onClose: () => void;
   projectDocId: string; // Firestore document id (route param)
-  onPostCreated: (newUpdate: any) => void;
+  onPostCreated?: (newUpdate: any) => void; // optional (real-time listener may handle)
 }
 
 export default function CreateProjectUpdateModal({ open, onClose, projectDocId, onPostCreated }: CreateProjectUpdateModalProps) {
@@ -21,6 +21,7 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
   const [uploading, setUploading] = useState(false);
   const [docFiles, setDocFiles] = useState<File[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [slideshow, setSlideshow] = useState(false);
 
   if (!open) return null;
 
@@ -36,11 +37,13 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
   let imageUrls: string[] = [];
   const documentEntries: any[] = [];
       if (postImages.length > 0) {
-        const file = postImages[0]; // only first for now
-        const storageRef = ref(storage, `projects/updates/${user.uid}_${Date.now()}_0`);
-        await uploadBytes(storageRef, file);
-        const url = await getDownloadURL(storageRef);
-        imageUrls.push(url);
+        for(let i=0;i<postImages.length;i++){
+          const f = postImages[i];
+          const storageRef = ref(storage, `projects/updates/${projectDocId}/${user.uid}_${Date.now()}_${i}`);
+          await uploadBytes(storageRef, f);
+          const url = await getDownloadURL(storageRef);
+          imageUrls.push(url);
+        }
       }
       if (docFiles.length > 0) {
         // Upload each doc sequentially (small volumes expected)
@@ -63,9 +66,11 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
       if (!snap.exists()) throw new Error("Project not found.");
       const prevUpdates: any[] = Array.isArray(snap.data().updates) ? snap.data().updates : [];
       const newUpdate = {
+  updateId: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
         text: postText,
         title: postTitle,
         images: imageUrls,
+        slideshow: slideshow && imageUrls.length>1 ? true : false,
         createdAt: new Date().toISOString(),
         author: user.displayName || user.email || user.uid,
         authorPhotoUrl: user.photoURL || null,
@@ -75,10 +80,10 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
         reactions: { pray: 0, love: 0 },
         comments: [],
       };
-      await updateDoc(projectRef, { updates: [newUpdate, ...prevUpdates] });
-      onPostCreated(newUpdate);
-      onClose();
-  setPostText(""); setPostTitle(""); setTags([]); setTagInput(""); setPostImages([]); setDocFiles([]);
+  await updateDoc(projectRef, { updates: [newUpdate, ...prevUpdates] });
+  if(onPostCreated) onPostCreated(newUpdate);
+  onClose();
+  setPostText(""); setPostTitle(""); setTags([]); setTagInput(""); setPostImages([]); setDocFiles([]); setSlideshow(false);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to post update.");
     } finally {
@@ -146,31 +151,37 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
             </div>
             {tags.length === 0 && <p className="text-xs text-gray-400">Type a tag then press Enter. Tags appear below.</p>}
           </div>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            disabled={uploading}
-            onChange={e => {
-              const files = Array.from(e.target.files || []);
-              if (!files.length) return;
-              setPostImages(prev => [...prev, ...files]);
-            }}
-          />
-          {postImages.length > 0 && (
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {postImages.map((file, idx) => (
-                <div key={idx} className="relative">
-                  <img
-                    src={URL.createObjectURL(file)}
-                    alt="preview"
-                    className="rounded border object-cover"
-                    style={{ width: '100%', maxWidth: 500, maxHeight: 180 }}
-                  />
-                </div>
-              ))}
+          <div className="space-y-2">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={uploading}
+              onChange={e => {
+                const files = Array.from(e.target.files || []);
+                if (!files.length) return;
+                setPostImages(prev => [...prev, ...files]);
+              }}
+            />
+            {postImages.length > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {postImages.map((file, idx) => (
+                  <div key={idx} className="relative w-28 h-20 rounded overflow-hidden border bg-gray-100">
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt="preview"
+                      className="object-cover w-full h-full"
+                    />
+                    <button type="button" onClick={()=> setPostImages(prev=> prev.filter((_,i)=> i!==idx))} className="absolute top-1 right-1 bg-black/50 text-white rounded text-[10px] px-1">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-xs">
+              <input id="slideshowMode" type="checkbox" disabled={uploading || postImages.length<2} checked={slideshow} onChange={e=> setSlideshow(e.target.checked)} />
+              <label htmlFor="slideshowMode" className={postImages.length<2? 'text-gray-400':'text-brand-main cursor-pointer'}>Slideshow (requires 2+ images)</label>
             </div>
-          )}
+          </div>
           <div className="mt-4">
             <label className="block text-sm font-semibold mb-1">Attach documents (PDF, Word, Excel, PPT)</label>
             <input

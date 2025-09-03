@@ -12,6 +12,7 @@ interface Props {
   plan: ProjectPlan | undefined;
   isProjectCreator: boolean;
   onUpdated: (plan: ProjectPlan)=> void;
+  allowEdit?: boolean;
 }
 
 const emptyPlan: ProjectPlan = { aims: '', objectives: [], milestones: [], actions: [] };
@@ -43,7 +44,7 @@ function randomId(){
   return Math.random().toString(36).slice(2,11);
 }
 
-export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUpdated }: Props){
+export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUpdated, allowEdit=false }: Props){
   const [draft, setDraft] = useState<ProjectPlan>(()=> normalizePlan(plan));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -70,7 +71,7 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
     return <div className="text-sm text-gray-500">No plan published yet.</div>;
   }
 
-  const readonly = !isProjectCreator;
+  const readonly = !isProjectCreator || !allowEdit;
 
   return (
     <div className="space-y-8">

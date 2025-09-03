@@ -1,4 +1,4 @@
-# close2source
+## close2source
 
 Modern Next.js (App Router) + Firebase platform connecting supporters directly with African farming & community projects and individual change‑makers. Focus: transparency (finance, receipts, updates) + engagement (reactions, comments, tagging).
 

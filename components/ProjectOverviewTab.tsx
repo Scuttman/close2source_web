@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { db, storage } from '../src/lib/firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { improveTextWithAI } from '../src/lib/ai';
 import { logCreditTransaction } from '../src/lib/credits';
 import MapPreview from './MapPreview';
@@ -12,9 +13,10 @@ interface ProjectOverviewTabProps {
   setProject: React.Dispatch<React.SetStateAction<any>>;
   isProjectCreator: boolean;
   currentUser: any; // Firebase User | null
+  allowEdit?: boolean;
 }
 
-export default function ProjectOverviewTab({ project, projectId, setProject, isProjectCreator, currentUser }: ProjectOverviewTabProps) {
+export default function ProjectOverviewTab({ project, projectId, setProject, isProjectCreator, currentUser, allowEdit=false }: ProjectOverviewTabProps) {
   const [desc, setDesc] = useState(project?.description || '');
   const [improving, setImproving] = useState(false);
   const [showLocationEditor, setShowLocationEditor] = useState(false);
@@ -25,6 +27,13 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
   const [savingLocation, setSavingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [geoParams, setGeoParams] = useState<{ lat:number; lng:number; zoom:number }|null>(null);
+  // Organization fields
+  const [orgName, setOrgName] = useState<string>(project?.organizationName || '');
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgLogoUploading, setOrgLogoUploading] = useState(false);
+  const [orgLogoError, setOrgLogoError] = useState('');
+
+  useEffect(()=> { setOrgName(project?.organizationName || ''); }, [project?.organizationName]);
 
   useEffect(()=>{ setDesc(project?.description || ''); }, [project?.description]);
 
@@ -87,38 +96,246 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1">
           <div className="bg-white rounded-xl border border-brand-main/10 p-5 shadow-sm">
+            {/* Organization Section (now at top) */}
+            {(allowEdit && isProjectCreator) ? (
+              <div className="mb-6">
+                <h2 className="text-base font-semibold text-brand-main mb-3">Organization</h2>
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-brand-main mb-1">Organization Name</label>
+                    <div className="flex gap-2 items-start">
+                      <input
+                        type="text"
+                        value={orgName}
+                        onChange={e=>setOrgName(e.target.value)}
+                        disabled={!allowEdit || !isProjectCreator || orgSaving}
+                        placeholder="e.g. Green Growth NGO"
+                        className="flex-1 border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={async()=>{
+                          setOrgSaving(true);
+                          try {
+                            await updateDoc(doc(db,'projects', projectId), { organizationName: orgName.trim() || null });
+                            setProject((p:any)=> ({ ...p, organizationName: orgName.trim() || null }));
+                          } catch(e:any){ alert(e.message || 'Failed to save'); }
+                          finally { setOrgSaving(false); }
+                        }}
+                        disabled={orgSaving}
+                        className="px-3 py-2 rounded bg-brand-main text-white text-xs font-semibold hover:bg-brand-dark disabled:opacity-50"
+                      >{orgSaving? 'Saving...' : 'Save'}</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-brand-main mb-2">Organization Logo</label>
+                    {project.organizationLogoUrl ? (
+                      <div className="flex items-start gap-4">
+                        <img src={project.organizationLogoUrl} alt={project.organizationName || 'Org Logo'} className="h-16 w-16 object-contain rounded border border-brand-main/20 bg-white" />
+                        <div className="flex flex-col gap-2">
+                          <label className="inline-block">
+                            <span className="sr-only">Replace logo</span>
+                            <input type="file" accept="image/png,image/jpeg,image/svg+xml" className="hidden" onChange={async e=>{
+                              const file = e.target.files?.[0];
+                              if(!file) return;
+                              setOrgLogoError('');
+                              if(file.size > 250*1024){ setOrgLogoError('File too large (max 250KB)'); return; }
+                              setOrgLogoUploading(true);
+                              try {
+                                const ext = file.name.split('.').pop() || 'png';
+                                const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
+                                await uploadBytes(storageRef, file, { contentType: file.type });
+                                const url = await getDownloadURL(storageRef);
+                                await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: url });
+                                setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));
+                              } catch(err:any){ setOrgLogoError(err.message || 'Upload failed'); }
+                              finally { setOrgLogoUploading(false); e.target.value=''; }
+                            }} />
+                            <span className="px-3 py-1.5 rounded bg-brand-main text-white text-xs font-semibold cursor-pointer hover:bg-brand-dark inline-block">{orgLogoUploading? 'Uploading...' : 'Replace'}</span>
+                          </label>
+                          <button type="button" disabled={orgLogoUploading} onClick={async()=>{
+                            if(!confirm('Remove logo?')) return;
+                            setOrgLogoError('');
+                            setOrgLogoUploading(true);
+                            try {
+                              try { const url = project.organizationLogoUrl; if(url){ const pathMatch = url.match(/\/o\/([^?]+)/); if(pathMatch){ const decoded = decodeURIComponent(pathMatch[1]); const delRef = ref(storage, decoded.replace(/^.*?projects%2F/,'projects/')); await deleteObject(delRef); } } } catch {}
+                              await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: null });
+                              setProject((p:any)=> ({ ...p, organizationLogoUrl: null }));
+                            } catch(err:any){ setOrgLogoError(err.message || 'Remove failed'); }
+                            finally { setOrgLogoUploading(false); }
+                          }} className="px-3 py-1.5 rounded bg-white border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50">Remove</button>
+                          {orgLogoError && <div className="text-[11px] text-red-600">{orgLogoError}</div>}
+                          <p className="text-[10px] text-gray-500 max-w-xs">PNG / JPG / SVG. Max 250KB. Square or landscape works best.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="inline-flex flex-col items-center justify-center w-40 h-32 border-2 border-dashed border-brand-main/30 rounded cursor-pointer hover:border-brand-main/60 bg-brand-main/5 text-xs text-gray-600">
+                          <input type="file" accept="image/png,image/jpeg,image/svg+xml" className="hidden" onChange={async e=>{
+                            const file = e.target.files?.[0];
+                            if(!file) return;
+                            setOrgLogoError('');
+                            if(file.size > 250*1024){ setOrgLogoError('File too large (max 250KB)'); return; }
+                            setOrgLogoUploading(true);
+                            try {
+                              const ext = file.name.split('.').pop() || 'png';
+                              const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
+                              await uploadBytes(storageRef, file, { contentType: file.type });
+                              const url = await getDownloadURL(storageRef);
+                              await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: url });
+                              setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));
+                            } catch(err:any){ setOrgLogoError(err.message || 'Upload failed'); }
+                            finally { setOrgLogoUploading(false); e.target.value=''; }
+                          }} />
+                          {orgLogoUploading ? 'Uploading...' : 'Upload Logo'}
+                        </label>
+                        {orgLogoError && <div className="text-[11px] text-red-600">{orgLogoError}</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              (project.organizationName || project.organizationLogoUrl) && (
+                <div className="mb-6 flex items-center gap-4">
+                  {project.organizationLogoUrl && (
+                    <img src={project.organizationLogoUrl} alt={project.organizationName || 'Org Logo'} className="h-14 w-14 object-contain rounded border border-brand-main/20 bg-white" />
+                  )}
+                  <div className="min-w-0">
+                    {project.organizationName && <div className="text-lg font-semibold text-brand-dark leading-snug break-words">{project.organizationName}</div>}
+                    {!project.organizationName && project.organizationLogoUrl && <div className="text-sm text-gray-500 italic">Organization</div>}
+                  </div>
+                </div>
+              )
+            )}
             <div className="mb-3">
-              <label className="block text-xs font-semibold text-brand-main mb-1">Description</label>
-              <textarea className="w-full border rounded px-3 py-2 text-brand-dark min-h-[80px]" value={desc} onChange={e=>setDesc(e.target.value)} disabled={improving} />
-              <button className="mt-2 px-4 py-2 bg-brand-main text-white rounded hover:bg-brand-dark disabled:opacity-50" disabled={improving} onClick={async()=>{
-                setImproving(true);
-                try {
-                  const improved = await improveTextWithAI(desc);
-                  setDesc(improved);
-                  await updateDoc(doc(db,'projects', projectId), { description: improved });
-                  setProject((prev:any)=> ({ ...prev, description: improved }));
-                  if(currentUser){
-                    const userId = currentUser.uid;
-                    const userRef = doc(db,'users', userId);
-                    const userSnap = await getDoc(userRef);
-                    const currentCredits = userSnap.exists()? userSnap.data().credits ?? 0 : 0;
-                    if(currentCredits < 2) throw new Error('Not enough credits');
-                    await updateDoc(userRef,{ credits: currentCredits - 2 });
-                    await logCreditTransaction(userId,'spend',2,`AI improved project description for ${projectId}`);
-                  }
-                } catch(e:any){ alert(e.message || 'Failed to improve description'); }
-                finally { setImproving(false); }
-              }}>{improving? 'Improving...' : 'Improve with AI (-2 Credits)'}</button>
+              <label className="block text-base font-semibold text-brand-main mb-2">Description</label>
+              {(allowEdit && isProjectCreator) ? (
+                <>
+                  <textarea className="w-full border rounded px-3 py-2 text-brand-dark min-h-[80px]" value={desc} onChange={e=>setDesc(e.target.value)} disabled={improving} />
+                  <button className="mt-2 px-4 py-2 bg-brand-main text-white rounded hover:bg-brand-dark disabled:opacity-50" disabled={improving} onClick={async()=>{
+                    setImproving(true);
+                    try {
+                      const improved = await improveTextWithAI(desc);
+                      setDesc(improved);
+                      await updateDoc(doc(db,'projects', projectId), { description: improved });
+                      setProject((prev:any)=> ({ ...prev, description: improved }));
+                      if(currentUser){
+                        const userId = currentUser.uid;
+                        const userRef = doc(db,'users', userId);
+                        const userSnap = await getDoc(userRef);
+                        const currentCredits = userSnap.exists()? userSnap.data().credits ?? 0 : 0;
+                        if(currentCredits < 2) throw new Error('Not enough credits');
+                        await updateDoc(userRef,{ credits: currentCredits - 2 });
+                        await logCreditTransaction(userId,'spend',2,`AI improved project description for ${projectId}`);
+                      }
+                    } catch(e:any){ alert(e.message || 'Failed to improve description'); }
+                    finally { setImproving(false); }
+                  }}>{improving? 'Improving...' : 'Improve with AI (-2 Credits)'}</button>
+                </>
+              ) : (
+                <div className="text-sm text-brand-dark whitespace-pre-line bg-gray-50/60 rounded px-3 py-2 min-h-[60px]">
+                  {desc ? desc : <span className="italic text-gray-400">No description provided.</span>}
+                </div>
+              )}
             </div>
-            <div className="grid sm:grid-cols-2 gap-4 text-sm text-brand-dark">
-              <div><span className="font-semibold">Project Code:</span> <span className="font-mono bg-gray-100 px-2 py-1 rounded">{project.projectId}</span></div>
-              <div><span className="font-semibold">Created by:</span> {project.createdBy}</div>
-            </div>
-            {project.location && (
-              <div className="mt-4 text-sm space-y-1">
-                <div><span className="font-semibold">Location:</span> {project.location.town || project.location.country ? `${project.location.town ? project.location.town + ', ' : ''}${project.location.country || ''}` : <em className="text-gray-400">(not set)</em>}</div>
-                {(project.location.latitude || project.location.longitude) && (
-                  <div><span className="font-semibold">GPS:</span> {project.location.latitude ?? '?'} , {project.location.longitude ?? '?'}</div>
+            {/* Removed project code & created by per updated requirements */}
+            {/* Location details moved to map section */}
+            {/* (Organization card removed; integrated above description) */}
+            {/* Map section moved inside left column for consistent width */}
+            {(mapParams || geoParams) && (
+              <div className="mt-4">
+                <h2 className="text-base font-semibold text-brand-main mb-2">Project Location Map</h2>
+                {project.location && (project.location.town || project.location.country) && (
+                  <div className="text-sm mb-2"><span className="font-semibold">Location:</span> {project.location.town ? `${project.location.town}, ` : ''}{project.location.country || ''}</div>
+                )}
+                <MapPreview lat={(mapParams||geoParams)!.lat} lng={(mapParams||geoParams)!.lng} zoom={(mapParams||geoParams)!.zoom} className="w-full" />
+                {(!project.location?.latitude && !project.location?.longitude) && (
+                  <p className="text-xs text-gray-500 mt-2">Approximate location (no precise GPS pin set{geoParams && !mapParams ? '; geocoded' : ''}).</p>
+                )}
+              </div>
+            )}
+            {!(mapParams || geoParams) && (
+              <div className="mt-4 p-4 rounded-xl border border-dashed border-brand-main/40 bg-brand-main/5 text-sm text-gray-600 space-y-3">
+                <div>
+                  <div className="font-semibold text-brand-main mb-1">Location not set</div>
+                  {project.location && (project.location.country || project.location.town) ? (
+                    <p>A location is partially specified ({project.location.town ? `${project.location.town}, `: ''}{project.location.country || ''}) but we can't show a map yet. Add GPS coordinates or a supported country to enable the map.</p>
+                  ) : (
+                    <p>Add a country / town and optional GPS coordinates to show a project map.</p>
+                  )}
+                </div>
+                {isProjectCreator && !showLocationEditor && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLocationEditor(true);
+                      const existing = project.location || {};
+                      setLocCountry(existing.country || "");
+                      setLocTown(existing.town || "");
+                      setLocLat(existing.latitude != null ? String(existing.latitude) : "");
+                      setLocLng(existing.longitude != null ? String(existing.longitude) : "");
+                    }}
+                    className="px-3 py-2 rounded bg-brand-main text-white font-semibold text-xs hover:bg-brand-dark"
+                  >Add Location</button>
+                )}
+                {isProjectCreator && showLocationEditor && (
+                  <form
+                    onSubmit={async e => {
+                      e.preventDefault();
+                      setLocationError("");
+                      setSavingLocation(true);
+                      try {
+                        const country = locCountry.trim();
+                        const town = locTown.trim();
+                        if (!country && !town) throw new Error('Enter at least a country or town');
+                        const newLoc: any = { country: country || undefined, town: town || undefined };
+                        if (locLat.trim()) {
+                          const v = parseFloat(locLat);
+                          if (isNaN(v) || v < -90 || v > 90) throw new Error('Latitude must be between -90 and 90');
+                          newLoc.latitude = v;
+                        }
+                        if (locLng.trim()) {
+                          const v2 = parseFloat(locLng);
+                          if (isNaN(v2) || v2 < -180 || v2 > 180) throw new Error('Longitude must be between -180 and 180');
+                          newLoc.longitude = v2;
+                        }
+                        await updateDoc(doc(db, 'projects', projectId), { location: newLoc });
+                        setProject((prev: any) => ({ ...prev, location: newLoc }));
+                        setShowLocationEditor(false);
+                      } catch (err: any) {
+                        setLocationError(err.message || 'Failed to save location');
+                      } finally {
+                        setSavingLocation(false);
+                      }
+                    }}
+                    className="space-y-3 bg-white/60 p-3 rounded border border-brand-main/20"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Country</label>
+                        <input value={locCountry} onChange={e=>setLocCountry(e.target.value)} placeholder="e.g. Malawi" className="w-full border rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Town</label>
+                        <input value={locTown} onChange={e=>setLocTown(e.target.value)} placeholder="e.g. Blantyre" className="w-full border rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Latitude (optional)</label>
+                        <input value={locLat} onChange={e=>setLocLat(e.target.value)} placeholder="-15.7861" className="w-full border rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Longitude (optional)</label>
+                        <input value={locLng} onChange={e=>setLocLng(e.target.value)} placeholder="35.0058" className="w-full border rounded px-2 py-1 text-xs" />
+                      </div>
+                    </div>
+                    {locationError && <div className="text-xs text-red-600">{locationError}</div>}
+                    <div className="flex gap-2 pt-1">
+                      <button type="submit" disabled={savingLocation} className="px-3 py-1.5 rounded bg-brand-main text-white text-xs font-semibold disabled:opacity-50">{savingLocation? 'Saving...' : 'Save Location'}</button>
+                      <button type="button" disabled={savingLocation} onClick={()=> setShowLocationEditor(false)} className="px-3 py-1.5 rounded bg-gray-200 text-gray-700 text-xs font-semibold">Cancel</button>
+                    </div>
+                    <p className="text-[10px] text-gray-500">Enter coordinates for precise map pin; otherwise country/town gives approximate map.</p>
+                  </form>
                 )}
               </div>
             )}
@@ -133,100 +350,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
           )}
         </div>
       </div>
-      <div>
-        {(mapParams || geoParams) ? (
-          <div className="bg-white rounded-xl border border-brand-main/10 p-5 shadow-sm inline-block">
-            <h2 className="text-lg font-semibold text-brand-main mb-2">Project Location Map</h2>
-            <MapPreview lat={(mapParams||geoParams)!.lat} lng={(mapParams||geoParams)!.lng} zoom={(mapParams||geoParams)!.zoom} className="w-full max-w-md" />
-            {(!project.location?.latitude && !project.location?.longitude) && (
-              <p className="text-xs text-gray-500 mt-2">Approximate location (no precise GPS pin set{geoParams && !mapParams ? '; geocoded' : ''}).</p>
-            )}
-          </div>
-        ) : (
-          <div className="p-4 rounded-xl border border-dashed border-brand-main/40 bg-brand-main/5 text-sm text-gray-600 max-w-md space-y-3">
-            <div>
-              <div className="font-semibold text-brand-main mb-1">Location not set</div>
-              {project.location && (project.location.country || project.location.town) ? (
-                <p>A location is partially specified ({project.location.town ? `${project.location.town}, `: ''}{project.location.country || ''}) but we can't show a map yet. Add GPS coordinates or a supported country to enable the map.</p>
-              ) : (
-                <p>Add a country / town and optional GPS coordinates to show a project map.</p>
-              )}
-            </div>
-            {isProjectCreator && !showLocationEditor && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLocationEditor(true);
-                  const existing = project.location || {};
-                  setLocCountry(existing.country || "");
-                  setLocTown(existing.town || "");
-                  setLocLat(existing.latitude != null ? String(existing.latitude) : "");
-                  setLocLng(existing.longitude != null ? String(existing.longitude) : "");
-                }}
-                className="px-3 py-2 rounded bg-brand-main text-white font-semibold text-xs hover:bg-brand-dark"
-              >Add Location</button>
-            )}
-            {isProjectCreator && showLocationEditor && (
-              <form
-                onSubmit={async e => {
-                  e.preventDefault();
-                  setLocationError("");
-                  setSavingLocation(true);
-                  try {
-                    const country = locCountry.trim();
-                    const town = locTown.trim();
-                    if (!country && !town) throw new Error('Enter at least a country or town');
-                    const newLoc: any = { country: country || undefined, town: town || undefined };
-                    if (locLat.trim()) {
-                      const v = parseFloat(locLat);
-                      if (isNaN(v) || v < -90 || v > 90) throw new Error('Latitude must be between -90 and 90');
-                      newLoc.latitude = v;
-                    }
-                    if (locLng.trim()) {
-                      const v2 = parseFloat(locLng);
-                      if (isNaN(v2) || v2 < -180 || v2 > 180) throw new Error('Longitude must be between -180 and 180');
-                      newLoc.longitude = v2;
-                    }
-                    await updateDoc(doc(db, 'projects', projectId), { location: newLoc });
-                    setProject((prev: any) => ({ ...prev, location: newLoc }));
-                    setShowLocationEditor(false);
-                  } catch (err: any) {
-                    setLocationError(err.message || 'Failed to save location');
-                  } finally {
-                    setSavingLocation(false);
-                  }
-                }}
-                className="space-y-3 bg-white/60 p-3 rounded border border-brand-main/20"
-              >
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Country</label>
-                    <input value={locCountry} onChange={e=>setLocCountry(e.target.value)} placeholder="e.g. Malawi" className="w-full border rounded px-2 py-1 text-xs" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Town</label>
-                    <input value={locTown} onChange={e=>setLocTown(e.target.value)} placeholder="e.g. Blantyre" className="w-full border rounded px-2 py-1 text-xs" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Latitude (optional)</label>
-                    <input value={locLat} onChange={e=>setLocLat(e.target.value)} placeholder="-15.7861" className="w-full border rounded px-2 py-1 text-xs" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wide font-semibold text-brand-main mb-1">Longitude (optional)</label>
-                    <input value={locLng} onChange={e=>setLocLng(e.target.value)} placeholder="35.0058" className="w-full border rounded px-2 py-1 text-xs" />
-                  </div>
-                </div>
-                {locationError && <div className="text-xs text-red-600">{locationError}</div>}
-                <div className="flex gap-2 pt-1">
-                  <button type="submit" disabled={savingLocation} className="px-3 py-1.5 rounded bg-brand-main text-white text-xs font-semibold disabled:opacity-50">{savingLocation? 'Saving...' : 'Save Location'}</button>
-                  <button type="button" disabled={savingLocation} onClick={()=> setShowLocationEditor(false)} className="px-3 py-1.5 rounded bg-gray-200 text-gray-700 text-xs font-semibold">Cancel</button>
-                </div>
-                <p className="text-[10px] text-gray-500">Enter coordinates for precise map pin; otherwise country/town gives approximate map.</p>
-              </form>
-            )}
-          </div>
-        )}
-      </div>
+      
     </div>
   );
 }

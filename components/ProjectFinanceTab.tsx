@@ -13,6 +13,7 @@ interface ProjectFinanceTabProps {
   currencySymbol: string;
   financeTransactions: any[];
   setFinanceTransactions: React.Dispatch<React.SetStateAction<any[]>>;
+  allowEdit?: boolean;
 }
 
 export default function ProjectFinanceTab({
@@ -23,6 +24,7 @@ export default function ProjectFinanceTab({
   currencySymbol,
   financeTransactions,
   setFinanceTransactions,
+  allowEdit=false,
 }: ProjectFinanceTabProps) {
   // Derive finance summary (creator from transactions; others from stored summary)
   const financeSummary = useMemo(() => {
@@ -92,7 +94,7 @@ export default function ProjectFinanceTab({
         <h3 className="text-base font-semibold text-brand-main mb-4">Spending Breakdown</h3>
         <ProjectSpendingBreakdown financeSummary={financeSummary} />
       </div>
-      {isProjectCreator && (
+  {isProjectCreator && allowEdit && (
         <div className="bg-white rounded-xl border border-brand-main/10 p-6 shadow-sm text-brand-dark">
           <ProjectTransactionsManager
             projectId={projectId}

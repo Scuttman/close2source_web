@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../../src/lib/firebase";
 import { getAuth } from "firebase/auth";
 import ProjectFinanceTab from "../../../components/ProjectFinanceTab";
@@ -22,6 +22,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("home");
+  const [editMode, setEditMode] = useState(false); // global edit toggle
   // Updates tab state moved into ProjectUpdatesTab component
   // Settings tab state moved to ProjectSettingsTab
   // Location editing state
@@ -34,29 +35,20 @@ export default function ProjectDetail() {
   const router = useRouter();
 
   useEffect(() => {
-    async function fetchProject() {
-      setLoading(true);
-      setError("");
-      try {
-        const docRef = doc(db, "projects", projectId);
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-          setError("Project not found.");
-          setProject(null);
-        } else {
-          const raw: any = docSnap.data();
-          if(!Array.isArray(raw.updates)) raw.updates = [];
-          setProject(raw);
-          setProjectCurrency(raw.currency || "");
-        }
-      } catch (e: any) {
-        setError(e.message || "Error loading project.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (projectId) fetchProject();
-  }, [projectId]);
+    if(!projectId) return;
+    setLoading(true); setError("");
+    const docRef = doc(db, 'projects', projectId);
+    // Real-time listener so updates/comments/reactions stream live
+    const unsub = onSnapshot(docRef, (snap)=>{
+      if(!snap.exists()) { setError('Project not found.'); setProject(null); setLoading(false); return; }
+      const raw:any = snap.data();
+      if(!Array.isArray(raw.updates)) raw.updates = [];
+      setProject(raw);
+      setProjectCurrency(raw.currency || "");
+      setLoading(false);
+    }, (err)=>{ setError(err.message || 'Error loading project.'); setLoading(false); });
+    return ()=> unsub();
+  },[projectId]);
   // IMPORTANT: All hooks (useMemo, etc.) must run on every render to preserve order.
   // Moved early returns BELOW hook declarations to fix hook order warning.
   // SidebarSearchTags, filtering, editing & reactions moved to ProjectUpdatesTab
@@ -95,7 +87,33 @@ export default function ProjectDetail() {
   if (!project) return <PageShell title={<span>Project</span>}><div className="text-sm text-gray-500">Project not found.</div></PageShell>;
 
   return (
-    <PageShell title={<span>{project.name}</span>} contentClassName="p-6">
+    <PageShell
+      title={<span>{project.name}</span>}
+      headerRight={(
+        <div className="flex items-center gap-3">
+          {project.projectId && (
+            <span className="inline-block text-xs font-mono bg-white/10 text-white px-2 py-1 rounded border border-white/20 tracking-wide md:text-sm md:scale-110 origin-left">
+              {project.projectId}
+            </span>
+          )}
+          {isProjectCreator && (
+            <button
+              type="button"
+              onClick={()=> setEditMode(m=>!m)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition ${editMode? 'bg-brand-main text-white border-brand-main shadow-inner':'bg-white/10 text-white border-white/30 hover:bg-white/20'}`}
+              aria-pressed={editMode}
+              aria-label="Toggle edit mode"
+            >
+              <span>Edit</span>
+              <span className={`inline-flex items-center h-4 w-8 rounded-full transition ${editMode? 'bg-brand-accent/80':'bg-white/30'}`}>
+                <span className={`h-4 w-4 rounded-full bg-white shadow transform transition ${editMode? 'translate-x-4':'translate-x-0'}`}></span>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+      contentClassName="p-6"
+    >
       <div className="flex flex-col md:flex-row gap-6">
         {/* Left vertical tabs */}
         <nav className="md:w-56 flex md:flex-col md:items-stretch gap-2 overflow-x-auto md:overflow-visible pb-2 md:pb-0 border-b md:border-b-0 md:border-r border-brand-main/10">
@@ -118,6 +136,7 @@ export default function ProjectDetail() {
                 setProject={setProject}
                 isProjectCreator={isProjectCreator}
                 currentUser={auth?.currentUser}
+                allowEdit={editMode}
               />
             )}
             {activeTab === 'plan' && (
@@ -127,12 +146,13 @@ export default function ProjectDetail() {
                   projectId={projectId}
                   plan={project?.plan}
                   isProjectCreator={isProjectCreator}
+                  allowEdit={editMode}
                   onUpdated={(plan)=> setProject((p:any)=> ({ ...p, plan }))}
                 />
               </div>
             )}
             {activeTab === "updates" && (
-              <ProjectUpdatesTab project={project} setProject={setProject} projectId={projectId} currentUser={auth?.currentUser} />
+              <ProjectUpdatesTab project={project} setProject={setProject} projectId={projectId} currentUser={auth?.currentUser} allowEdit={editMode} />
             )}
             {activeTab === "finance" && (
               <ProjectFinanceTab
@@ -143,6 +163,7 @@ export default function ProjectDetail() {
                 currencySymbol={currencySymbol}
                 financeTransactions={financeTransactions}
                 setFinanceTransactions={setFinanceTransactions}
+                allowEdit={editMode}
               />
             )}
             {activeTab === 'team' && (
@@ -156,6 +177,7 @@ export default function ProjectDetail() {
                 setProjectCurrency={setProjectCurrency}
                 setProject={setProject}
                 currencySymbol={currencySymbol}
+                allowEdit={editMode}
               />
             )}
         </div>
