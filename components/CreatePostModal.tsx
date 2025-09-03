@@ -1,9 +1,11 @@
+"use client";
+
 import { useState } from "react";
 import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 // Correct relative path to firebase utilities (components and src are siblings)
 import { storage, db } from "../src/lib/firebase";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc } from "firebase/firestore";
 
 // Helper for resumable upload with progress
 function uploadBytesResumableWithProgress(storageRef: any, file: File, onProgress: (percent: number) => void): Promise<string> {
@@ -26,11 +28,15 @@ function uploadBytesResumableWithProgress(storageRef: any, file: File, onProgres
 interface CreatePostModalProps {
   open: boolean;
   onClose: () => void;
-  individualId: string;
+  individualId: string; // external code id
+  individualDocId: string; // Firestore doc id
+  existingUpdates?: any[];
+  existingFeed?: any[];
+  existingProfilePosts?: any[];
   onPostCreated: (newUpdate: any) => void;
 }
 
-export default function CreatePostModal({ open, onClose, individualId, onPostCreated }: CreatePostModalProps) {
+export default function CreatePostModal({ open, onClose, individualId, individualDocId, existingUpdates = [], existingFeed = [], existingProfilePosts = [], onPostCreated }: CreatePostModalProps) {
   const [postText, setPostText] = useState("");
   const [postTitle, setPostTitle] = useState("");
   const [postTags, setPostTags] = useState<string>("");
@@ -68,12 +74,11 @@ export default function CreatePostModal({ open, onClose, individualId, onPostCre
                 imageUrls.push(url);
               }
               // Add to updates array in Firestore
-              const q = query(collection(db, "individuals"), where("individualId", "==", individualId));
-              const snap = await getDocs(q);
-              if (snap.empty) throw new Error("Profile not found.");
-              const docRef = doc(db, "individuals", snap.docs[0].id);
-              const prevUpdates = Array.isArray(snap.docs[0].data().updates) ? snap.docs[0].data().updates : [];
+              if(!individualDocId) throw new Error("Missing profile document id.");
+              const docRef = doc(db, "individuals", individualDocId);
+              const prevUpdates = Array.isArray(existingUpdates) ? existingUpdates : [];
               const newUpdate = {
+                id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
                 text: postText,
                 title: postTitle,
                 images: imageUrls,
@@ -84,8 +89,15 @@ export default function CreatePostModal({ open, onClose, individualId, onPostCre
                 reactions: { pray: 0, love: 0 },
                 comments: [],
               };
-              await updateDoc(docRef, { updates: [newUpdate, ...prevUpdates] });
+              const updatedUpdates = [newUpdate, ...prevUpdates];
+              const feedEntry = { type: 'update', ...newUpdate };
+              const updatedFeed = [feedEntry, ...existingFeed];
+              const newProfilePost = { type:'update', showInUpdatesFeed:true, ...newUpdate };
+              const updatedProfilePosts = [newProfilePost, ...(Array.isArray(existingProfilePosts)? existingProfilePosts: [])];
               onPostCreated(newUpdate);
+              // Sanitize undefined values
+              const sanitize = (v:any):any => Array.isArray(v)? v.map(sanitize): (v && typeof v==='object'? Object.fromEntries(Object.entries(v).filter(([_,val])=> val!==undefined).map(([k,val])=> [k,sanitize(val)])): v);
+              await updateDoc(docRef, { updates: updatedUpdates.map(sanitize), feed: updatedFeed.map(sanitize), profilePosts: updatedProfilePosts.map(sanitize) });
               onClose();
               setPostText("");
               setPostTitle("");
