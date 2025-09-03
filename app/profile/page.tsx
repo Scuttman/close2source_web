@@ -23,6 +23,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("id") || "";
+  const returnTo = searchParams.get('return');
 
   // If ?id=CODE is present, show project profile for that code
   useEffect(() => {
@@ -87,6 +88,12 @@ export default function ProfilePage() {
       });
       await updateProfile(user, { displayName: profile.name, photoURL: profile.photoURL });
       setSuccess("Profile updated successfully.");
+      if(returnTo){
+        // Small delay so user sees success flash
+        setTimeout(()=> {
+          try { router.push(returnTo); } catch { /* ignore */ }
+        }, 600);
+      }
     } catch (err: any) {
       setError(err.message);
     }

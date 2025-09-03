@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, setDoc } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 import { db } from '../src/lib/firebase';
@@ -17,6 +17,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
   // Form state
   const [newTxType, setNewTxType] = useState<'income' | 'expense'>('expense');
   const [newTxCategory, setNewTxCategory] = useState('');
+  const [newTxManualId, setNewTxManualId] = useState('');
   const [newTxAmount, setNewTxAmount] = useState('');
   const [newTxNote, setNewTxNote] = useState('');
   const [newTxDate, setNewTxDate] = useState(()=> new Date().toISOString().slice(0,10));
@@ -66,6 +67,11 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
       const amount = parseFloat(newTxAmount);
       if(isNaN(amount) || amount <= 0) throw new Error('Amount must be > 0');
       const category = newTxCategory.trim().toLowerCase() || 'uncategorised';
+      const manualIdRaw = newTxManualId.trim();
+      if(manualIdRaw){
+        const exists = transactions.some(t=> (t.manualId||'').toLowerCase() === manualIdRaw.toLowerCase());
+        if(exists) throw new Error('Manual ID already used');
+      }
       const txData: any = {
         type: newTxType,
         category,
@@ -76,6 +82,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
         createdAt: new Date().toISOString(),
         createdBy: user.uid,
       };
+      if(manualIdRaw) txData.manualId = manualIdRaw;
       if(newTxReceipts && newTxReceipts.length){
         setUploadingReceipts(true);
         const storage = getStorage();
@@ -91,9 +98,12 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
         txData.receipts = uploaded;
         setUploadingReceipts(false);
       }
-      await addDoc(collection(db,'projects', projectId, 'financeTransactions'), txData);
+      const colRef = collection(db,'projects', projectId, 'financeTransactions');
+      const docRef = await addDoc(colRef, txData);
+      // Persist the id field inside the document for redundancy / export convenience
+      try { await setDoc(docRef, { id: docRef.id }, { merge: true }); } catch {/* ignore */}
       setTransactions(prev=> {
-        const list = [{ id: Math.random().toString(36).slice(2), ...txData }, ...prev];
+        const list = [{ id: docRef.id, ...txData }, ...prev.filter(t=> t.id !== docRef.id)];
         return list.sort((a:any,b:any)=>{
           const ad = (a.transactionDate || (a.createdAt? String(a.createdAt).slice(0,10):'')) as string;
           const bd = (b.transactionDate || (b.createdAt? String(b.createdAt).slice(0,10):'')) as string;
@@ -103,7 +113,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
           return bd.localeCompare(ad);
         });
       });
-      setNewTxAmount(''); setNewTxCategory(''); setNewTxNote(''); setNewTxCompany(''); setNewTxReceipts(null); setNewTxDate(new Date().toISOString().slice(0,10));
+  setNewTxAmount(''); setNewTxCategory(''); setNewTxNote(''); setNewTxCompany(''); setNewTxReceipts(null); setNewTxDate(new Date().toISOString().slice(0,10)); setNewTxManualId('');
     } catch(e:any){ alert(e.message || 'Failed to add transaction'); }
     finally { setAddingTx(false); }
   }
@@ -112,7 +122,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
     <div className="space-y-6">
       <div>
         <h3 className="text-base font-semibold text-brand-main mb-2">Add Transaction</h3>
-        <form onSubmit={e=>{e.preventDefault(); addTransaction();}} className="grid sm:grid-cols-6 gap-3 text-sm items-end">
+  <form onSubmit={e=>{e.preventDefault(); addTransaction();}} className="grid sm:grid-cols-6 gap-3 text-sm items-end">
           <div className="sm:col-span-2">
             <label className="block text-[11px] font-semibold uppercase mb-1 text-brand-main">Type</label>
             <select value={newTxType} onChange={e=> setNewTxType(e.target.value as any)} className="w-full border rounded px-2 py-2">
@@ -127,6 +137,10 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
             <div className="sm:col-span-2">
               <label className="block text-[11px] font-semibold uppercase mb-1 text-brand-main">Category</label>
               <input value={newTxCategory} onChange={e=>setNewTxCategory(e.target.value)} placeholder="e.g. materials" className="w-full border rounded px-2 py-2" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-semibold uppercase mb-1 text-brand-main">Manual ID (optional)</label>
+              <input value={newTxManualId} onChange={e=> setNewTxManualId(e.target.value)} placeholder="Reference" className="w-full border rounded px-2 py-2" maxLength={40} />
             </div>
             <div className="sm:col-span-1">
               <label className="block text-[11px] font-semibold uppercase mb-1 text-brand-main">Amount</label>
@@ -161,6 +175,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
             <li key={tx.id} className="py-2 flex flex-col sm:flex-row sm:items-center sm:gap-4">
               <div className="flex-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${tx.type==='income' ? 'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{tx.type}</span>
+                {tx.manualId && <span className="px-2 py-0.5 rounded bg-brand-main/10 text-brand-main text-[10px] font-medium">#{tx.manualId}</span>}
                 <span className="capitalize font-medium">{tx.category}</span>
                 {tx.company && <span className="text-gray-700 text-xs italic">{tx.company}</span>}
                 {tx.note && <span className="text-gray-500 truncate max-w-[200px]">{tx.note}</span>}

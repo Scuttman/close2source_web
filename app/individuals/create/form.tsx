@@ -39,8 +39,9 @@ export default function CreateIndividualProfileForm() {
         createdAt: serverTimestamp(),
         individualId: generatedId,
         ownerUid: user.uid,
-        updates: [],
-        prayerRequests: [],
+  feed: [],
+  updates: [], // legacy arrays kept for backward compatibility
+  prayerRequests: [],
         financeSummary: [],
       });
       // Log credit spend

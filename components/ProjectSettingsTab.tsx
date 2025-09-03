@@ -70,8 +70,42 @@ export default function ProjectSettingsTab({
 
   useEffect(()=>{ setAccessSettings(normalizeAccess(project?.accessSettings)); },[project?.accessSettings]);
 
-  function toggleView(tab:string, role:AccessLevel){ if(!allowEdit) return; setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], view: s[tab].view.includes(role)? s[tab].view.filter(r=>r!==role): [...s[tab].view, role].sort((a,b)=> ROLES.indexOf(a)-ROLES.indexOf(b)) } })); }
-  function toggleEdit(tab:string, role:AccessLevel){ if(!allowEdit || role==='public') return; setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], edit: s[tab].edit.includes(role)? s[tab].edit.filter(r=>r!==role): [...s[tab].edit, role].sort((a,b)=> ROLES.indexOf(a)-ROLES.indexOf(b)) } })); }
+  function toggleView(tab:string, role:AccessLevel){
+    if(!allowEdit) return;
+    setAccessSettings(s=> {
+      const cur = s[tab];
+      const has = cur.view.includes(role);
+      let newView: AccessLevel[];
+      let newEdit = [...cur.edit];
+      if(has){
+        // Removing view: also remove from edit if present
+        newView = cur.view.filter(r=> r!==role);
+        if(newEdit.includes(role)) newEdit = newEdit.filter(r=> r!==role);
+      } else {
+        // Adding view
+        newView = [...cur.view, role].sort((a,b)=> ROLES.indexOf(a)-ROLES.indexOf(b));
+      }
+      return { ...s, [tab]: { ...cur, view: newView, edit: newEdit } };
+    });
+  }
+  function toggleEdit(tab:string, role:AccessLevel){
+    if(!allowEdit || role==='public') return;
+    setAccessSettings(s=> {
+      const cur = s[tab];
+      const has = cur.edit.includes(role);
+      let newEdit: AccessLevel[];
+      let newView = [...cur.view];
+      if(has){
+        // Removing edit: leave view intact
+        newEdit = cur.edit.filter(r=> r!==role);
+      } else {
+        // Adding edit: ensure view includes role
+        if(!newView.includes(role)) newView = [...newView, role].sort((a,b)=> ROLES.indexOf(a)-ROLES.indexOf(b));
+        newEdit = [...cur.edit, role].sort((a,b)=> ROLES.indexOf(a)-ROLES.indexOf(b));
+      }
+      return { ...s, [tab]: { ...cur, view: newView, edit: newEdit } };
+    });
+  }
   function sanitizeAccess(inSet:AccessSettings): AccessSettings { const copy:AccessSettings = {} as any; Object.entries(inSet).forEach(([k,v])=>{ const view = Array.from(new Set(v.view)).filter(r=>ROLES.includes(r)); const edit = Array.from(new Set(v.edit)).filter(r=>ROLES.includes(r) && view.includes(r)); copy[k] = { view, edit }; }); return copy; }
   async function savePermissions(){
     if(!allowEdit) return;

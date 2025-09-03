@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../../src/lib/firebase";
 import { getAuth } from "firebase/auth";
@@ -23,6 +23,16 @@ export default function ProjectDetail() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("home");
   const [editMode, setEditMode] = useState(false); // global edit toggle
+  const searchParams = useSearchParams();
+  // Sync tab from query (e.g., ?tab=team) once on mount / change
+  useEffect(()=> {
+    const qp = searchParams?.get('tab');
+    if(qp){
+      const validIds = ['home','plan','updates','finance','team','settings'];
+      if(validIds.includes(qp)) setActiveTab(qp);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   // Updates tab state moved into ProjectUpdatesTab component
   // Settings tab state moved to ProjectSettingsTab
   // Location editing state
@@ -57,14 +67,47 @@ export default function ProjectDetail() {
   // (Early returns moved below finance hooks to preserve hook order.)
   const currentUser = auth?.currentUser;
   const isProjectCreator = !!(currentUser && project?.createdBy && [currentUser.displayName, currentUser.email, currentUser.uid].includes(project.createdBy));
-  const tabs: { id: string; label: string; icon: any }[] = [
+  // Resolve viewer role for permissions
+  type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
+  const accessSettings = project?.accessSettings || {};
+  const representatives: string[] = Array.isArray(project?.representatives)? project.representatives: [];
+  const supporters: string[] = Array.isArray(project?.supporters)? project.supporters: [];
+  let viewerRole: AccessLevel = 'public';
+  if(isProjectCreator) viewerRole = 'owner';
+  else if(currentUser){
+    const ident = [currentUser.uid, currentUser.email, currentUser.displayName].filter(Boolean);
+    if(representatives.some(r=> ident.includes(r))) viewerRole = 'representative';
+    else if(supporters.some(s=> ident.includes(s))) viewerRole = 'supporter';
+  }
+  const DEFAULT_VIEW: Record<string, AccessLevel[]> = {
+    overview: ['public','supporter','representative','owner'],
+    plan: ['supporter','representative','owner'],
+    updates: ['supporter','representative','owner'],
+    finance: ['representative','owner'],
+    team: ['supporter','representative','owner'],
+    settings: ['owner']
+  };
+  function canView(tabId:string): boolean {
+    const cfg = accessSettings?.[tabId];
+    const allowed: AccessLevel[] = Array.isArray(cfg?.view)? cfg.view : (typeof cfg==='string'? DEFAULT_VIEW[tabId] : DEFAULT_VIEW[tabId]);
+    return allowed? allowed.includes(viewerRole) : true;
+  }
+  const rawTabs: { id: string; label: string; icon: any }[] = [
     { id: 'home', label: 'Overview', icon: InformationCircleIcon },
     { id: 'plan', label: 'Plan', icon: ClipboardDocumentCheckIcon },
     { id: 'updates', label: 'Updates', icon: ArrowPathIcon },
-  { id: 'finance', label: 'Finance', icon: CurrencyDollarIcon },
-  { id: 'team', label: 'Team', icon: UserGroupIcon },
-  ...(isProjectCreator ? [{ id: 'settings', label: 'Settings', icon: Cog6ToothIcon }] : []),
+    { id: 'finance', label: 'Finance', icon: CurrencyDollarIcon },
+    { id: 'team', label: 'Team', icon: UserGroupIcon },
+    ...(isProjectCreator ? [{ id: 'settings', label: 'Settings', icon: Cog6ToothIcon }] : []),
   ];
+  const tabs = rawTabs.filter(t=> canView(t.id));
+  // If current tab becomes hidden by permissions, fallback to first visible
+  useEffect(()=> {
+    if(!tabs.find(t=> t.id===activeTab)) {
+      setActiveTab(tabs.length? tabs[0].id : 'home');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(tabs.map(t=> t.id)), activeTab]);
   if(activeTab === 'settings' && !isProjectCreator) { setActiveTab('home'); }
 
   // Load finance transactions only for creator when finance tab active (or project loads)
@@ -139,7 +182,7 @@ export default function ProjectDetail() {
                 allowEdit={editMode}
               />
             )}
-            {activeTab === 'plan' && (
+            {activeTab === 'plan' && canView('plan') && (
               <div className="bg-white rounded-xl border border-brand-main/10 p-6 shadow-sm text-brand-dark">
                 <h2 className="text-lg font-semibold text-brand-main mb-4">Project Plan</h2>
                 <ProjectPlanTab
@@ -148,13 +191,23 @@ export default function ProjectDetail() {
                   isProjectCreator={isProjectCreator}
                   allowEdit={editMode}
                   onUpdated={(plan)=> setProject((p:any)=> ({ ...p, plan }))}
+                  projectCurrency={projectCurrency}
+                  currencySymbol={currencySymbol}
+                  teamMembers={(Array.isArray(project?.team)? project.team: []).map((m:any)=> ({
+                    id: m.id,
+                    name: m.name || (m.email? m.email.split('@')[0] : m.id),
+                    role: m.role,
+                    email: m.email,
+                    type: m.type,
+                    photoURL: m.photoURL || m.image || m.avatar
+                  }))}
                 />
               </div>
             )}
-            {activeTab === "updates" && (
+            {activeTab === "updates" && canView('updates') && (
               <ProjectUpdatesTab project={project} setProject={setProject} projectId={projectId} currentUser={auth?.currentUser} allowEdit={editMode} />
             )}
-            {activeTab === "finance" && (
+            {activeTab === "finance" && canView('finance') && (
               <ProjectFinanceTab
                 projectId={projectId}
                 project={project}
@@ -166,8 +219,14 @@ export default function ProjectDetail() {
                 allowEdit={editMode}
               />
             )}
-            {activeTab === 'team' && (
-              <ProjectTeamTab project={project} />
+            {activeTab === 'team' && canView('team') && (
+              <ProjectTeamTab
+                project={project}
+                projectId={projectId}
+                isProjectCreator={isProjectCreator}
+                allowEdit={editMode}
+                setProject={setProject}
+              />
             )}
             {isProjectCreator && activeTab === 'settings' && (
               <ProjectSettingsTab
