@@ -1,0 +1,110 @@
+{
+  "status": "success",
+  "result": {
+    "indexes": [
+      {
+        "collectionGroup": "projectAccounts",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "archived",
+            "order": "ASCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      },
+      {
+        "collectionGroup": "projects",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "publicVisible",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "nameLower",
+            "order": "ASCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      },
+      {
+        "collectionGroup": "projectTransactions",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "order": "DESCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      },
+      {
+        "collectionGroup": "projectTransactions",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "primaryAccountId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "order": "DESCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      },
+      {
+        "collectionGroup": "projectTransactions",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "secondaryAccountId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "order": "DESCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      },
+      {
+        "collectionGroup": "projectTransactions",
+        "queryScope": "COLLECTION",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "type",
+            "order": "ASCENDING"
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "order": "DESCENDING"
+          }
+        ],
+        "density": "SPARSE_ALL"
+      }
+    ],
+    "fieldOverrides": []
+  }
+}

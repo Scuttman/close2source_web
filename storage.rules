@@ -1,11 +1,137 @@
 rules_version = '2';
-
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
+    // User avatars
+    match /users/{userId}/avatar/{fileName=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    function isSignedIn() { return request.auth != null; }
+
+    // Profile pictures
+    match /profile-pics/{userId}/{fileName=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Project update images / attachments
+    match /projects/{projectId}/updates/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Project finance receipts
+    match /projects/{projectId}/receipts/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    
+    // Allow all files (any type) under projects/{projectId}/...
+    match /projects/{projectId}/{allPaths=**} {
+      allow read: if true;                    // or restrict as needed
+      allow write: if request.auth != null;   // requires signed-in user
+    }
+
+    // Correct (recommended) per‑individual updates path:
+    match /individuals/{individualId}/updates/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // TEMP: Legacy flat path you are currently writing to (individuals/updates/<uid>/...)
+    // Remove once code is fixed to use individuals/{individualId}/updates/...
+    match /individuals/updates/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /individuals/{individualId}/fundingNeeds/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /individuals/{individualId}/prayer/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /individuals/{individualId}/prayerRequests/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Helpers using Firestore to authorize against org/project/profile membership
+    function isSuperAdmin() { return request.auth != null && request.auth.token.role == 'SuperAdmin'; }
+    function orgOwnerOrTeam(orgId) {
+      return request.auth != null && (
+        firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid ||
+        (
+          firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.teamUids != null &&
+          request.auth.uid in firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.teamUids
+        )
+      );
+    }
+    function canAccessProfile(profileId) {
+      return request.auth != null && (
+        // profiles/{id}
+        firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerUid == request.auth.uid ||
+        firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.createdBy == request.auth.uid ||
+        (
+          firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids != null &&
+          request.auth.uid in firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids
+        ) ||
+        // fallback via projects/{profileId}
+        (
+          firestore.exists(/databases/$(database)/documents/projects/$(profileId)) && (
+            firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.createdBy == request.auth.uid ||
+            (
+              firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.owner.uid == request.auth.uid
+            ) ||
+            (
+              firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids != null &&
+              request.auth.uid in firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids
+            )
+          )
+        ) ||
+        // organizations/{profileId}
+        (
+          firestore.exists(/databases/$(database)/documents/organizations/$(profileId)) && (
+            firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.ownerUid == request.auth.uid ||
+            (
+              firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids != null &&
+              request.auth.uid in firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids
+            )
+          )
+        ) ||
+        // explicit membership doc
+        firestore.exists(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid))
+      );
+    }
+
+    // Organization assets (any nested path under organizations/{orgId}/...)
+    match /organizations/{orgId}/{allPaths=**} {
+      allow read: if true; // public logo/media
+      // Writes: Owner, SuperAdmin, or team member; restrict MIME: images anywhere; arbitrary files only under updates/docs
+      allow write: if (isSuperAdmin() || orgOwnerOrTeam(orgId)) && (
+                     request.resource.contentType.matches('image/.*') ||
+                     request.resource.name.matches('organizations/' + orgId + '/updates/docs/.*')
+                   );
+    }
+
+    // Profile-scoped finance receipts under profile-based path
+    match /profiles/{profileId}/profileTransactions/{txId}/receipts/{fileName=**} {
+      allow read: if request.auth != null && canAccessProfile(profileId);
+      allow write: if request.auth != null && canAccessProfile(profileId) && (
+        request.resource.contentType.matches('image/.*') ||
+        request.resource.contentType == 'application/pdf'
+      );
+    }
+
+    // Fallback deny
+    match /{path=**} {
       allow read, write: if false;
     }
   }

@@ -1,9 +1,322 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    /* ---------- Utility Functions ---------- */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'SuperAdmin';
+    }
+
+    // Resolve org ownership by Firestore doc id (orgId here = document id)
+    function isOrgOwner(orgId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid;
+    }
+
+    function emailsMatch(a, b) {
+      return a != null && b != null && a.lower() == b.lower();
+    }
+
+    /* ---------- Config (public read, restricted write) ---------- */
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    /* ---------- Users & Transactions ---------- */
+    match /users/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      // Allow any signed-in user to read basic user profiles (for display names/avatars)
+      allow read: if isSignedIn();
+      // Only the owner can update their own user doc
+      allow update: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId}/transactions/{txId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    /* ---------- Legacy /profiles ---------- */
+    match /profiles/{code} {
+      allow read: if true;
+      allow update: if isSignedIn();
+    }
+
+    /* ---------- Individuals (public view, owner controlled) ---------- */
+    match /individuals/updates/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /individuals/{individualId} {
+      allow create: if isSignedIn();
+      allow read: if true;
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerUid;
+    }
+
+    /* ---------- Projects (broad: tighten later if needed) ---------- */
+    match /projects/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    /* ---------- Organizations ---------- */
+    match /organizations/{orgId} {
+      allow create: if isSignedIn();
+      allow read: if true;
+      // Updates can be made by Owner, SuperAdmin, or members of teamUids
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.ownerUid ||
+        (
+          resource.data.teamUids != null &&
+          request.auth.uid in resource.data.teamUids
+        )
+      );
+      // Deletion restricted to Owner or SuperAdmin
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() || request.auth.uid == resource.data.ownerUid
+      );
+    }
+
+    /* ---------- Organization Invitations (orgInvites) ----------
+       Document shape (expected):
+       {
+         orgDbId, orgId, orgName, email,
+         invitedByUid, createdAt, status: 'pending' | 'accepted',
+         role
+       }
+    */
+    match /orgInvites/{inviteId} {
+      // Create: only org owner (status must start as 'pending')
+      allow create: if isSignedIn()
+        && request.resource.data.orgDbId is string
+        && request.resource.data.email is string
+        && request.resource.data.status == 'pending'
+        && isOrgOwner(request.resource.data.orgDbId);
+
+      // Public GET allowed only while still pending (unauthenticated users can load invite landing)
+      // Authenticated users can also read if owner, super admin, or the invited email.
+      allow get: if (
+          resource.data.status == 'pending'
+        ) || (
+          isSignedIn() && (
+            isSuperAdmin() ||
+            isOrgOwner(resource.data.orgDbId) ||
+            (request.auth.token.email != null && emailsMatch(resource.data.email, request.auth.token.email))
+          )
+        );
+        
+             // Listing restricted to owners or super admins
+      allow list: if isSignedIn() && (
+        isSuperAdmin() || isOrgOwner(resource.data.orgDbId)
+      );
+
+       // Accept: pending -> accepted (authenticated + owner or invited email)
+      allow update: if isSignedIn()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.orgDbId == resource.data.orgDbId
+        && request.resource.data.orgId == resource.data.orgId
+        && request.resource.data.orgName == resource.data.orgName
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.invitedByUid == resource.data.invitedByUid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.keys().hasOnly([
+            'orgDbId','orgId','orgName','email','invitedByUid','createdAt','status','role'
+          ])
+        && (
+          isOrgOwner(resource.data.orgDbId) ||
+          (request.auth.token.email != null && emailsMatch(resource.data.email, request.auth.token.email))
+        );
+
+      // Cancel (delete) by org owner or super admin
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() || isOrgOwner(resource.data.orgDbId)
+      );
+    }
+
+     /* ---------- Updates (legacy global) ---------- */
+    match /updates/{id} {
+      allow read: if true;
+      allow create: if isSignedIn();
+    }
+
+    /* ---------- Finance (generic auth required) ---------- */
+    match /finance/{id} {
+      allow read, create: if isSignedIn();
+    }
+
+    /* ---------- NEW Nested Profile Finance Structure ---------- */
+    function validCurrency(c) { return c is string && c.size() >= 3 && c.size() <= 4; }
+    function validTxType(t) { return t in ['income','expense','transfer']; }
+
+    // For now, "linked" means the user is the owner or in memberUids on the profile doc.
+    // This is a permissive placeholder definition during migration.
+    function canAccessProfile(profileId) {
+      return isSignedIn() && (
+        // New schema: direct ownerUid or createdBy
+        get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerUid == request.auth.uid ||
+        get(/databases/$(database)/documents/profiles/$(profileId)).data.createdBy == request.auth.uid ||
+        // Legacy schema: owner as object with uid
+        get(/databases/$(database)/documents/profiles/$(profileId)).data.owner.uid == request.auth.uid ||
+        // Linked via array fields
+        (
+          get(/databases/$(database)/documents/profiles/$(profileId)).data.memberUids != null &&
+          request.auth.uid in get(/databases/$(database)/documents/profiles/$(profileId)).data.memberUids
+        ) ||
+        (
+          get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids != null &&
+          request.auth.uid in get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids
+        ) ||
+        // Fallback during migration: membership inferred from projects/{profileId}
+        (
+          exists(/databases/$(database)/documents/projects/$(profileId)) && (
+            get(/databases/$(database)/documents/projects/$(profileId)).data.createdBy == request.auth.uid ||
+            (
+              get(/databases/$(database)/documents/projects/$(profileId)).data.owner.uid == request.auth.uid
+            ) ||
+            (
+              get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids != null &&
+              request.auth.uid in get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids
+            )
+          )
+        ) ||
+        // Also allow when profileId corresponds to an organization document
+        (
+          exists(/databases/$(database)/documents/organizations/$(profileId)) && (
+            get(/databases/$(database)/documents/organizations/$(profileId)).data.ownerUid == request.auth.uid ||
+            (
+              get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids != null &&
+              request.auth.uid in get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids
+            )
+          )
+        ) ||
+        // Explicit membership document exists
+        exists(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid))
+      );
+    }
+
+    function hasRole(profileId, role) {
+      // Owner is implicit via profile.ownerUid; others via members/{uid}.roles: string[]
+      return isSignedIn() && (
+        (
+          role == 'Owner' &&
+          (
+            get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerUid == request.auth.uid ||
+            get(/databases/$(database)/documents/profiles/$(profileId)).data.createdBy == request.auth.uid ||
+            // Legacy owner field as object with uid
+            get(/databases/$(database)/documents/profiles/$(profileId)).data.owner.uid == request.auth.uid
+          )
+        ) || (
+          role != 'Owner' &&
+          exists(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid)) &&
+          (
+            (
+              get(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid)).data.roles != null &&
+              role in get(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid)).data.roles
+            ) || (
+              // Also support single 'role' string shape
+              get(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid)).data.role != null &&
+              get(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid)).data.role == role
+            )
+          )
+        )
+      );
+    }
+
+    match /profiles/{profileId} {
+      allow read: if true; // profile reads public for now
+      allow create, update: if isSignedIn(); // relaxed while migrating
+
+      match /accounts/{accountId} {
+        // Anyone linked to a profile can CRUD accounts for now
+        allow read, create, update, delete: if canAccessProfile(profileId);
+      }
+
+      match /profileTransactions/{txId} {
+        // Anyone linked to a profile can CRUD transactions for now
+        allow read, create, update, delete: if canAccessProfile(profileId);
+
+        match /receipts/{receiptId} {
+          allow read, create, update, delete: if canAccessProfile(profileId);
+        }
+      }
+
+      // Profile-scoped settings (e.g., finance)
+      match /settings/{settingsId} {
+        // Allow linked users to read and manage profile settings
+        allow read, list: if canAccessProfile(profileId);
+        allow create, update, delete: if canAccessProfile(profileId);
+      }
+
+      // Members subcollection: roles per user on this profile
+      match /members/{uid} {
+        // Any linked user can read role assignments
+        allow read, list: if canAccessProfile(profileId);
+        // Allow self-create with default 'User' role, supporting legacy 'role' string or 'roles' list
+        allow create: if (
+          request.auth != null && request.auth.uid == uid && (
+            (
+              request.resource.data.roles is list &&
+              request.resource.data.roles.size() == 1 &&
+              request.resource.data.roles[0] in ['User','Member']
+            ) || (
+              request.resource.data.role is string &&
+              request.resource.data.role in ['User','Member']
+            )
+          )
+        ) || hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin');
+        // Allow self to update their own doc but not escalate privileges; Owner/Admin can update/delete any
+        allow update: if (
+          hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin')
+        ) || (
+          request.auth != null && request.auth.uid == uid && (
+            // If role fields are unchanged, allow update of other fields
+            (
+              request.resource.data.role == resource.data.role &&
+              request.resource.data.roles == resource.data.roles
+            ) ||
+            // Otherwise, allow only baseline role values for self
+            (
+              (
+                request.resource.data.role is string &&
+                request.resource.data.role in ['User','Member']
+              ) ||
+              (
+                request.resource.data.roles is list &&
+                request.resource.data.roles.size() == 1 &&
+                request.resource.data.roles[0] in ['User','Member']
+              )
+            )
+          )
+        );
+        allow delete: if hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin') || (request.auth != null && request.auth.uid == uid);
+      }
+
+      // Budget categories for this profile
+      match /budgetCategories/{catId} {
+        // Linked users can read (for forms and summaries)
+        allow read, list: if canAccessProfile(profileId);
+        // Writes: any linked user can create their own; creator can edit/delete their own; Owner/Admin can edit/delete any
+        allow create: if canAccessProfile(profileId)
+          && request.resource.data.createdBy == request.auth.uid
+          && validTxType(request.resource.data.type)
+          && validCurrency(request.resource.data.currency);
+        allow update: if canAccessProfile(profileId) && (
+            // Creator can update their own doc, but cannot change createdBy
+            (resource.data.createdBy == request.auth.uid && request.resource.data.createdBy == resource.data.createdBy)
+            || hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin')
+          );
+        allow delete: if canAccessProfile(profileId) && (
+            resource.data.createdBy == request.auth.uid || hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin')
+          );
+      }
     }
   }
 }

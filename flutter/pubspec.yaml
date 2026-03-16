@@ -1,0 +1,53 @@
+name: close2source_mobile
+description: Companion mobile app for Close2Source platform.
+publish_to: 'none'
+version: 0.1.0+1
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Firebase core + services
+  firebase_core: ^2.20.0
+  firebase_auth: ^4.17.0
+  cloud_firestore: ^4.15.0
+  firebase_storage: ^11.6.0
+  firebase_messaging: ^14.7.0
+  # Downgraded to avoid http version conflict with flutterfire CLI tooling (not in pubspec now)
+  firebase_ui_auth: ^1.7.0
+  connectivity_plus: ^6.0.3
+  image_picker: ^1.1.1
+  image_cropper: ^8.0.2
+  file_picker: ^8.0.0
+  # Image compression / caching (optional early picks)
+  cached_network_image: ^3.3.1
+  flutter_image_compress: ^2.1.0
+  # State management (choose one later; using provider for simplicity now)
+  provider: ^6.0.5
+  # Date formatting
+  intl: ^0.20.2
+  rxdart: ^0.27.7
+  url_launcher: ^6.2.6
+  path_provider: ^2.1.3
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  http: ^1.2.0
+  crypto: ^3.0.3
+  image: ^4.1.7
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.2
+  share_plus: ^7.2.2
+  google_sign_in: ^6.2.1
+  googleapis: ^13.1.0
+  flutter_file_dialog: ^3.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/sitebg.jpg

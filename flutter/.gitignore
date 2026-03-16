@@ -1,0 +1,27 @@
+# Flutter / Dart / Platform build outputs
+build/
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.melos_tool
+# iOS
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Pods/
+ios/.symlinks/
+ios/DerivedData/
+ios/Runner.xcworkspace/
+# Android
+debug/
+android/.gradle/
+android/app/build/
+# Web (if enabled)
+web/.dart_tool/
+web/build/
+# VSCode
+.vscode/
+# Generated firebase options (tracked intentionally once created)
+# lib/firebase_options.dart
+# Local env files
+.env*

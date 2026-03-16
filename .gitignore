@@ -1,45 +1,69 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# Ignore environment variable files containing secrets
+.env
+.env.*
+.env.local
+
+# Dependencies
+node_modules/
+flutter/build/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+
+# Next.js build output
+.next/
+out/
+.next.bk/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+firestore-debug.log
+ui-debug.log
+firebase-debug.log*
+
+# OS / Editor
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
 .idea/
+.vscode/*
+!.vscode/extensions.json
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Coverage / reports
+coverage
+*.lcov
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
+# Additional env variants
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Symbolication related
-app.*.symbols
+# Build / dist outputs
+dist/
+build/
+tmp/
+*.swp
 
-# Obfuscation related
-app.*.map.json
+# Firebase
+.firebase/
+.firebaserc.local
+*-debug.log
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Flutter / Dart specific
+flutter/.dart_tool/
+flutter/.packages
+flutter/.pub-cache/
+flutter/.pub/
+flutter/pubspec.lock
+flutter/ios/Pods/
+flutter/ios/.symlinks/
+flutter/ios/Flutter/Flutter.framework
+flutter/ios/Flutter/Flutter.podspec
+flutter/android/.gradle
+flutter/android/captures/
+flutter/android/app/debug/
+flutter/android/app/profile/
+flutter/android/app/release/
+
+# Misc artifacts
+bfg.jar
