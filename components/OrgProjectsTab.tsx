@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import OrgProjectsMap from './OrgProjectsMap';
 import { db, storage } from '../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -18,9 +20,12 @@ function generateProjectId(){
 }
 
 export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProjectsTabProps){
+	const router = useRouter();
 	const [projects, setProjects] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showCreate, setShowCreate] = useState(false);
+	const [locationFilter, setLocationFilter] = useState<string|null>(null);
+	const [showModePicker, setShowModePicker] = useState(false);
 	const [name, setName] = useState('');
 	const [description, setDescription] = useState('');
 	// Cover photo immediate upload state
@@ -33,7 +38,14 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 
 	// Real-time subscription to projects linked to this org (using organizationId == org.orgId for consistency with ProjectOverview linkage)
 	useEffect(()=> {
-		if(!org?.orgId) return; setLoading(true);
+		if(!org?.orgId) return;
+		const cacheKey = `org_projects_${org.orgId}`;
+		const cached = sessionStorage.getItem(cacheKey);
+		if(cached) {
+			try { setProjects(JSON.parse(cached)); setLoading(false); } catch{}
+		} else {
+			setLoading(true);
+		}
 		const qy = query(collection(db,'projects'), where('organizationId','==', org.orgId));
 		const unsub = onSnapshot(qy, snap=> {
 			const rows = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
@@ -44,6 +56,7 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 				return (a.projectId||'').localeCompare(b.projectId||'');
 			});
 			setProjects(rows);
+			sessionStorage.setItem(cacheKey, JSON.stringify(rows));
 			setLoading(false);
 		}, ()=> setLoading(false));
 		return ()=> unsub();
@@ -151,6 +164,7 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 	}
 
 	return (
+		<>
 		<div className='flex flex-col gap-6'>
 			<div className='flex items-start justify-between gap-4'>
 				<div>
@@ -158,12 +172,61 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 					<p className='text-xs text-gray-500 mt-1'>Projects linked to this organization. Creating here will auto-link & store originating ownership.</p>
 				</div>
 				{isOwner && (
-					<button onClick={()=> setShowCreate(v=> !v)} className='px-3 py-2 rounded text-white text-xs font-semibold'
-						style={{ background:'var(--org-accent, #FF6A1A)', color:'var(--org-accent-text,#fff)' }}>
-						{showCreate? 'Cancel' : 'Register Project'}
+					<button
+						onClick={() => {
+							if (showCreate || showModePicker) {
+								setShowCreate(false); setShowModePicker(false);
+							} else {
+								setShowModePicker(true);
+							}
+						}}
+						className='px-3 py-2 rounded text-white text-xs font-semibold'
+						style={{ background:'var(--org-accent, #FF6A1A)', color:'var(--org-accent-text,#fff)' }}
+					>
+						{(showCreate || showModePicker) ? 'Cancel' : 'Register Project'}
 					</button>
 				)}
 			</div>
+
+			{/* Mode picker */}
+			{showModePicker && isOwner && (
+				<div className='bg-white border border-brand-main/10 rounded-xl p-5 shadow-sm'>
+					<p className='text-sm font-semibold mb-4' style={{ color:'var(--org-widget-title-color, var(--org-accent,#FF6A1A))' }}>How would you like to register your project?</p>
+					<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
+						{/* AI Chat */}
+						<button
+							type='button'
+							onClick={() => {
+								// Close mode picker
+								setShowModePicker(false);
+								// Navigate to AI registration page
+								router.push(`/projects/register-ai?orgId=${org?.orgId || org?.id}&orgName=${encodeURIComponent(org?.name || 'your organization')}`);
+							}}
+							className='group text-left border-2 border-orange-200 hover:border-orange-500 rounded-xl p-5 transition-colors bg-orange-50 hover:bg-orange-100'
+						>
+							<div className='flex items-center gap-2 mb-2'>
+								<svg xmlns='http://www.w3.org/2000/svg' className='w-5 h-5 text-orange-500' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='1.8'><path strokeLinecap='round' strokeLinejoin='round' d='M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z'/></svg>
+								<span className='text-sm font-bold text-orange-700'>AI-Guided Chat</span>
+							</div>
+							<p className='text-xs text-orange-700/80'>Let ChatGPT guide you through each section. It will ask questions, improve your writing for grammar &amp; fluency, and generate a polished profile ready to publish.</p>
+							<div className='mt-3 text-[11px] font-semibold text-orange-600 group-hover:underline'>Start AI chat →</div>
+						</button>
+						{/* Manual form */}
+						<button
+							type='button'
+							onClick={() => { setShowModePicker(false); setShowCreate(true); }}
+							className='group text-left border-2 border-gray-200 hover:border-brand-main/50 rounded-xl p-5 transition-colors bg-white hover:bg-brand-main/5'
+						>
+							<div className='flex items-center gap-2 mb-2'>
+								<svg xmlns='http://www.w3.org/2000/svg' className='w-5 h-5 text-gray-500' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='1.8'><path strokeLinecap='round' strokeLinejoin='round' d='M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z'/><path strokeLinecap='round' strokeLinejoin='round' d='M19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10'/></svg>
+								<span className='text-sm font-bold text-gray-700'>Manual Form</span>
+							</div>
+							<p className='text-xs text-gray-500'>Fill in the form fields yourself. Faster if you already have everything prepared.</p>
+							<div className='mt-3 text-[11px] font-semibold text-gray-500 group-hover:underline'>Open form →</div>
+						</button>
+					</div>
+				</div>
+			)}
 			{showCreate && isOwner && (
 				<div className='bg-white border border-brand-main/10 rounded-xl p-5 shadow-sm'>
 					<h3 className='text-sm font-semibold mb-3' style={{ color:'var(--org-widget-title-color, var(--org-accent,#FF6A1A))' }}>New Project</h3>
@@ -226,26 +289,111 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 				<div className='bg-white border border-brand-main/10 rounded-xl p-5 shadow-sm h-full flex flex-col'>
 					{loading && <div className='text-xs text-gray-500'>Loading projects...</div>}
 					{!loading && !projects.length && <div className='text-xs text-gray-500'>No projects yet.</div>}
-					{!loading && projects.length>0 && (
-						<div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'>
-							{projects.map(p=> (
-								<a key={p.id} href={`/projects/${p.projectId || p.id}`} className='group relative rounded-lg overflow-hidden border border-brand-main/10 bg-white hover:shadow-md transition flex flex-col'>
-									{p.coverPhotoUrl && <img src={p.coverPhotoUrl} alt={p.name} className='w-full h-40 object-cover' />}
-									<div className='p-3 flex-1 flex flex-col'>
-										<div className='text-sm font-semibold text-brand-dark mb-1 line-clamp-1'>{p.name}</div>
-										{p.description && <div className='text-[11px] text-gray-600 line-clamp-3 flex-1'>{p.description}</div>}
-										<div className='mt-2 flex items-center justify-between'>
-											<span className='inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-brand-main/10 text-brand-main'>{p.projectId}</span>
-											{p.createdAt?.seconds && <span className='text-[10px] text-gray-400'>{new Date(p.createdAt.seconds*1000).toLocaleDateString()}</span>}
-										</div>
-									</div>
-								</a>
-							))}
+					{!loading && projects.length>0 && (() => {
+						// Non-owners only see live + public projects
+						const visible = isOwner
+							? projects
+							: projects.filter(p => (p.status ?? 'live') === 'live' && (p.visibility ?? 'public') === 'public');
+						if (!visible.length) return <div className='text-xs text-gray-500'>No projects yet.</div>;
+					// Unique location names for filter chips
+					const locationNames = Array.from(new Set(
+						visible.map((p: any) => p.locationName).filter(Boolean)
+					)) as string[];
+					const hasMultipleLocations = locationNames.length > 1;
+					// Cards use filtered list; map always shows all visible pins
+					const displayed = locationFilter
+						? visible.filter((p: any) => p.locationName === locationFilter)
+						: visible;
+					return (
+					<div className='flex gap-4 items-start'>
+						{/* Project cards — 2 columns */}
+						<div className='flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-4 content-start'>
+						{displayed.map((p: any)=> {
+									const isDraft = (p.status ?? 'live') === 'draft';
+									const isLive = (p.status ?? 'live') === 'live';
+									const isPrivate = (p.visibility ?? 'public') === 'private';
+									const isPublic = (p.visibility ?? 'public') === 'public';
+									const budget = p.totalBudget ? `${p.currency || '$'}${p.totalBudget.toLocaleString()}` : null;
+									return (
+										<a key={p.id} href={`/projects/${p.projectId || p.id}/proposal`} className='group relative rounded-lg overflow-hidden border border-brand-main/10 bg-white hover:shadow-md transition flex flex-col'>
+											{p.coverPhotoUrl && <img src={p.coverPhotoUrl} alt={p.name} className='w-full h-40 object-cover' />}
+											<div className='p-3 flex-1 flex flex-col'>
+												<div className='text-sm font-semibold text-brand-dark mb-1 line-clamp-1'>{p.name}</div>
+												{p.locationName && (
+													<div className='text-[11px] text-gray-400 flex items-center gap-0.5 mb-1 line-clamp-1'>
+														<svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><path d='M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z'/><circle cx='12' cy='10' r='3'/></svg>
+														{p.locationName}
+													</div>
+												)}
+												{budget && currentUser && (
+													<div className='text-[11px] text-gray-600 flex items-center gap-0.5 mb-1'>
+														<svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><circle cx='12' cy='12' r='10'/><path d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'/><path d='M12 18V6'/></svg>
+														<span className='font-medium'>{budget}</span>
+													</div>
+												)}
+												{p.description && <div className='text-[11px] text-gray-600 line-clamp-3 flex-1'>{p.description}</div>}
+												<div className='mt-2 flex items-center justify-between flex-wrap gap-1'>
+													<span className='inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-brand-main/10 text-brand-main'>{p.projectId}</span>
+													<div className='flex items-center gap-1 flex-wrap'>
+														{currentUser && isOwner && isDraft && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200'>Draft</span>}
+														{currentUser && isOwner && isLive && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200'>Live</span>}
+														{currentUser && isOwner && isPrivate && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200'>Private</span>}
+														{currentUser && isOwner && isPublic && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200'>Public</span>}
+														{p.showOnOrganizationOverview && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200'>Showcase</span>}
+														{p.createdAt?.seconds && <span className='text-[10px] text-gray-400'>{new Date(p.createdAt.seconds*1000).toLocaleDateString()}</span>}
+													</div>
+												</div>
+											</div>
+										</a>
+									);
+								})}
+							</div>
+						{/* Map column — hidden on small screens, ~1/3 width */}
+						<div className='hidden lg:flex flex-col gap-3 flex-shrink-0 self-start sticky top-4' style={{ width: '32%' }}>
+							{/* Title */}
+							<div>
+								<h3 className='text-sm font-semibold text-brand-dark'>Our Project Locations</h3>
+								{hasMultipleLocations && <p className='text-[10px] text-gray-400 mt-0.5'>Click a location to filter</p>}
+							</div>
+							{/* Filter chips — only shown when 2+ distinct locations */}
+							{hasMultipleLocations && (
+								<div className='flex flex-wrap gap-1.5'>
+									<button
+										onClick={() => setLocationFilter(null)}
+										className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition ${
+											locationFilter === null
+												? 'bg-brand-main text-white border-brand-main'
+												: 'bg-white text-gray-600 border-gray-300 hover:border-brand-main hover:text-brand-main'
+										}`}
+									>All</button>
+									{locationNames.map(loc => (
+										<button
+											key={loc}
+											onClick={() => setLocationFilter(locationFilter === loc ? null : loc)}
+											className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition ${
+												locationFilter === loc
+													? 'bg-brand-main text-white border-brand-main'
+													: 'bg-white text-gray-600 border-gray-300 hover:border-brand-main hover:text-brand-main'
+											}`}
+										>{loc}</button>
+									))}
+								</div>
+							)}
+							{/* Map — zooms to filtered location when a chip is active */}
+							<div style={{ aspectRatio: '1 / 2', minHeight: 360 }}>
+								<OrgProjectsMap
+									projects={locationFilter ? visible.filter((p: any) => p.locationName === locationFilter) : visible}
+									className='h-full w-full'
+								/>
+								</div>
+							</div>
 						</div>
-					)}
+					);
+					})()}
 				</div>
 			</div>
 		</div>
+		</>
 	);
 }
 

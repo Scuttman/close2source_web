@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "close2source-3o2we",
-    "legacy": "close2source"
+    "default": "close2source",
+    "legacy": "close2source-3o2we"
   }
 }

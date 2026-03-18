@@ -558,7 +558,7 @@ export default function ProjectSettingsTab({
                 if (!isAdmin) throw new Error('You are not allowed to delete this project');
               }
               await deleteDoc(doc(db, 'projects', docId || projectId));
-              router.push('/projects');
+              router.push('/app/profile');
             } catch (e: any) { setDeleteError(e.message || 'Failed to delete'); }
             finally { setDeleting(false); }
           }}

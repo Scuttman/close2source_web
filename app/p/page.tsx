@@ -1,4 +1,5 @@
 "use client";
+import { Suspense } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { collection, query, where, getDocs } from "firebase/firestore";
@@ -8,7 +9,7 @@ import { db } from "../../src/lib/firebase";
 // to the canonical project route /projects/[firestoreDocId]. If not found, an
 // error message is displayed. Keeping it lean avoids duplicating the full
 // project UI logic which already lives in the main project page.
-export default function ProjectCodeRedirect() {
+function ProjectCodeRedirectInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const code = (searchParams.get("id") || "").trim();
@@ -57,5 +58,15 @@ export default function ProjectCodeRedirect() {
     <div className="max-w-2xl mx-auto mt-10 text-brand-dark">
       {loading ? "Looking up project..." : "Redirecting..."}
     </div>
+  );
+}
+
+export default function ProjectCodeRedirect() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-2xl mx-auto mt-10 text-brand-dark">Looking up project...</div>
+    }>
+      <ProjectCodeRedirectInner />
+    </Suspense>
   );
 }

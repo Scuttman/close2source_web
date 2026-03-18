@@ -13,6 +13,8 @@ import { useRouter } from 'next/navigation';
 import ProjectSettingsTab from "../../../components/ProjectSettingsTab";
 import ProjectOverviewTab from "../../../components/ProjectOverviewTab";
 import ProjectTeamTab from "../../../components/ProjectTeamTab";
+import ProfileLoadingShell from "../../../components/ProfileLoadingShell";
+import BecomePartnerModal from "../../../components/BecomePartnerModal";
   const auth = typeof window !== "undefined" ? getAuth() : null;
 
 export default function ProjectDetail() {
@@ -25,6 +27,7 @@ export default function ProjectDetail() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("home");
   const [editMode, setEditMode] = useState(false); // global edit toggle
+  const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const searchParams = useSearchParams();
   // Sync tab from query (e.g., ?tab=team) once on mount / change
   useEffect(()=> {
@@ -96,7 +99,31 @@ export default function ProjectDetail() {
   // Overview map & geocode logic moved into ProjectOverviewTab
   // (Early returns moved below finance hooks to preserve hook order.)
   const currentUser = auth?.currentUser;
-  const isProjectCreator = !!(currentUser && project?.createdBy && [currentUser.displayName, currentUser.email, currentUser.uid].includes(project.createdBy));
+  
+  // Check if user is organization admin (org owner = admin of all org projects)
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
+  useEffect(() => {
+    if (!currentUser || !project?.originatingOrganizationDbId) {
+      setIsOrgAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const orgRef = doc(db, 'organizations', project.originatingOrganizationDbId);
+        const orgSnap = await getDoc(orgRef);
+        if (!cancelled && orgSnap.exists()) {
+          const orgData = orgSnap.data();
+          setIsOrgAdmin(orgData?.ownerUid === currentUser.uid);
+        }
+      } catch {
+        if (!cancelled) setIsOrgAdmin(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser?.uid, project?.originatingOrganizationDbId]);
+  
+  const isProjectCreator = !!(currentUser && project?.createdBy && [currentUser.displayName, currentUser.email, currentUser.uid].includes(project.createdBy)) || isOrgAdmin;
   // Resolve viewer role for permissions
   type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
   const accessSettings = project?.accessSettings || {};
@@ -155,7 +182,7 @@ export default function ProjectDetail() {
   // addTransaction moved into ProjectTransactionsManager
 
   // Handle loading / error / missing project states AFTER all hooks above to keep hook order stable.
-  if (loading) return <PageShell title={<span>Loading…</span>}><div className="text-sm text-gray-500">Loading...</div></PageShell>;
+  if (loading) return <ProfileLoadingShell title="Project" />;
   if (error) return <PageShell title={<span>Error</span>}><div className="text-sm text-red-600">{error}</div></PageShell>;
   if (!project) return <PageShell title={<span>Project</span>}><div className="text-sm text-gray-500">Project not found.</div></PageShell>;
 
@@ -196,6 +223,15 @@ export default function ProjectDetail() {
           headerStyle={{ background:'var(--project-header-bg)', color:'var(--project-header-text)' }}
           headerRight={(
             <div className="flex items-center gap-3">
+              {!isProjectCreator && (
+                <button
+                  type="button"
+                  onClick={() => setPartnerModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold bg-white text-orange-600 border border-white/80 hover:bg-orange-50 transition shadow-sm"
+                >
+                  Become a Partner
+                </button>
+              )}
               {project.projectId && (
                 <span className="inline-block text-xs font-mono bg-white/10 text-white px-2 py-1 rounded border border-white/20 tracking-wide md:text-sm md:scale-110 origin-left">
                   {project.projectId}
@@ -319,6 +355,13 @@ export default function ProjectDetail() {
     </div>{/* end flex row container */}
     </PageShell>
       </div>
+      <BecomePartnerModal
+        isOpen={partnerModalOpen}
+        onClose={() => setPartnerModalOpen(false)}
+        project={project}
+        projectDocId={resolvedDocId || externalProjectCode}
+        currentUser={auth?.currentUser}
+      />
     </>
   );
 }

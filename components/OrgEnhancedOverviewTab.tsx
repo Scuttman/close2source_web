@@ -35,9 +35,13 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
     );
     const unsub = onSnapshot(qy, snap=> {
       // Sort client-side by createdAt desc if present
+      // Also enforce: must be live + public (guard against stale showcase flag on private/draft projects)
       const rows = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
-      rows.sort((a:any,b:any)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-      setShowcaseProjects(rows.slice(0,12)); setProjectsLoading(false);
+      const filtered = rows.filter((p: any) =>
+        (p.status ?? 'live') === 'live' && (p.visibility ?? 'public') === 'public'
+      );
+      filtered.sort((a:any,b:any)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+      setShowcaseProjects(filtered.slice(0,12)); setProjectsLoading(false);
     }, ()=> setProjectsLoading(false));
     return ()=> unsub();
   }, [org?.orgId]);
@@ -255,23 +259,42 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
         )}
         {!projectsLoading && showcaseProjects.length>0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {showcaseProjects.map(p=> (
-              <a key={p.id} href={`/projects/${p.projectId || p.id}`} className="group rounded-md border border-brand-main/10 overflow-hidden bg-white hover:shadow transition relative flex flex-col">
-                {p.coverPhotoUrl && (
-                  <div className="h-32 w-full overflow-hidden">
-                    <img src={p.coverPhotoUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition" />
+            {showcaseProjects.map(p=> {
+              const isDraft = (p.status ?? 'live') === 'draft';
+              const isLive = (p.status ?? 'live') === 'live';
+              const isPrivate = (p.visibility ?? 'public') === 'private';
+              const isPublic = (p.visibility ?? 'public') === 'public';
+              const budget = p.totalBudget ? `${p.currency || '$'}${p.totalBudget.toLocaleString()}` : null;
+              return (
+                <a key={p.id} href={`/projects/${p.projectId || p.id}/proposal`} className="group rounded-md border border-brand-main/10 overflow-hidden bg-white hover:shadow transition relative flex flex-col">
+                  {p.coverPhotoUrl && (
+                    <div className="h-32 w-full overflow-hidden">
+                      <img src={p.coverPhotoUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                    </div>
+                  )}
+                  <div className="p-3 flex-1 flex flex-col">
+                    <div className="text-sm font-semibold text-brand-dark line-clamp-1 mb-1">{p.name}</div>
+                    {budget && isOwner && (
+                      <div className='text-[11px] text-gray-600 flex items-center gap-0.5 mb-1'>
+                        <svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><circle cx='12' cy='12' r='10'/><path d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'/><path d='M12 18V6'/></svg>
+                        <span className='font-medium'>{budget}</span>
+                      </div>
+                    )}
+                    {p.description && <div className="text-[11px] text-gray-600 line-clamp-3 flex-1">{p.description}</div>}
+                    <div className="mt-2 flex items-center justify-between flex-wrap gap-1">
+                      <span className="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-brand-main/10 text-brand-main">{p.projectId}</span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {isOwner && isDraft && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200'>Draft</span>}
+                        {isOwner && isLive && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200'>Live</span>}
+                        {isOwner && isPrivate && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200'>Private</span>}
+                        {isOwner && isPublic && <span className='text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200'>Public</span>}
+                        {p.createdAt?.seconds && <span className="text-[10px] text-gray-400">{new Date(p.createdAt.seconds*1000).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
                   </div>
-                )}
-                <div className="p-3 flex-1 flex flex-col">
-                  <div className="text-sm font-semibold text-brand-dark line-clamp-1 mb-1">{p.name}</div>
-                  {p.description && <div className="text-[11px] text-gray-600 line-clamp-3 flex-1">{p.description}</div>}
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-brand-main/10 text-brand-main">{p.projectId}</span>
-                    {p.createdAt?.seconds && <span className="text-[10px] text-gray-400">{new Date(p.createdAt.seconds*1000).toLocaleDateString()}</span>}
-                  </div>
-                </div>
-              </a>
-            ))}
+                </a>
+              );
+            })}
           </div>
         )}
       </section>

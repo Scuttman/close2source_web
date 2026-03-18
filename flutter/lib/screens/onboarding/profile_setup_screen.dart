@@ -7,6 +7,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import '../../services/image_cache_service.dart';
+import '../../widgets/ai_text_field.dart';
 import 'package:flutter/material.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
@@ -134,7 +135,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           const SizedBox(height: 12),
           TextField(controller: _surname, decoration: const InputDecoration(labelText: 'Surname')),          
           const SizedBox(height: 12),
-          TextField(controller: _bio, maxLines: 4, decoration: const InputDecoration(labelText: 'Short bio')),          
+          AITextField(
+            controller: _bio,
+            labelText: 'Short bio',
+            hintText: 'Tell us about yourself...',
+            maxLines: 4,
+            aiContext: 'a professional bio',
+          ),
           const SizedBox(height: 12),
           const SizedBox(height: 20),
           SizedBox(

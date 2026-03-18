@@ -1,7 +1,8 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore';
 import { db, storage } from '../src/lib/firebase';
+import { ClipboardDocumentIcon, ArrowPathIcon, EyeIcon, EyeSlashIcon, LinkIcon } from '@heroicons/react/24/outline';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
 interface OrgSettingsTabProps {
@@ -10,6 +11,142 @@ interface OrgSettingsTabProps {
 	isOwner: boolean;
 	editMode: boolean;
 	onOrgUpdate: (patch: Record<string, any>) => void;
+}
+
+function MemberAccessSection({ org, isOwner, onOrgUpdate }: { org: any; isOwner: boolean; onOrgUpdate: (patch: Record<string, any>) => void }) {
+	const [showPin, setShowPin] = useState(false);
+	const [regenerating, setRegenerating] = useState(false);
+	const [copied, setCopied] = useState<'code' | 'pin' | 'invite' | null>(null);
+	const [generatingInvite, setGeneratingInvite] = useState(false);
+	const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+	async function regeneratePin() {
+		if (!confirm('Regenerate the join PIN? The old PIN will stop working immediately.')) return;
+		setRegenerating(true);
+		try {
+			const newPin = String(Math.floor(1000 + Math.random() * 9000));
+			await updateDoc(doc(db, 'organizations', org.id), { joinPin: newPin });
+			onOrgUpdate({ joinPin: newPin });
+		} catch { /* ignore */ }
+		finally { setRegenerating(false); }
+	}
+
+	function copy(text: string, which: 'code' | 'pin' | 'invite') {
+		navigator.clipboard.writeText(text).then(() => {
+			setCopied(which);
+			setTimeout(() => setCopied(null), 2000);
+		});
+	}
+
+	async function generateInviteLink() {
+		setGeneratingInvite(true);
+		try {
+			const inviteRef = await addDoc(collection(db, 'orgInvites'), {
+				orgId: org.orgId,
+				orgDbId: org.id,
+				orgName: org.name || org.orgId,
+				email: '',
+				status: 'pending',
+				createdAt: new Date(),
+			});
+			const link = `${window.location.origin}/org/invite/${inviteRef.id}`;
+			setInviteLink(link);
+			navigator.clipboard.writeText(link).then(() => {
+				setCopied('invite');
+				setTimeout(() => setCopied(null), 3000);
+			});
+		} catch (e) {
+			console.error('Failed to generate invite', e);
+		} finally {
+			setGeneratingInvite(false);
+		}
+	}
+
+	if (!isOwner) return null;
+
+	return (
+		<section className='bg-white border border-brand-main/10 rounded-xl p-6 shadow-sm'>
+			<h3 className='text-lg font-semibold text-brand-main mb-1'>Member Access</h3>
+			<p className='text-xs text-gray-500 mb-4'>Share the Organization Code and PIN with people you want to invite. They can use these to join via their dashboard.</p>
+			<div className='flex flex-col sm:flex-row gap-4'>
+				{/* Code */}
+				<div className='flex-1'>
+					<label className='block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide'>Organization Code</label>
+					<div className='flex items-center gap-2'>
+						<span className='flex-1 font-mono text-lg font-bold tracking-widest bg-gray-50 border rounded-lg px-3 py-2 text-brand-main'>{org.orgId || '—'}</span>
+						<button
+							type='button'
+							onClick={() => copy(org.orgId, 'code')}
+							className='p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500'
+							title='Copy code'
+						>
+							{copied === 'code' ? <span className='text-green-600 text-xs font-semibold px-1'>Copied!</span> : <ClipboardDocumentIcon className='w-4 h-4' />}
+						</button>
+					</div>
+				</div>
+				{/* PIN */}
+				<div className='flex-1'>
+					<label className='block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide'>Join PIN</label>
+					<div className='flex items-center gap-2'>
+						<span className='flex-1 font-mono text-lg font-bold tracking-widest bg-gray-50 border rounded-lg px-3 py-2 text-brand-main'>
+							{org.joinPin ? (showPin ? org.joinPin : '••••') : <span className='text-gray-400 text-sm font-normal'>Not set</span>}
+						</span>
+						{org.joinPin && (
+							<button type='button' onClick={() => setShowPin(v => !v)} className='p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500' title={showPin ? 'Hide PIN' : 'Show PIN'}>
+								{showPin ? <EyeSlashIcon className='w-4 h-4' /> : <EyeIcon className='w-4 h-4' />}
+							</button>
+						)}
+						{org.joinPin && (
+							<button type='button' onClick={() => copy(org.joinPin, 'pin')} className='p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500' title='Copy PIN'>
+								{copied === 'pin' ? <span className='text-green-600 text-xs font-semibold px-1'>Copied!</span> : <ClipboardDocumentIcon className='w-4 h-4' />}
+							</button>
+						)}
+						<button type='button' onClick={regeneratePin} disabled={regenerating} className='p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500 disabled:opacity-50' title='Regenerate PIN'>
+							<ArrowPathIcon className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} />
+						</button>
+					</div>
+					{!org.joinPin && (
+						<p className='text-xs text-amber-600 mt-1'>Click regenerate to create a PIN for this organization.</p>
+					)}
+				</div>
+			</div>			{/* Invite Link */}
+			<div className='mt-5 pt-5 border-t border-gray-100'>
+				<label className='block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide'>Shareable Invite Link</label>
+				<p className='text-xs text-gray-500 mb-3'>Generate a one-click invite link to share directly. Anyone with the link can join the organization.</p>
+				<div className='flex items-center gap-2'>
+					{inviteLink && (
+						<span className='flex-1 font-mono text-xs bg-gray-50 border rounded-lg px-3 py-2 text-gray-700 truncate'>{inviteLink}</span>
+					)}
+					<button
+						type='button'
+						onClick={inviteLink ? () => copy(inviteLink, 'invite') : generateInviteLink}
+						disabled={generatingInvite}
+						className='flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-main text-white text-sm font-semibold hover:bg-brand-main/90 transition disabled:opacity-50'
+					>
+						{generatingInvite ? (
+							<ArrowPathIcon className='w-4 h-4 animate-spin' />
+						) : copied === 'invite' ? (
+							<><ClipboardDocumentIcon className='w-4 h-4' /><span>Copied!</span></>
+						) : inviteLink ? (
+							<><ClipboardDocumentIcon className='w-4 h-4' /><span>Copy Link</span></>
+						) : (
+							<><LinkIcon className='w-4 h-4' /><span>Generate Invite Link</span></>
+						)}
+					</button>
+					{inviteLink && (
+						<button
+							type='button'
+							onClick={() => { setInviteLink(null); generateInviteLink(); }}
+							disabled={generatingInvite}
+							className='p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500 disabled:opacity-50'
+							title='Generate new invite link'
+						>
+							<ArrowPathIcon className='w-4 h-4' />
+						</button>
+					)}
+				</div>
+			</div>		</section>
+	);
 }
 
 export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, onOrgUpdate }: OrgSettingsTabProps){
@@ -188,6 +325,8 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 
 	return (
 		<div className='space-y-8'>
+			{/* Member Access — org code + join PIN */}
+			<MemberAccessSection org={org} isOwner={isOwner} onOrgUpdate={onOrgUpdate} />
 			{/* Background Image */}
 			<section className='bg-white border border-brand-main/10 rounded-xl p-6 shadow-sm'>
 				<h3 className='text-lg font-semibold text-brand-main mb-2'>Background Image</h3>

@@ -2,10 +2,10 @@
 // Each transaction: { type: 'purchase' | 'spend', amount: number, timestamp, description }
 
 import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, getDocs } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { app } from "./firebase";
 
 export async function logCreditTransaction(uid: string, type: 'purchase' | 'spend', amount: number, description: string) {
-  const db = getFirestore();
+  const db = getFirestore(app);
   await addDoc(collection(db, "users", uid, "transactions"), {
     type,
     amount,
@@ -15,7 +15,7 @@ export async function logCreditTransaction(uid: string, type: 'purchase' | 'spen
 }
 
 export async function getCreditStatement(uid: string) {
-  const db = getFirestore();
+  const db = getFirestore(app);
   const q = query(collection(db, "users", uid, "transactions"), orderBy("timestamp", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));

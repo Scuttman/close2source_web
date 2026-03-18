@@ -1,58 +1,41 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { collection, doc, getDocs, query, updateDoc, where, onSnapshot, deleteField } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { UserCircleIcon, InformationCircleIcon, ArrowPathIcon, HeartIcon, CurrencyDollarIcon, PencilSquareIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { MapPinIcon, BuildingOfficeIcon, UserGroupIcon, SparklesIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import CreatePostModal from "../../../components/CreatePostModal";
+import IndividualAIReviewModal from "../../../components/IndividualAIReviewModal";
+import { generateIndividualPDF } from '../../../src/lib/pdfGenerator';
 import PageShell from "../../../components/PageShell";
+import ProfileLoadingShell from "../../../components/ProfileLoadingShell";
 import { db } from "../../../src/lib/firebase";
 import IndividualOverviewTab from "../../../components/IndividualOverviewTab";
 import IndividualAboutTab from "../../../components/IndividualAboutTab";
 import IndividualUpdatesTab from "../../../components/IndividualUpdatesTab";
 import IndividualPrayerTab from "../../../components/IndividualPrayerTab";
 import IndividualFinanceTab from "../../../components/IndividualFinanceTab";
-import IndividualSettingsTab from "../../../components/IndividualSettingsTab";
+// import IndividualSettingsTab from "../../../components/IndividualSettingsTab"; // TODO: re-enable with permissions
 
-function SidebarSearchTags({ updates, searchValue, setSearchValue, tagFilter, setTagFilter }: any) {
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    (updates || []).forEach((u: any) => Array.isArray(u?.tags) && u.tags.forEach((t: string) => s.add(t)));
-    return Array.from(s).sort();
-  }, [updates]);
-  return (
-    <div className="bg-white rounded-xl border border-brand-main/10 p-4 mb-4 shadow-sm">
-      <input value={searchValue} onChange={e=>setSearchValue(e.target.value)} placeholder="Search posts..." className="w-full border rounded px-3 py-2 mb-3 text-sm" />
-      <div className="mb-2 font-semibold text-brand-main text-xs">Filter by tag</div>
-      <div className="flex flex-wrap gap-2">
-        {allTags.length === 0 && <span className="text-gray-400 text-xs">No tags</span>}
-        {allTags.map(tag => (
-          <span key={tag} onClick={()=>setTagFilter(tagFilter===tag? '': tag)} className={`bg-brand-main/10 text-brand-main text-xs px-2 py-1 rounded-full cursor-pointer hover:bg-brand-main/20 ${tagFilter===tag? 'ring-2 ring-brand-main':''}`}>#{tag}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export default function ProfilePage() {
+function ProfilePageInner() {
   const searchParams = useSearchParams();
   const code = searchParams.get("id") || "";
   const [individual, setIndividual] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("updates");
   const [showPostModal, setShowPostModal] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-  const [role, setRole] = useState<'owner'|'representative'|'supporter'|'public'>('public');
+  // const [role, setRole] = useState<'owner'|'representative'|'supporter'|'public'>('public'); // TODO: tab permissions
   const [userUid, setUserUid] = useState<string|undefined>(undefined);
   const [editMode, setEditMode] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<number,string>>({});
   const [commentSubmitting, setCommentSubmitting] = useState<Record<number,boolean>>({});
   const [searchValue, setSearchValue] = useState("");
   const [tagFilter, setTagFilter] = useState("");
-  const updatesPanelRef = useRef<HTMLDivElement>(null);
+  const [showAIReview, setShowAIReview] = useState(false);
 
   // Build unified feed from legacy arrays (idempotent)
   function buildUnifiedFeed(raw: any){
@@ -141,7 +124,7 @@ export default function ProfilePage() {
         const u = auth.currentUser;
         const ownerId = raw.ownerId || raw.ownerUID || raw.owner || raw.userId;
         setIsOwner(!!u && !!ownerId && u.uid===ownerId);
-        if(u) setRole(computeRole(u, raw));
+        // if(u) setRole(computeRole(u, raw)); // TODO: tab permissions
         // Start real-time listener on the doc
         const ref = doc(db, "individuals", raw.id);
         unsub = onSnapshot(ref, (snap)=>{
@@ -168,7 +151,7 @@ export default function ProfilePage() {
           const authNow = getAuth();
           const uNow = authNow.currentUser;
           if(uNow){
-            setRole(computeRole(uNow, live));
+            // setRole(computeRole(uNow, live)); // TODO: tab permissions
             const liveOwnerId = live.ownerId || live.ownerUID || live.owner || live.userId;
             setIsOwner(!!liveOwnerId && uNow.uid===liveOwnerId);
           }
@@ -193,7 +176,7 @@ export default function ProfilePage() {
           // no owner set yet
           setIsOwner(false);
         }
-        if(u){ setRole(computeRole(u, individual)); } else { setRole('public'); }
+        // if(u){ setRole(computeRole(u, individual)); } else { setRole('public'); } // TODO: tab permissions
       }
     });
     return ()=>unsub();
@@ -228,6 +211,7 @@ export default function ProfilePage() {
     } catch(e) { /* silent */ } finally { setCommentSubmitting(s=>({...s,[i]:false})); }
   }
 
+  /* TODO: re-enable tab permissions
   function computeRole(u: any, ind: any): 'owner'|'representative'|'supporter'|'public' {
     if(!u) return 'public';
     const uid = u.uid;
@@ -280,21 +264,12 @@ export default function ProfilePage() {
     const perm = accessSettings[tab];
     if(!perm) return false;
     if(!perm.edit.includes(role as AccessLevel)) return false;
-    // Owners still use edit toggle; others with edit permission can edit immediately
     if(role==='owner') return editMode;
     return true;
   };
 
-  const settingsAllowedForRep = !!individual?.settingsAllowRepresentative; // separate flag for settings tab
-  const allTabs: { id: string; label: string; icon: any; show: boolean }[] = [
-    { id: 'overview', label: 'Overview', icon: UserCircleIcon, show: canViewTab('overview') },
-    { id: 'about', label: 'About', icon: InformationCircleIcon, show: canViewTab('about') },
-    { id: 'updates', label: 'Updates', icon: ArrowPathIcon, show: canViewTab('updates') },
-    { id: 'prayer', label: 'Prayer', icon: HeartIcon, show: canViewTab('prayer') },
-    { id: 'finance', label: 'Finance', icon: CurrencyDollarIcon, show: canViewTab('finance') },
-    { id: 'settings', label: 'Settings', icon: Cog6ToothIcon, show: role==='owner' || (role==='representative' && settingsAllowedForRep) }
-  ];
-  const tabs = allTabs.filter(t=> t.show);
+  const settingsAllowedForRep = !!individual?.settingsAllowRepresentative;
+  */
 
   const profileCode = individual?.individualId || individual?.code || code || '';
   const headerRight = (
@@ -311,18 +286,50 @@ export default function ProfilePage() {
         >Claim</button>
       )}
       {isOwner && (
-        <button
-          type="button"
-          onClick={()=> setEditMode(m=>!m)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition ${editMode? 'bg-brand-main text-white border-brand-main shadow-inner':'bg-white/10 text-white border-white/30 hover:bg-white/20'}`}
-          aria-pressed={editMode}
-          aria-label="Toggle edit mode"
-        >
-          <span>Edit</span>
-          <span className={`inline-flex items-center h-4 w-8 rounded-full transition ${editMode? 'bg-brand-accent/80':'bg-white/30'}`}>
-            <span className={`h-4 w-4 rounded-full bg-white shadow transform transition ${editMode? 'translate-x-4':'translate-x-0'}`}></span>
-          </span>
-        </button>
+        <>
+          <button
+            onClick={() => {
+              generateIndividualPDF({
+                name: individual.name,
+                individualId: individual.individualId || individual.code || code,
+                bio: individual.bio,
+                serviceLocation: individual.serviceLocation,
+                organization: individual.organization,
+                vision: individual.vision,
+                story: individual.story,
+                ministryDescription: individual.ministryDescription,
+                focusAreas: individual.focusAreas,
+                isFamily: individual.isFamily,
+                yearsInService: individual.yearsInService
+              });
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition bg-white/10 text-white border-white/30 hover:bg-white/20"
+            title="Download PDF"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            <span>Download PDF</span>
+          </button>
+          <button
+            onClick={() => setShowAIReview(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition bg-white/10 text-white border-white/30 hover:bg-white/20"
+            title="AI Review"
+          >
+            <SparklesIcon className="w-4 h-4" />
+            <span>AI Review</span>
+          </button>
+          <button
+            type="button"
+            onClick={()=> setEditMode(m=>!m)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition ${editMode? 'bg-brand-main text-white border-brand-main shadow-inner':'bg-white/10 text-white border-white/30 hover:bg-white/20'}`}
+            aria-pressed={editMode}
+            aria-label="Toggle edit mode"
+          >
+            <span>Edit</span>
+            <span className={`inline-flex items-center h-4 w-8 rounded-full transition ${editMode? 'bg-brand-accent/80':'bg-white/30'}`}>
+              <span className={`h-4 w-4 rounded-full bg-white shadow transform transition ${editMode? 'translate-x-4':'translate-x-0'}`}></span>
+            </span>
+          </button>
+        </>
       )}
     </div>
   );
@@ -333,38 +340,119 @@ export default function ProfilePage() {
       contentClassName="p-6"
       headerRight={headerRight}
     >
-      {loading && <div className="text-gray-500 text-sm">Loading...</div>}
+      {loading && (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] select-none">
+          <div className="w-full max-w-2xl animate-pulse mb-8 px-4">
+            <div className="h-36 bg-gray-200 rounded-xl mb-4"></div>
+            <div className="flex gap-4 items-start">
+              <div className="w-16 h-16 bg-gray-300 rounded-lg shrink-0"></div>
+              <div className="flex-1 space-y-2 pt-1">
+                <div className="h-5 bg-gray-200 rounded-full w-2/3"></div>
+                <div className="h-4 bg-gray-100 rounded-full w-1/2"></div>
+              </div>
+            </div>
+          </div>
+          <div className="relative mb-4">
+            <div className="w-12 h-12 rounded-full border-4 border-gray-200"></div>
+            <div className="w-12 h-12 rounded-full border-4 border-t-orange-500 border-r-transparent border-b-transparent border-l-transparent animate-spin absolute inset-0"></div>
+          </div>
+          <p className="text-sm text-gray-400 tracking-wide">Loading&hellip;</p>
+        </div>
+      )}
       {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
       {!loading && !error && !individual && <div className="text-gray-500">Not found.</div>}
       {!loading && individual && (
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* Left vertical tab nav */}
-          <nav className="md:w-56 flex md:flex-col md:items-stretch gap-2 overflow-x-auto md:overflow-visible pb-2 md:pb-0 border-b md:border-b-0 md:border-r border-brand-main/10">
-            {tabs.map(t => {
-              const Icon = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={()=>setActiveTab(t.id)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded md:rounded-none md:border-l-4 text-sm font-medium transition whitespace-nowrap ${active? 'bg-brand-main/10 md:bg-transparent md:border-brand-main text-brand-main':'md:border-transparent text-gray-600 hover:text-brand-main hover:bg-brand-main/5'}`}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span>{t.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          {/* Right content */}
-          <div className="flex-1 min-w-0">
-            {activeTab==='overview' && (
-              <IndividualOverviewTab individual={individual} />
+        <div className="space-y-0">
+
+          {/* Hero Header */}
+          <div className="relative w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8" style={{ marginTop: '-2rem' }}>
+            {/* Background */}
+            <div className="absolute inset-0 bg-gray-900 overflow-hidden">
+              {individual.coverPhotoUrl ? (
+                <>
+                  <img
+                    src={individual.coverPhotoUrl}
+                    alt={individual.name}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/20"></div>
+                </>
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-900 via-orange-700 to-amber-900 opacity-90"></div>
+              )}
+            </div>
+
+            {/* Profile Photo – top right */}
+            {individual.photoURL && (
+              <div className="absolute top-10 right-[2.7rem] z-20">
+                <img
+                  src={individual.photoURL}
+                  alt={individual.name}
+                  className="h-24 w-24 object-cover rounded-full border-4 border-white shadow-2xl"
+                />
+              </div>
             )}
-            {activeTab==='about' && (
-              <IndividualAboutTab individual={individual} />
+
+            {/* Individual Code – bottom right */}
+            {profileCode && (
+              <div className="absolute bottom-10 right-[2.7rem] z-20">
+                <div className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                  <span className="text-2xl font-mono font-bold text-white">{profileCode}</span>
+                </div>
+              </div>
             )}
-            {activeTab==='updates' && (
-              <IndividualUpdatesTab
+
+            {/* Content */}
+            <div className="relative py-12 md:py-20 px-8">
+              <div className="max-w-4xl">
+                {/* Type label */}
+                <div className="inline-flex items-center gap-2 mb-4 px-4 py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
+                  {individual.isFamily
+                    ? <UserGroupIcon className="w-4 h-4 text-white" />
+                    : <BuildingOfficeIcon className="w-4 h-4 text-white" />}
+                  <span className="text-xs font-semibold text-white uppercase tracking-wider">
+                    {individual.isFamily ? 'Family' : 'Individual'} Profile
+                  </span>
+                </div>
+
+                {/* Name */}
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
+                  {individual.name}
+                </h1>
+
+                {/* Info badges */}
+                <div className="flex flex-wrap items-center gap-3 text-white/90">
+                  {individual.serviceLocation && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                      <MapPinIcon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{individual.serviceLocation}</span>
+                    </div>
+                  )}
+                  {individual.organization && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                      <BuildingOfficeIcon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{individual.organization}</span>
+                    </div>
+                  )}
+                  {individual.yearsInService && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                      <span className="text-sm font-medium">{individual.yearsInService} years in service</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Black border line */}
+          <div className="w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8 h-[2px] bg-black"></div>
+
+          {/* Sections */}
+          <div className="space-y-8 pt-8">
+            {/* canViewTab/canEditTab disabled – TODO: re-enable with permissions */}
+            <IndividualOverviewTab individual={individual} canEdit={isOwner && editMode} />
+            <IndividualAboutTab individual={individual} canEdit={isOwner && editMode} />
+            <IndividualUpdatesTab
                 individual={individual}
                 filteredUpdates={filteredUpdates}
                 searchValue={searchValue}
@@ -380,36 +468,69 @@ export default function ProfilePage() {
                 code={code}
                 onPostCreated={(nu:any)=> setIndividual((prev:any)=> prev? ({...prev, updates:[nu, ...(prev.updates||[])], feed: [{type:'update', ...nu}, ...(prev.feed||[])] }): prev)}
               />
-            )}
-            {activeTab==='prayer' && (
-              <IndividualPrayerTab
-                individual={individual}
-                onUpdate={(next)=> setIndividual((prev:any)=>({...prev, prayerRequests: next, feed: (()=>{ const updates = prev?.updates||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...next.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
-                onUpdatesChange={(updates)=> setIndividual((prev:any)=>({...prev, updates, feed: (()=>{ const prayers = prev?.prayerRequests||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...prayers.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
-                readOnly={!canEditTab('prayer')}
-              />
-            )}
-            {activeTab==='finance' && (
-              <IndividualFinanceTab
-                individual={individual}
-                onUpdate={({ fundingNeeds, givingLinks })=> setIndividual((prev:any)=>({
-                  ...prev,
-                  fundingNeeds,
-                  givingLinks
-                }))}
-                readOnly={!canEditTab('finance')}
-              />
-            )}
-            {activeTab==='settings' && (
+            <IndividualPrayerTab
+              individual={individual}
+              onUpdate={(next)=> setIndividual((prev:any)=>({...prev, prayerRequests: next, feed: (()=>{ const updates = prev?.updates||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...next.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
+              onUpdatesChange={(updates)=> setIndividual((prev:any)=>({...prev, updates, feed: (()=>{ const prayers = prev?.prayerRequests||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...prayers.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
+              readOnly={!(isOwner && editMode)}
+            />
+            <IndividualFinanceTab
+              individual={individual}
+              onUpdate={({ fundingNeeds, givingLinks })=> setIndividual((prev:any)=>({
+                ...prev,
+                fundingNeeds,
+                givingLinks
+              }))}
+              readOnly={!(isOwner && editMode)}
+            />
+            {/* Settings tab disabled – TODO: re-enable with permissions
+            {isOwner && (
               <IndividualSettingsTab
                 individual={individual}
                 isOwner={isOwner}
                 onUpdate={(partial)=> setIndividual((prev:any)=>({...prev, ...partial}))}
               />
             )}
+            */}
           </div>
+
         </div>
       )}
+      
+      {showAIReview && individual && (
+        <IndividualAIReviewModal
+          isOpen={showAIReview}
+          onClose={() => setShowAIReview(false)}
+          individualId={individual.id}
+          currentData={{
+            name: individual.name,
+            bio: individual.bio,
+            story: individual.story,
+            vision: individual.vision,
+            serviceLocation: individual.serviceLocation,
+            organization: individual.organization,
+            ministryDescription: individual.ministryDescription,
+            focusAreas: individual.focusAreas,
+            isFamily: individual.isFamily,
+            yearsInService: individual.yearsInService,
+          }}
+          onUpdate={(updatedData) => {
+            setIndividual((prev: any) => ({ ...prev, ...updatedData }));
+          }}
+        />
+      )}
     </PageShell>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-main" />
+      </div>
+    }>
+      <ProfilePageInner />
+    </Suspense>
   );
 }

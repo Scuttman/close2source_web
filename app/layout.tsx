@@ -24,9 +24,9 @@ function CookieBanner() {
   };
   if (!show) return null;
   return (
-    <div className="w-full bg-transparent text-brand-dark text-sm flex items-center justify-between px-4 py-3 z-20 border-b border-brand-100">
+    <div className="w-full bg-red-600 text-white text-sm flex items-center justify-between px-4 py-3 z-20">
       <span>By continuing to use this site, you agree to the use of cookies and local storage on your device.</span>
-      <button onClick={handleClose} className="ml-4 px-3 py-1 rounded bg-brand-100 hover:bg-brand-main/10 text-brand-dark font-semibold transition">Close</button>
+      <button onClick={handleClose} className="ml-4 px-3 py-1 rounded bg-white/20 hover:bg-white/30 text-white font-semibold transition">Close</button>
     </div>
   );
 }
@@ -53,8 +53,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   <main className="flex-1 relative z-10 py-4 flex flex-col min-h-0">{children}</main>
         <footer className="border-t-0 bg-black relative z-10">
           <div className="absolute top-0 left-0 w-full h-2 bg-brand-main" style={{height: '8px'}} />
-          <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10">
-            © {new Date().getFullYear()} Close2Source
+          <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>© {new Date().getFullYear()} Close2Source</span>
+            <div className="flex gap-6">
+              <a href="/privacy" className="text-white/70 hover:text-white transition">Privacy Policy</a>
+              <a href="/terms" className="text-white/70 hover:text-white transition">Terms of Service</a>
+            </div>
           </div>
         </footer>
       </body>

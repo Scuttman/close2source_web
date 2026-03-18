@@ -1,10 +1,11 @@
 "use client";
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 
 const CreateIndividualProfileForm = dynamic(() => import("./form"), { ssr: false });
 
-export default function CreateProfileEntry() {
+function CreateProfileEntryInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const type = searchParams.get("type");
@@ -32,5 +33,17 @@ export default function CreateProfileEntry() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function CreateProfileEntry() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-main" />
+      </div>
+    }>
+      <CreateProfileEntryInner />
+    </Suspense>
   );
 }
