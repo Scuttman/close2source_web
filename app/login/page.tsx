@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [userRole, setUserRole] = useState<string | null>(null);
   const auth = getAuth(app);
   const router = useRouter();
 
@@ -20,13 +19,11 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    setUserRole(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const userData = await getUser(userCredential.user.uid);
       if (userData) {
-        setUserRole(userData.role);
-        setSuccess("Login successful! Welcome, " + ((userData.role as string) === "partner" ? "Partner" : "Field Worker") + ".");
+        setSuccess("Login successful!");
         setTimeout(() => router.push("/profile"), 1000);
       } else {
         setError("User profile not found in Firestore.");
@@ -39,7 +36,6 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setError("");
     setSuccess("");
-    setUserRole(null);
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
@@ -72,8 +68,6 @@ export default function LoginPage() {
         }
       }
       
-      const data = existingUser ? existingUser : { role: "User" };
-      setUserRole(data.role);
       setSuccess("Login successful!");
       setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
@@ -84,7 +78,6 @@ export default function LoginPage() {
   async function handleAppleSignIn() {
     setError("");
     setSuccess("");
-    setUserRole(null);
     try {
       const provider = new OAuthProvider('apple.com');
       const result = await signInWithPopup(auth, provider);
@@ -117,8 +110,6 @@ export default function LoginPage() {
         }
       }
       
-      const data = existingUser ? existingUser : { role: "User" };
-      setUserRole(data.role);
       setSuccess("Login successful!");
       setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
@@ -182,9 +173,6 @@ export default function LoginPage() {
             </div>
             {error && <div className="text-red-600 text-sm">{error}</div>}
             {success && <div className="text-green-600 text-sm">{success}</div>}
-            {userRole && (
-              <div className="text-brand-main text-sm font-semibold">Role: {userRole === "partner" ? "Partner" : "Field Worker"}</div>
-            )}
             <button
               type="submit"
               className="w-full py-2.5 px-4 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition text-sm"

@@ -1,31 +1,69 @@
 "use client";
 import PageShell from "./PageShell";
 
+const MAX_MESSAGE_LENGTH = 38; // "Just getting you closer to the source!"
+
 interface ProfileLoadingShellProps {
   title?: string;
+  message?: string;
+  /** Diameter of the SVG canvas in px. Everything scales proportionally. Default 350. */
+  size?: number;
 }
 
-export default function ProfileLoadingShell({ title = "Loading" }: ProfileLoadingShellProps) {
+export default function ProfileLoadingShell({
+  title = "Loading",
+  message = "Just getting you closer to the source!",
+  size = 350,
+}: ProfileLoadingShellProps) {
+  const displayMessage = message.slice(0, MAX_MESSAGE_LENGTH);
+
+  const s = size / 350; // scale factor relative to the base 350px design
+  const cx = size / 2;
+  const cy = size / 2;
+  const logoScale = 5 * s;
+  const rText   = 100 * s;  // top text path radius
+  const rBottom = 107 * s;  // bottom text path radius
+
+  const topPath    = `M ${cx},${cy + rText} A ${rText},${rText} 0 1,1 ${cx},${cy - rText} A ${rText},${rText} 0 1,1 ${cx},${cy + rText}`;
+  const bottomPath = `M ${cx},${cy - rBottom} A ${rBottom},${rBottom} 0 1,0 ${cx},${cy + rBottom} A ${rBottom},${rBottom} 0 1,0 ${cx},${cy - rBottom}`;
+
+  const fontSizeTop    = (17    * s).toFixed(2);
+  const fontSizeBottom = (18.7  * s).toFixed(2);
+  const lsTop          = (2.5   * s).toFixed(2);
+  const lsBottom       = (6     * s).toFixed(2);
+
   return (
     <PageShell title={<span>{title}</span>}>
       <div className="flex flex-col items-center justify-center min-h-[60vh] select-none">
-        {/* Hero skeleton */}
-        <div className="w-full max-w-2xl animate-pulse mb-8 px-4">
-          <div className="h-36 bg-gray-200 rounded-xl mb-4"></div>
-          <div className="flex gap-4 items-start">
-            <div className="w-16 h-16 bg-gray-300 rounded-lg shrink-0"></div>
-            <div className="flex-1 space-y-2 pt-1">
-              <div className="h-5 bg-gray-200 rounded-full w-2/3"></div>
-              <div className="h-4 bg-gray-100 rounded-full w-1/2"></div>
-            </div>
-          </div>
-        </div>
-        {/* Spinner */}
-        <div className="relative mb-4">
-          <div className="w-12 h-12 rounded-full border-4 border-gray-200"></div>
-          <div className="w-12 h-12 rounded-full border-4 border-t-orange-500 border-r-transparent border-b-transparent border-l-transparent animate-spin absolute inset-0"></div>
-        </div>
-        <p className="text-sm text-gray-400 tracking-wide">Please wait while we take you to the source!</p>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <path id="topArc"    d={topPath} />
+            <path id="bottomArc" d={bottomPath} />
+          </defs>
+
+          {/* Logo circles */}
+          <g transform={`translate(${cx},${cy}) scale(${logoScale}) translate(-18,-18)`}>
+            <circle cx="18" cy="18" r="16" stroke="#fb923c" strokeWidth="1.5" strokeOpacity="0.45" />
+            <circle cx="18" cy="18" r="10" stroke="#fb923c" strokeWidth="1.75" strokeOpacity="0.75" />
+            <circle cx="18" cy="18" r="4" fill="#fb923c" />
+          </g>
+
+          {/* Top arc 300° — bold black. Full circle path so text never hits endpoints. */}
+          {/* startOffset 25% = top of circle (CW from leftmost point). */}
+          <text fill="#111827" fontSize={fontSizeTop} fontWeight="700" letterSpacing={lsTop}>
+            <textPath href="#topArc" startOffset="50%" textAnchor="middle">
+              {displayMessage}
+            </textPath>
+          </text>
+
+          {/* Full CCW circle — endpoints at 12 o'clock, no clipping. */}
+          {/* startOffset 51.5% nudges "2" to sit exactly at 180° bottom. */}
+          <text fill="#fb923c" fontSize={fontSizeBottom} fontWeight="700" letterSpacing={lsBottom}>
+            <textPath href="#bottomArc" startOffset="50%" textAnchor="middle">
+              close2source
+            </textPath>
+          </text>
+        </svg>
       </div>
     </PageShell>
   );

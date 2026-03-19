@@ -36,6 +36,7 @@ export type {
   ProjectStatus,
   ProjectVisibility,
   ModerationStatus,
+  ShowcaseDoc,
 } from './types';
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -96,6 +97,20 @@ export {
   createIndividual,
   deleteIndividual,
 } from './individuals';
+
+// ── Showcases ────────────────────────────────────────────────────────────────
+export {
+  getShowcase,
+  getShowcaseByCode,
+  getUserShowcases,
+  getOrgShowcases,
+  subscribeShowcase,
+  subscribeUserShowcases,
+  subscribeOrgShowcases,
+  createShowcase,
+  updateShowcase,
+  deleteShowcase,
+} from './showcases';
 
 // ── Config / Invites / Moderation ─────────────────────────────────────────────
 export {

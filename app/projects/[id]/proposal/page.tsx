@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useParams } from "next/navigation";
 import { storage } from "../../../../src/lib/firebase";
-import { getProject, getProjectByCode, updateProject, getOrgByCode, fieldDelete, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
+import { getProject, getProjectByCode, updateProject, getOrgByCode, updateOrg, fieldDelete, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 import PageShell from "../../../../components/PageShell";
@@ -75,6 +75,7 @@ interface Project {
   projectHeading?: string;
   projectSummary?: string;
   projectImpact?: string;
+  impactItems?: string[];
   startDate?: any;
   endDate?: any;
   targetCompletionDate?: string;
@@ -124,6 +125,12 @@ export default function ProjectProposal() {
   const [saving, setSaving] = useState(false);
   const [orgLogo, setOrgLogo] = useState<string | null>(null);
   const [orgLocations, setOrgLocations] = useState<OrgLocation[]>([]);
+  const [orgDocId, setOrgDocId] = useState<string | null>(null);
+  const [orgSafeguardingUrl, setOrgSafeguardingUrl] = useState<string | null>(null);
+  const [orgLatestAuditReport, setOrgLatestAuditReport] = useState<{ url: string; year: string; label: string } | null>(null);
+  const [orgLocEditOpen, setOrgLocEditOpen] = useState(false);
+  const [orgLocEditForm, setOrgLocEditForm] = useState<OrgLocation | null>(null);
+  const [orgLocSaving, setOrgLocSaving] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
@@ -134,6 +141,8 @@ export default function ProjectProposal() {
   const [pendingReviewMsg, setPendingReviewMsg] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [ytInput, setYtInput] = useState('');
+  const [keyDocsEditOpen, setKeyDocsEditOpen] = useState(false);
+  const [newImpactItem, setNewImpactItem] = useState('');
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [aiReviewModalOpen, setAiReviewModalOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
@@ -173,6 +182,10 @@ export default function ProjectProposal() {
     }));
     if (!editMode[section]) {
       const values = { ...project };
+      // Initialize impactItems as empty array if not exists
+      if (section === 'projectImpact' && !values.impactItems) {
+        values.impactItems = [];
+      }
       // Initialize peopleInvolved as empty array if not exists
       if (section === 'people' && !values.peopleInvolved) {
         values.peopleInvolved = [];
@@ -342,6 +355,8 @@ export default function ProjectProposal() {
               console.log('Fetched org logo:', orgData.logoUrl);
               setOrgLogo((orgData as any).logoUrl || null);
               setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
+              setOrgDocId((orgData as any).id || null);
+              setOrgSafeguardingUrl((orgData as any).safeguardingPolicyUrl || null);
             }
           } catch (err) {
             console.error('Error fetching org logo:', err);
@@ -352,7 +367,13 @@ export default function ProjectProposal() {
           if (data.organizationId) {
             try {
               const orgData = await getOrgByCode(data.organizationId);
-              if (orgData) setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
+              if (orgData) {
+                setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
+                setOrgDocId((orgData as any).id || null);
+                setOrgSafeguardingUrl((orgData as any).safeguardingPolicyUrl || null);
+                const reports2 = Array.isArray((orgData as any).auditorReports) ? (orgData as any).auditorReports : [];
+                if (reports2.length > 0) setOrgLatestAuditReport(reports2[0]);
+              }
             } catch {/* ignore */}
           }
         }
@@ -443,6 +464,20 @@ export default function ProjectProposal() {
   }
 
   const mapParams = getMapParams(project.location);
+
+  const activeLoc = project.locationId
+    ? orgLocations.find(l => l.id === project.locationId) ?? null
+    : null;
+
+  // Prefer linked org location data over project-level location fields
+  const activeLocMapParams = activeLoc?.latitude && activeLoc?.longitude
+    ? { lat: activeLoc.latitude, lng: activeLoc.longitude, zoom: activeLoc.zoom || 13 }
+    : null;
+  const displayMapParams = activeLocMapParams || mapParams;
+  const displayLocationName = activeLoc?.name || project.locationName;
+  const displayLocationDescription = activeLoc?.description || project.locationDescription;
+  const displayTown = activeLoc?.town || project.location?.town;
+  const displayCountry = activeLoc?.country || project.location?.country;
 
   async function saveVisibilityField(patch: Partial<Pick<Project, 'visibility' | 'status' | 'showOnOrganizationOverview'>>) {
     if (!resolvedDocId) return;
@@ -785,41 +820,8 @@ export default function ProjectProposal() {
         {/* Content Container */}
         <div className="space-y-8 pt-8">
 
-        {/* Location Profile Banner — Vision & What We Do from linked org location */}
-        {(() => {
-          const activeLoc = project.locationId
-            ? orgLocations.find(l => l.id === project.locationId)
-            : null;
-          if (!activeLoc || (!activeLoc.vision && !activeLoc.whatWeDo)) return null;
-          return (
-            <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl overflow-hidden shadow-lg">
-              <div className="flex items-center gap-3 px-6 py-3 border-b border-white/10">
-                <MapPinIcon className="w-4 h-4 text-orange-400 flex-shrink-0" />
-                <span className="text-sm font-semibold text-white">{activeLoc.name}</span>
-                {(activeLoc.town || activeLoc.country) && (
-                  <span className="text-xs text-gray-400">{[activeLoc.town, activeLoc.country].filter(Boolean).join(', ')}</span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/10">
-                {activeLoc.vision && (
-                  <div className="px-6 py-5">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-2">Our Vision</p>
-                    <p className="text-white text-sm leading-relaxed">{activeLoc.vision}</p>
-                  </div>
-                )}
-                {activeLoc.whatWeDo && (
-                  <div className="px-6 py-5">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-2">What We Do</p>
-                    <p className="text-white text-sm leading-relaxed">{activeLoc.whatWeDo}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
         {/* Location Introduction - Full Width Transparent */}
-        {(project.locationIntroduction || isCreator) && (
+        {(project.locationIntroduction || isCreator || activeLoc?.vision || activeLoc?.whatWeDo) && (
           <div className="bg-transparent pr-6 pt-0 pb-0">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-3xl font-light text-black">
@@ -857,8 +859,30 @@ export default function ProjectProposal() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Vision & Description (67% width) */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Location Vision card (from linked org location) */}
+            {activeLoc?.vision && (
+              <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg shadow-md p-6 border-l-4 border-orange-600">
+                <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
+                  <LightBulbIcon className="w-6 h-6 text-orange-600" />
+                  Our Vision
+                </h2>
+                <div className="text-lg text-gray-800 italic whitespace-pre-wrap">{activeLoc.vision}</div>
+              </div>
+            )}
+
+            {/* Location What We Do card (from linked org location) */}
+            {activeLoc?.whatWeDo && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-bold flex items-center gap-2 mb-4">
+                  <DocumentTextIcon className="w-6 h-6 text-orange-600" />
+                  What We Do
+                </h2>
+                <div className="prose max-w-none text-gray-700 whitespace-pre-wrap">{activeLoc.whatWeDo}</div>
+              </div>
+            )}
+
             {/* Vision */}
-            {(project.vision || isCreator) && (
+            {!activeLoc?.vision && (project.vision || isCreator) && (
               <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg shadow-md p-6 border-l-4 border-orange-600">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-bold flex items-center gap-2">
@@ -898,7 +922,7 @@ export default function ProjectProposal() {
             )}
 
             {/* Description */}
-            <div className="bg-white rounded-lg shadow-md p-6">
+            {!activeLoc?.whatWeDo && <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <DocumentTextIcon className="w-6 h-6 text-orange-600" />
@@ -933,118 +957,10 @@ export default function ProjectProposal() {
                   {project.description || 'No description provided.'}
                 </div>
               )}
-            </div>
-
-            {/* People Involved */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <UsersIcon className="w-6 h-6 text-orange-600" />
-                  People Involved
-                </h2>
-                {isCreator && (
-                  <button
-                    onClick={() => editMode.people ? saveSection('people', ['peopleInvolved']) : toggleEditMode('people')}
-                    disabled={saving}
-                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
-                    title={editMode.people ? 'Save' : 'Edit'}
-                  >
-                    {editMode.people ? (
-                      <CheckIcon className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <PencilIcon className="w-5 h-5 text-orange-600" />
-                    )}
-                  </button>
-                )}
-              </div>
-              {editMode.people ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* List of people in edit mode - Portrait layout */}
-                  {(editValues.peopleInvolved || []).map((person: any, index: number) => (
-                    <div key={index} className="relative flex flex-col items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <button
-                        onClick={() => {
-                          const newPeople = (editValues.peopleInvolved || []).filter((_: any, i: number) => i !== index);
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                        title="Remove person"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
-                        <span className="text-2xl font-semibold text-orange-600">
-                          {person.name?.charAt(0)?.toUpperCase() || '?'}
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        value={person.name || ''}
-                        onChange={(e) => {
-                          const newPeople = [...(editValues.peopleInvolved || [])];
-                          newPeople[index] = { ...newPeople[index], name: e.target.value };
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center mb-2"
-                        placeholder="Name"
-                      />
-                      <input
-                        type="text"
-                        value={person.role || ''}
-                        onChange={(e) => {
-                          const newPeople = [...(editValues.peopleInvolved || [])];
-                          newPeople[index] = { ...newPeople[index], role: e.target.value };
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-sm"
-                        placeholder="Role"
-                      />
-                    </div>
-                  ))}
-                  
-                  {/* Add Person Button */}
-                  <button
-                    onClick={() => {
-                      const newPeople = [...(editValues.peopleInvolved || []), { name: '', role: '' }];
-                      setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                    }}
-                    className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50 transition-colors min-h-[200px]"
-                  >
-                    <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span className="text-sm font-medium">Add Person</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {project.peopleInvolved && project.peopleInvolved.length > 0 ? (
-                    project.peopleInvolved.map((person: any, index: number) => (
-                      <div key={index} className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
-                        <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
-                          <span className="text-2xl font-semibold text-orange-600">
-                            {person.name?.charAt(0)?.toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <div className="text-center">
-                          <div className="font-semibold text-gray-900 mb-1">{person.name || 'Unknown'}</div>
-                          <div className="text-sm text-gray-600">{person.role || 'No role specified'}</div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="col-span-full text-sm text-gray-500 italic text-center py-4">
-                      {isCreator ? 'Click Edit to add people' : 'No people listed yet'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            </div>}
           </div>
 
-          {/* Right Column - Location & Compliance (33% width) */}
+          {/* Right Column - Location only (33% width) */}
           <div className="lg:col-span-1 space-y-6">
             {/* Location Details (merged card) */}
             <div className="bg-white rounded-lg shadow-md p-6">
@@ -1055,7 +971,14 @@ export default function ProjectProposal() {
                 </h2>
                 {isCreator && (
                   <button
-                    onClick={() => setLocationModalOpen(true)}
+                    onClick={() => {
+                      if (activeLoc && orgDocId) {
+                        setOrgLocEditForm({ ...activeLoc });
+                        setOrgLocEditOpen(true);
+                      } else {
+                        setLocationModalOpen(true);
+                      }
+                    }}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                     title="Edit location"
@@ -1265,36 +1188,36 @@ export default function ProjectProposal() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Location Name & Description */}
-                  {(project.locationName || project.locationDescription) && (
+                  {/* Location Name & Description — prefer linked org location values */}
+                  {(displayLocationName || displayLocationDescription) && (
                     <div className="space-y-2">
-                      {project.locationName && (
+                      {displayLocationName && (
                         <div className="text-lg font-semibold text-gray-900">
-                          {project.locationName}
+                          {displayLocationName}
                         </div>
                       )}
-                      {project.locationDescription && (
+                      {displayLocationDescription && (
                         <div className="prose max-w-none text-gray-700 whitespace-pre-wrap text-sm">
-                          {project.locationDescription}
+                          {displayLocationDescription}
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Map Display */}
-                  {mapParams ? (
+                  {/* Map Display — prefer linked org location coords */}
+                  {displayMapParams ? (
                     <>
                       <div className="rounded overflow-hidden border">
-                        <MapPreview lat={mapParams.lat} lng={mapParams.lng} zoom={mapParams.zoom} />
+                        <MapPreview lat={displayMapParams.lat} lng={displayMapParams.lng} zoom={displayMapParams.zoom} />
                       </div>
                       {/* Location Text Below Map */}
-                      {(project.location?.town || project.location?.country) && (
+                      {(displayTown || displayCountry) && (
                         <div className="space-y-1">
-                          {project.location.town && (
-                            <div className="text-gray-700 font-medium">{project.location.town}</div>
+                          {displayTown && (
+                            <div className="text-gray-700 font-medium">{displayTown}</div>
                           )}
-                          {project.location.country && (
-                            <div className="text-gray-600">{project.location.country}</div>
+                          {displayCountry && (
+                            <div className="text-gray-600">{displayCountry}</div>
                           )}
                         </div>
                       )}
@@ -1302,13 +1225,13 @@ export default function ProjectProposal() {
                   ) : (
                     /* Fallback: show text only if no map available */
                     <>
-                      {(project.location?.town || project.location?.country) ? (
+                      {(displayTown || displayCountry) ? (
                         <div className="space-y-1">
-                          {project.location.town && (
-                            <div className="text-gray-700 font-medium">{project.location.town}</div>
+                          {displayTown && (
+                            <div className="text-gray-700 font-medium">{displayTown}</div>
                           )}
-                          {project.location.country && (
-                            <div className="text-gray-600">{project.location.country}</div>
+                          {displayCountry && (
+                            <div className="text-gray-600">{displayCountry}</div>
                           )}
                           <p className="text-sm text-gray-500 italic mt-2">
                             {isCreator ? 'Click Edit to add GPS coordinates for map display' : 'Map not available'}
@@ -1319,122 +1242,6 @@ export default function ProjectProposal() {
                       )}
                     </>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Compliance */}
-            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <CheckCircleIcon className="w-6 h-6 text-green-600" />
-                  Compliance
-                </h2>
-                {isCreator && (
-                  <button
-                    onClick={() => editMode.quickCheck ? saveSection('quickCheck', ['oversight', 'approved', 'safeguardingInPlace', 'financialAccountabilityInPlace']) : toggleEditMode('quickCheck')}
-                    disabled={saving}
-                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
-                    title={editMode.quickCheck ? 'Save' : 'Edit'}
-                  >
-                    {editMode.quickCheck ? (
-                      <CheckIcon className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <PencilIcon className="w-5 h-5 text-orange-600" />
-                    )}
-                  </button>
-                )}
-              </div>
-              {editMode.quickCheck ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Oversight</label>
-                    <input
-                      type="text"
-                      value={editValues.oversight || ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, oversight: e.target.value }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Who has oversight?"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="approved"
-                      checked={editValues.approved || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, approved: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="approved" className="text-sm font-medium text-gray-700">Approved</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="safeguarding"
-                      checked={editValues.safeguardingInPlace || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, safeguardingInPlace: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="safeguarding" className="text-sm font-medium text-gray-700">Safeguarding Process in Place</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="financial"
-                      checked={editValues.financialAccountabilityInPlace || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, financialAccountabilityInPlace: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="financial" className="text-sm font-medium text-gray-700">Financial Accountability in Place</label>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {project.oversight && (
-                    <div className="flex items-start gap-2">
-                      <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Oversight:</div>
-                      <div className="text-gray-900 text-sm">{project.oversight}</div>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-2">
-                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Approved:</div>
-                    <div className="flex items-center gap-2">
-                      {project.approved ? (
-                        <>
-                          <CheckCircleIcon className="w-4 h-4 text-green-600" />
-                          <span className="text-green-700 font-medium text-sm">Yes</span>
-                        </>
-                      ) : (
-                        <span className="text-gray-500 text-sm">Pending</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Safeguarding:</div>
-                    <div className="flex items-center gap-2">
-                      {project.safeguardingInPlace ? (
-                        <>
-                          <CheckCircleIcon className="w-4 h-4 text-green-600" />
-                          <span className="text-green-700 font-medium text-sm">In Place</span>
-                        </>
-                      ) : (
-                        <span className="text-gray-500 text-sm">Not Set</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Financial:</div>
-                    <div className="flex items-center gap-2">
-                      {project.financialAccountabilityInPlace ? (
-                        <>
-                          <CheckCircleIcon className="w-4 h-4 text-green-600" />
-                          <span className="text-green-700 font-medium text-sm">In Place</span>
-                        </>
-                      ) : (
-                        <span className="text-gray-500 text-sm">Not Set</span>
-                      )}
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -1556,7 +1363,7 @@ export default function ProjectProposal() {
             )}
 
             {/* Project Impact */}
-            {(project.projectImpact || isCreator) && (
+            {(project.projectImpact || (project.impactItems && project.impactItems.length > 0) || isCreator) && (
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-bold flex items-center gap-2">
@@ -1565,7 +1372,7 @@ export default function ProjectProposal() {
                   </h2>
                   {isCreator && (
                     <button
-                      onClick={() => editMode.projectImpact ? saveSection('projectImpact', ['projectImpact']) : toggleEditMode('projectImpact')}
+                      onClick={() => editMode.projectImpact ? saveSection('projectImpact', ['projectImpact', 'impactItems']) : toggleEditMode('projectImpact')}
                       disabled={saving}
                       className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                       title={editMode.projectImpact ? 'Save' : 'Edit'}
@@ -1578,22 +1385,210 @@ export default function ProjectProposal() {
                     </button>
                   )}
                 </div>
+
                 {editMode.projectImpact ? (
-                  <AITextarea
-                    value={editValues.projectImpact || ''}
-                    onChange={(value) => setEditValues(prev => ({ ...prev, projectImpact: value }))}
-                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                    placeholder="Describe the expected impact..."
-                    rows={5}
-                    aiContext="a project impact statement"
-                  />
+                  <div className="space-y-5">
+                    {/* Intro text */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Introduction</label>
+                      <AITextarea
+                        value={editValues.projectImpact || ''}
+                        onChange={(value) => setEditValues(prev => ({ ...prev, projectImpact: value }))}
+                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                        placeholder="Write a short overview of the expected impact…"
+                        rows={3}
+                        aiContext="a project impact introduction"
+                      />
+                    </div>
+
+                    {/* Impact items list */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Impact Points</label>
+                      <div className="space-y-2 mb-3">
+                        {(editValues.impactItems || []).map((item: string, i: number) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={item}
+                              onChange={(e) => {
+                                const updated = [...(editValues.impactItems || [])];
+                                updated[i] = e.target.value;
+                                setEditValues(prev => ({ ...prev, impactItems: updated }));
+                              }}
+                              className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            />
+                            <button
+                              onClick={() => {
+                                const updated = (editValues.impactItems || []).filter((_: string, j: number) => j !== i);
+                                setEditValues(prev => ({ ...prev, impactItems: updated }));
+                              }}
+                              className="p-1 text-red-400 hover:text-red-600 flex-shrink-0"
+                              title="Remove"
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Add new item */}
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                        <input
+                          type="text"
+                          value={newImpactItem}
+                          onChange={(e) => setNewImpactItem(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newImpactItem.trim()) {
+                              setEditValues(prev => ({ ...prev, impactItems: [...(prev.impactItems || []), newImpactItem.trim()] }));
+                              setNewImpactItem('');
+                            }
+                          }}
+                          placeholder="Add impact point and press Enter…"
+                          className="flex-1 px-3 py-1.5 text-sm border border-dashed border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!newImpactItem.trim()) return;
+                            setEditValues(prev => ({ ...prev, impactItems: [...(prev.impactItems || []), newImpactItem.trim()] }));
+                            setNewImpactItem('');
+                          }}
+                          className="px-3 py-1.5 text-sm rounded-lg bg-orange-50 border border-orange-200 text-orange-700 font-medium hover:bg-orange-100 transition"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="prose max-w-none text-gray-700 whitespace-pre-wrap">
-                    {project.projectImpact || (isCreator ? 'Click Edit to add project impact' : '')}
+                  <div className="space-y-4">
+                    {project.projectImpact && (
+                      <p className="text-gray-700 whitespace-pre-wrap">{project.projectImpact}</p>
+                    )}
+                    {project.impactItems && project.impactItems.length > 0 && (
+                      <ul className="space-y-2">
+                        {project.impactItems.map((item, i) => (
+                          <li key={i} className="flex items-start gap-3">
+                            <span className="mt-1 w-4 h-4 rounded-full border-2 border-orange-400 flex items-center justify-center flex-shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                            </span>
+                            <span className="text-gray-700">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {!project.projectImpact && (!project.impactItems || project.impactItems.length === 0) && isCreator && (
+                      <p className="text-gray-400 text-sm">Click Edit to add project impact</p>
+                    )}
                   </div>
                 )}
               </div>
             )}
+
+            {/* People Involved */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <UsersIcon className="w-6 h-6 text-orange-600" />
+                  People Involved
+                </h2>
+                {isCreator && (
+                  <button
+                    onClick={() => editMode.people ? saveSection('people', ['peopleInvolved']) : toggleEditMode('people')}
+                    disabled={saving}
+                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
+                    title={editMode.people ? 'Save' : 'Edit'}
+                  >
+                    {editMode.people ? (
+                      <CheckIcon className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <PencilIcon className="w-5 h-5 text-orange-600" />
+                    )}
+                  </button>
+                )}
+              </div>
+              {editMode.people ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {(editValues.peopleInvolved || []).map((person: any, index: number) => (
+                    <div key={index} className="relative flex flex-col items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <button
+                        onClick={() => {
+                          const newPeople = (editValues.peopleInvolved || []).filter((_: any, i: number) => i !== index);
+                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                        }}
+                        className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                        title="Remove person"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
+                        <span className="text-2xl font-semibold text-orange-600">
+                          {person.name?.charAt(0)?.toUpperCase() || '?'}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={person.name || ''}
+                        onChange={(e) => {
+                          const newPeople = [...(editValues.peopleInvolved || [])];
+                          newPeople[index] = { ...newPeople[index], name: e.target.value };
+                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                        }}
+                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center mb-2"
+                        placeholder="Name"
+                      />
+                      <input
+                        type="text"
+                        value={person.role || ''}
+                        onChange={(e) => {
+                          const newPeople = [...(editValues.peopleInvolved || [])];
+                          newPeople[index] = { ...newPeople[index], role: e.target.value };
+                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                        }}
+                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-sm"
+                        placeholder="Role"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const newPeople = [...(editValues.peopleInvolved || []), { name: '', role: '' }];
+                      setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                    }}
+                    className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50 transition-colors min-h-[200px]"
+                  >
+                    <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span className="text-sm font-medium">Add Person</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {project.peopleInvolved && project.peopleInvolved.length > 0 ? (
+                    project.peopleInvolved.map((person: any, index: number) => (
+                      <div key={index} className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
+                        <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
+                          <span className="text-2xl font-semibold text-orange-600">
+                            {person.name?.charAt(0)?.toUpperCase() || '?'}
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-semibold text-gray-900 mb-1">{person.name || 'Unknown'}</div>
+                          <div className="text-sm text-gray-600">{person.role || 'No role specified'}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="col-span-full text-sm text-gray-500 italic text-center py-4">
+                      {isCreator ? 'Click Edit to add people' : 'No people listed yet'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Other Details */}
             {(project.otherDetails?.trim() || isCreator) && (
@@ -1926,6 +1921,117 @@ export default function ProjectProposal() {
               )}
             </div>
 
+            {/* Compliance */}
+            <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg shadow-md p-6 border-l-4 border-orange-600">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <CheckCircleIcon className="w-6 h-6 text-orange-600" />
+                  Compliance
+                </h2>
+                {isCreator && (
+                  <button
+                    onClick={() => editMode.quickCheck ? saveSection('quickCheck', ['oversight', 'approved', 'safeguardingInPlace', 'financialAccountabilityInPlace']) : toggleEditMode('quickCheck')}
+                    disabled={saving}
+                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
+                    title={editMode.quickCheck ? 'Save' : 'Edit'}
+                  >
+                    {editMode.quickCheck ? (
+                      <CheckIcon className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <PencilIcon className="w-5 h-5 text-orange-600" />
+                    )}
+                  </button>
+                )}
+              </div>
+              {editMode.quickCheck ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Oversight</label>
+                    <input
+                      type="text"
+                      value={editValues.oversight || ''}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, oversight: e.target.value }))}
+                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Who has oversight?"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="approved2" checked={editValues.approved || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, approved: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="approved2" className="text-sm font-medium text-gray-700">Approved</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="safeguarding2" checked={editValues.safeguardingInPlace || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, safeguardingInPlace: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="safeguarding2" className="text-sm font-medium text-gray-700">Safeguarding Process in Place</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="financial2" checked={editValues.financialAccountabilityInPlace || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, financialAccountabilityInPlace: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="financial2" className="text-sm font-medium text-gray-700">Financial Accountability in Place</label>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {project.oversight && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Oversight:</div>
+                      <div className="text-gray-900 text-sm">{project.oversight}</div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Safeguarding:</div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {project.safeguardingInPlace ? (
+                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                      {project.safeguardingInPlace && orgSafeguardingUrl && (
+                        <a
+                          href={orgSafeguardingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          View Safeguarding Document
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Financial:</div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {project.financialAccountabilityInPlace ? (
+                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                      {project.financialAccountabilityInPlace && orgLatestAuditReport && (
+                        <a
+                          href={orgLatestAuditReport.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          View Latest Audit Report{orgLatestAuditReport.year ? ` (${orgLatestAuditReport.year})` : ''}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Timeline Cards */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
@@ -2029,72 +2135,20 @@ export default function ProjectProposal() {
                     Key Documents
                   </h2>
                   {isCreator && (
-                    <div className="flex items-center gap-2">
-                      {/* YouTube link input */}
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={ytInput}
-                          onChange={(e) => setYtInput(e.target.value)}
-                          placeholder="YouTube URL"
-                          className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-36 focus:outline-none focus:ring-2 focus:ring-orange-400"
-                        />
-                        <button
-                          onClick={async () => {
-                            const id = getYouTubeId(ytInput.trim());
-                            if (!id) { alert('Please enter a valid YouTube URL'); return; }
-                            if (!resolvedDocId) return;
-                            const newDoc: ProjectDocument = { name: `YouTube: ${ytInput.trim()}`, url: `https://www.youtube.com/embed/${id}`, type: 'youtube' };
-                            await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
-                            setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
-                            setYtInput('');
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium hover:bg-red-100 transition flex-shrink-0"
-                        >
-                          + YouTube
-                        </button>
-                      </div>
-                      {/* File upload */}
-                      <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-sm font-medium cursor-pointer hover:bg-orange-100 transition ${
-                        uploadingDoc ? 'opacity-50 pointer-events-none' : ''
-                      }`}>
-                        <ArrowUpTrayIcon className="w-4 h-4" />
-                        {uploadingDoc ? 'Uploading…' : 'Add File'}
-                        <input
-                          type="file"
-                          className="hidden"
-                          disabled={uploadingDoc}
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.mp4,.mov,.avi,.wav,.ogg,.webm,audio/*,video/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file || !resolvedDocId) return;
-                            setUploadingDoc(true);
-                            try {
-                              const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-                              const sRef = storageRef(storage, `projects/${resolvedDocId}/documents/${Date.now()}_${safeName}`);
-                              await uploadBytes(sRef, file, { contentType: file.type });
-                              const url = await getDownloadURL(sRef);
-                              const newDoc: ProjectDocument = { name: file.name, url, type: file.type, size: file.size };
-                              await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
-                              setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
-                            } catch (err: any) {
-                              alert('Failed to upload: ' + err.message);
-                            } finally {
-                              setUploadingDoc(false);
-                              e.target.value = '';
-                            }
-                          }}
-                        />
-                      </label>
-                    </div>
+                    <button
+                      onClick={() => setKeyDocsEditOpen(v => !v)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:bg-orange-50 hover:text-orange-600 transition"
+                      title={keyDocsEditOpen ? 'Done editing' : 'Edit documents'}
+                    >
+                      {keyDocsEditOpen
+                        ? <CheckIcon className="w-5 h-5" />
+                        : <PencilIcon className="w-5 h-5" />}
+                    </button>
                   )}
                 </div>
 
                 {(!project.keyDocuments || project.keyDocuments.length === 0) ? (
-                  <div className="text-center py-6 text-gray-400">
-                    <DocumentIcon className="w-10 h-10 mx-auto mb-2" />
-                    <p className="text-sm">No documents yet. Click Add File to upload.</p>
-                  </div>
+                  <p className="text-sm text-gray-400">No Documents Uploaded</p>
                 ) : (
                   <div className="space-y-3">
                     {project.keyDocuments.map((d, i) => {
@@ -2124,7 +2178,7 @@ export default function ProjectProposal() {
                                   <FilmIcon className="w-4 h-4 text-red-500 flex-shrink-0" />
                                   <span className="text-sm text-gray-700 truncate">YouTube Video</span>
                                 </div>
-                                {isCreator && (
+                                {keyDocsEditOpen && (
                                   <button onClick={removeDoc} className="ml-2 p-1 text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">
                                     <TrashIcon className="w-4 h-4" />
                                   </button>
@@ -2139,7 +2193,7 @@ export default function ProjectProposal() {
                                   <FilmIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
                                   <span className="text-sm text-gray-700 truncate">{d.name}</span>
                                 </div>
-                                {isCreator && (
+                                {keyDocsEditOpen && (
                                   <button onClick={removeDoc} className="ml-2 p-1 text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">
                                     <TrashIcon className="w-4 h-4" />
                                   </button>
@@ -2153,7 +2207,7 @@ export default function ProjectProposal() {
                                 <div className="text-sm font-medium text-gray-700 truncate mb-1">{d.name}</div>
                                 <audio src={d.url} controls className="w-full" style={{ height: 32 }} />
                               </div>
-                              {isCreator && (
+                              {keyDocsEditOpen && (
                                 <button onClick={removeDoc} className="p-1 text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">
                                   <TrashIcon className="w-4 h-4" />
                                 </button>
@@ -2166,7 +2220,7 @@ export default function ProjectProposal() {
                                 <div className="text-sm font-medium text-gray-800 hover:text-orange-600 truncate">{d.name}</div>
                                 {d.size && <div className="text-xs text-gray-400">{(d.size / 1024).toFixed(0)} KB</div>}
                               </a>
-                              {isCreator && (
+                              {keyDocsEditOpen && (
                                 <button onClick={removeDoc} className="p-1 text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">
                                   <TrashIcon className="w-4 h-4" />
                                 </button>
@@ -2176,6 +2230,74 @@ export default function ProjectProposal() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Edit form — only shown when editing */}
+                {isCreator && keyDocsEditOpen && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                    {/* YouTube */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Add YouTube Video</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={ytInput}
+                          onChange={(e) => setYtInput(e.target.value)}
+                          placeholder="Paste YouTube URL…"
+                          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                        />
+                        <button
+                          onClick={async () => {
+                            const id = getYouTubeId(ytInput.trim());
+                            if (!id) { alert('Please enter a valid YouTube URL'); return; }
+                            if (!resolvedDocId) return;
+                            const newDoc: ProjectDocument = { name: `YouTube: ${ytInput.trim()}`, url: `https://www.youtube.com/embed/${id}`, type: 'youtube' };
+                            await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
+                            setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
+                            setYtInput('');
+                          }}
+                          className="px-4 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium hover:bg-red-100 transition flex-shrink-0"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    </div>
+                    {/* File upload */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Upload File</label>
+                      <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-sm font-medium cursor-pointer hover:bg-orange-100 transition ${
+                        uploadingDoc ? 'opacity-50 pointer-events-none' : ''
+                      }`}>
+                        <ArrowUpTrayIcon className="w-4 h-4" />
+                        {uploadingDoc ? 'Uploading…' : 'Choose File'}
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingDoc}
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.mp4,.mov,.avi,.wav,.ogg,.webm,audio/*,video/*"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || !resolvedDocId) return;
+                            setUploadingDoc(true);
+                            try {
+                              const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                              const sRef = storageRef(storage, `projects/${resolvedDocId}/documents/${Date.now()}_${safeName}`);
+                              await uploadBytes(sRef, file, { contentType: file.type });
+                              const url = await getDownloadURL(sRef);
+                              const newDoc: ProjectDocument = { name: file.name, url, type: file.type, size: file.size };
+                              await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
+                              setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
+                            } catch (err: any) {
+                              alert('Failed to upload: ' + err.message);
+                            } finally {
+                              setUploadingDoc(false);
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2269,6 +2391,119 @@ export default function ProjectProposal() {
           }}
           onClose={() => setLocationModalOpen(false)}
         />
+      )}
+
+      {/* Org Location Edit Modal — edits the org location directly so changes are shared */}
+      {orgLocEditOpen && orgLocEditForm && orgDocId && typeof window !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <MapPinIcon className="w-5 h-5 text-orange-600" />
+                Edit Location: {orgLocEditForm.name}
+              </h3>
+              <button onClick={() => setOrgLocEditOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location Name *</label>
+                <input type="text" value={orgLocEditForm.name}
+                  onChange={e => setOrgLocEditForm(p => p ? { ...p, name: e.target.value } : p)}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="Location name" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Town / City</label>
+                  <input type="text" value={orgLocEditForm.town || ''}
+                    onChange={e => setOrgLocEditForm(p => p ? { ...p, town: e.target.value } : p)}
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="e.g. Nairobi" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                  <input type="text" value={orgLocEditForm.country || ''}
+                    onChange={e => setOrgLocEditForm(p => p ? { ...p, country: e.target.value } : p)}
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="e.g. Kenya" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <AITextarea value={orgLocEditForm.description || ''}
+                  onChange={v => setOrgLocEditForm(p => p ? { ...p, description: v } : p)}
+                  rows={3} placeholder="Describe this location..." aiContext="a project location description" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Our Vision</label>
+                <AITextarea value={orgLocEditForm.vision || ''}
+                  onChange={v => setOrgLocEditForm(p => p ? { ...p, vision: v } : p)}
+                  rows={2} placeholder="What does this location's work ultimately aim to achieve?" aiContext="a location vision statement for a project proposal" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">What We Do</label>
+                <AITextarea value={orgLocEditForm.whatWeDo || ''}
+                  onChange={v => setOrgLocEditForm(p => p ? { ...p, whatWeDo: v } : p)}
+                  rows={3} placeholder="Describe the activities and work carried out at this location…" aiContext="a description of activities and work carried out at an organisation location" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                  <input type="number" step="any" value={orgLocEditForm.latitude ?? ''}
+                    onChange={e => setOrgLocEditForm(p => p ? { ...p, latitude: e.target.value ? parseFloat(e.target.value) : undefined } : p)}
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="e.g. -1.2921" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                  <input type="number" step="any" value={orgLocEditForm.longitude ?? ''}
+                    onChange={e => setOrgLocEditForm(p => p ? { ...p, longitude: e.target.value ? parseFloat(e.target.value) : undefined } : p)}
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="e.g. 36.8219" />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-5 py-4 border-t">
+              <button onClick={() => setOrgLocEditOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!orgLocEditForm?.name?.trim() || !orgDocId) return;
+                  setOrgLocSaving(true);
+                  try {
+                    const oldLoc = orgLocations.find(l => l.id === orgLocEditForm.id);
+                    if (oldLoc) await updateOrg(orgDocId, { locations: fieldArrayRemove(oldLoc) } as any);
+                    const updated: OrgLocation = {
+                      id: orgLocEditForm.id,
+                      name: orgLocEditForm.name.trim(),
+                      town: orgLocEditForm.town?.trim() || undefined,
+                      country: orgLocEditForm.country?.trim() || undefined,
+                      latitude: orgLocEditForm.latitude !== undefined ? Number(orgLocEditForm.latitude) : undefined,
+                      longitude: orgLocEditForm.longitude !== undefined ? Number(orgLocEditForm.longitude) : undefined,
+                      zoom: orgLocEditForm.zoom ?? 13,
+                      description: orgLocEditForm.description?.trim() || undefined,
+                      vision: orgLocEditForm.vision?.trim() || undefined,
+                      whatWeDo: orgLocEditForm.whatWeDo?.trim() || undefined,
+                    };
+                    const clean: any = Object.fromEntries(Object.entries(updated).filter(([, v]) => v !== undefined));
+                    await updateOrg(orgDocId, { locations: fieldArrayUnion(clean) } as any);
+                    // Update local org locations state so UI reflects immediately
+                    setOrgLocations(prev => prev.map(l => l.id === updated.id ? updated : l));
+                    setOrgLocEditOpen(false);
+                  } catch (err: any) {
+                    alert('Failed to save: ' + (err.message || 'Unknown error'));
+                  } finally {
+                    setOrgLocSaving(false);
+                  }
+                }}
+                disabled={orgLocSaving || !orgLocEditForm?.name?.trim()}
+                className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 text-sm font-medium transition-colors"
+              >
+                {orgLocSaving ? 'Saving…' : 'Save Location'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {aiReviewModalOpen && project && resolvedDocId && (

@@ -7,6 +7,7 @@ import {
   getProjectByCode,
   getOrgByCode,
   getIndividualByCode,
+  getShowcaseByCode,
 } from "@/lib/dal";
 import { inferKindFromCode } from "../src/lib/codes";
 import Link from "next/link";
@@ -40,6 +41,9 @@ function Home() {
         } else if (kind === 'individual') {
           const ind = await getIndividualByCode(raw);
           if (ind) { window.location.replace(`/individuals/profile?id=${raw}`); return; }
+        } else if (kind === 'showcase') {
+          const sc = await getShowcaseByCode(raw);
+          if (sc) { window.location.replace(`/showcase/${raw}`); return; }
         }
       } catch { /* ignore */ }
     })();
@@ -68,6 +72,9 @@ function Home() {
       } else if(kind==='individual'){
         const ind = await getIndividualByCode(raw);
         if(ind){ window.location.href = `/individuals/profile?id=${raw}`; return; }
+      } else if(kind==='showcase'){
+        const sc = await getShowcaseByCode(raw);
+        if(sc){ window.location.href = `/showcase/${raw}`; return; }
       }
       setCodeError('Code not found');
     } catch(err:any){ setCodeError(err.message || 'Search failed'); }

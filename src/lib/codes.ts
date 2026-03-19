@@ -1,7 +1,7 @@
 // Shared code generation & migration utilities
 // Prefix rules: Project -> P + 6 letters, Organization -> O + 6 letters, Individual -> I + 6 letters
 
-export type CodeType = 'project' | 'organization' | 'individual';
+export type CodeType = 'project' | 'organization' | 'individual' | 'showcase';
 
 function randomLetters(len:number){
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -11,14 +11,14 @@ function randomLetters(len:number){
 }
 
 export function generateCode(kind: CodeType){
-  const prefix = kind === 'project' ? 'P' : kind === 'organization' ? 'O' : 'I';
+  const prefix = kind === 'project' ? 'P' : kind === 'organization' ? 'O' : kind === 'showcase' ? 'S' : 'I';
   return prefix + randomLetters(6);
 }
 
-// Basic detector – if code already starts with P/O/I and length>=2 treat as prefixed
+// Basic detector – if code already starts with P/O/I/S and length>=2 treat as prefixed
 export function needsMigration(code?: string | null){
   if(!code) return false;
-  return !/^[POI][A-Z0-9]{6,}$/i.test(code);
+  return !/^[POIS][A-Z0-9]{6,}$/i.test(code);
 }
 
 export function inferKindFromCode(code: string): CodeType | null {
@@ -26,5 +26,6 @@ export function inferKindFromCode(code: string): CodeType | null {
   if(up.startsWith('P')) return 'project';
   if(up.startsWith('O')) return 'organization';
   if(up.startsWith('I')) return 'individual';
+  if(up.startsWith('S')) return 'showcase';
   return null;
 }

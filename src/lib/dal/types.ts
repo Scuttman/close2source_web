@@ -184,6 +184,18 @@ export interface IndividualDoc {
   createdAt?: unknown;
 }
 
+// ─── showcases/{id} ───────────────────────────────────────────────────────────
+
+export interface ShowcaseDoc {
+  showcaseId: string;       // short code e.g. "SABCDEF"
+  title: string;
+  description?: string;
+  ownerUid: string;
+  orgId?: string;           // undefined/null = personal showcase; set = org showcase
+  projectDocIds: string[];  // Firestore document IDs of included projects
+  createdAt?: unknown;      // serverTimestamp
+}
+
 // ─── moderationQueue/{id} ─────────────────────────────────────────────────────
 
 export type ModerationStatus = 'pending' | 'approved' | 'rejected';

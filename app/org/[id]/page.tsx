@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { getOrgByCode, updateOrg, subscribeOrg, getUsersByEmails, subscribeOrgProjects } from '@/lib/dal';
+import { getOrgByCode, updateOrg, subscribeOrg, getUsersByEmails, subscribeOrgProjects, subscribeOrgShowcases, createShowcase, deleteShowcase } from '@/lib/dal';
+import { generateCode } from '../../../src/lib/codes';
 import { storage } from '../../../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import PageShell from '../../../components/PageShell';
-import { InformationCircleIcon, UserGroupIcon, ArrowPathIcon, Cog6ToothIcon, CurrencyDollarIcon, ArrowLeftOnRectangleIcon, Squares2X2Icon, PencilIcon, EyeIcon, PhotoIcon, ArrowUpTrayIcon, ShieldCheckIcon, MapPinIcon, LinkIcon, DocumentTextIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, UserGroupIcon, ArrowPathIcon, Cog6ToothIcon, CurrencyDollarIcon, ArrowLeftOnRectangleIcon, Squares2X2Icon, PencilIcon, EyeIcon, PhotoIcon, ArrowUpTrayIcon, ShieldCheckIcon, MapPinIcon, LinkIcon, DocumentTextIcon, TrashIcon, PlusCircleIcon, PresentationChartBarIcon } from '@heroicons/react/24/outline';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import OrgEnhancedOverviewTab from 'components/OrgEnhancedOverviewTab';
 import OrgSettingsTab from 'components/OrgSettingsTab';
@@ -33,6 +34,17 @@ export default function OrganizationDetailPage(){
   // Ownership transfer state moved into OrgSettingsTab
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
+
+  // Org showcases
+  const [orgShowcases, setOrgShowcases] = useState<any[]>([]);
+  const [orgProjectsForPicker, setOrgProjectsForPicker] = useState<any[]>([]);
+  // Create showcase modal state
+  const [showCreateShowcase, setShowCreateShowcase] = useState(false);
+  const [showcaseTitle, setShowcaseTitle] = useState('');
+  const [showcaseDesc, setShowcaseDesc] = useState('');
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [showcaseCreating, setShowcaseCreating] = useState(false);
+  const [showcaseCreateError, setShowcaseCreateError] = useState('');
   useEffect(()=> {
     const auth = getAuth();
     const unsub = auth.onAuthStateChanged(u=> setUser(u));
@@ -53,7 +65,13 @@ export default function OrganizationDetailPage(){
   }, [rawReturnUrl]);
 
   useEffect(()=>{ const qtab = searchParams?.get('tab'); if(qtab) setActiveTab(qtab); },[searchParams]);
-
+  // Subscribe to org showcases and load org projects for the picker
+  useEffect(()=> {
+    if(!orgDoc?.id || !orgDoc?.orgId) return;
+    const unsubShowcases = subscribeOrgShowcases(orgDoc.orgId, setOrgShowcases);
+    const unsubPicker = subscribeOrgProjects(orgDoc.id, (projs) => setOrgProjectsForPicker(projs));
+    return ()=> { unsubShowcases(); unsubPicker(); };
+  }, [orgDoc?.id, orgDoc?.orgId]);
   // Resolve document by orgId field (like project code) once, then subscribe real-time
   useEffect(()=>{
     let unsub: any = null; let cancelled = false;
@@ -150,6 +168,7 @@ export default function OrganizationDetailPage(){
     updates: ['supporter','representative','admin','owner'],
     team: ['supporter','representative','admin','owner'],
     partners: ['supporter','representative','admin','owner'],
+    showcases: ['public','supporter','representative','admin','owner'],
     finance: ['representative','admin','owner'],
     compliance: ['representative','admin','owner'],
     settings: ['owner']
@@ -168,6 +187,7 @@ export default function OrganizationDetailPage(){
     { id: 'updates', label: 'Updates', icon: ArrowPathIcon },
     { id: 'team', label: 'Team', icon: UserGroupIcon },
     { id: 'partners', label: 'Partners', icon: LinkIcon },
+    { id: 'showcases', label: 'Showcases', icon: PresentationChartBarIcon },
     { id: 'finance', label: 'Finance', icon: CurrencyDollarIcon },
     { id: 'compliance', label: 'Compliance', icon: ShieldCheckIcon },
     ...(isActualOwner ? [{ id: 'settings', label: 'Settings', icon: Cog6ToothIcon }] : []),
@@ -386,6 +406,88 @@ export default function OrganizationDetailPage(){
                 <OrgComplianceTab org={orgDoc} isOwner={canEdit} />
               </div>
             )}
+            {activeTab === 'showcases' && canView('showcases') && (
+              <div className='flex-1 flex flex-col min-h-0 space-y-4'>
+                <div className='flex items-center justify-between'>
+                  <h3 className='text-xl font-semibold text-gray-900'>Showcases</h3>
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        setShowcaseTitle('');
+                        setShowcaseDesc('');
+                        setSelectedProjectIds([]);
+                        setShowcaseCreateError('');
+                        setShowCreateShowcase(true);
+                      }}
+                      className='inline-flex items-center gap-2 px-4 py-2 bg-brand-main text-white rounded-lg text-sm font-semibold hover:bg-brand-dark transition'
+                    >
+                      <PlusCircleIcon className='w-4 h-4' />
+                      New Showcase
+                    </button>
+                  )}
+                </div>
+                {orgShowcases.length === 0 ? (
+                  <div className='bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm'>
+                    <PresentationChartBarIcon className='w-16 h-16 text-gray-300 mx-auto mb-4' />
+                    <p className='text-gray-600 mb-2 font-medium'>No showcases yet.</p>
+                    <p className='text-sm text-gray-500 mb-6'>Create a showcase to share a curated set of this organisation&apos;s projects with partners via a single link or code.</p>
+                    {canEdit && (
+                      <button
+                        onClick={() => {
+                          setShowcaseTitle('');
+                          setShowcaseDesc('');
+                          setSelectedProjectIds([]);
+                          setShowcaseCreateError('');
+                          setShowCreateShowcase(true);
+                        }}
+                        className='inline-flex items-center gap-2 px-6 py-3 bg-brand-main text-white rounded-lg font-semibold hover:bg-brand-dark transition'
+                      >
+                        <PlusCircleIcon className='w-5 h-5' />
+                        Create First Showcase
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className='grid gap-4'>
+                    {orgShowcases.map(sc => (
+                      <div key={sc.id} className='bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition'>
+                        <div className='flex items-start justify-between gap-4'>
+                          <div className='flex-1 min-w-0'>
+                            <h4 className='text-base font-semibold text-gray-900 mb-1 truncate'>{sc.title}</h4>
+                            {sc.description && <p className='text-sm text-gray-500 line-clamp-2 mb-2'>{sc.description}</p>}
+                            <div className='flex flex-wrap items-center gap-3 text-xs text-gray-500'>
+                              <span className='font-mono font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded'>{sc.showcaseId}</span>
+                              <span>{(sc.projectDocIds || []).length} project{(sc.projectDocIds || []).length !== 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                          <div className='flex items-center gap-2 shrink-0'>
+                            <a
+                              href={`/showcase/${sc.showcaseId}`}
+                              className='inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-xs font-semibold hover:bg-orange-100 transition'
+                            >
+                              View
+                              <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M9 5l7 7-7 7' /></svg>
+                            </a>
+                            {canEdit && (
+                              <button
+                                onClick={async () => {
+                                  if(!confirm('Delete this showcase? This cannot be undone.')) return;
+                                  await deleteShowcase(sc.id);
+                                }}
+                                className='inline-flex items-center p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition'
+                                title='Delete showcase'
+                              >
+                                <TrashIcon className='w-4 h-4' />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {isOwner && activeTab === 'settings' && (
               <div className='flex-1 flex flex-col min-h-0'>
                 <OrgSettingsTab
@@ -403,6 +505,134 @@ export default function OrganizationDetailPage(){
       </div>
   </PageShell>
   </div>
+
+      {/* Create Showcase Modal */}
+      {showCreateShowcase && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 relative max-h-[90vh] overflow-y-auto'>
+            <button
+              onClick={() => setShowCreateShowcase(false)}
+              className='absolute top-4 right-4 text-gray-400 hover:text-gray-700 transition text-xl font-bold'
+              aria-label='Close'
+            >✕</button>
+            <h2 className='text-xl font-bold text-brand-main mb-1'>Create an Org Showcase</h2>
+            <p className='text-sm text-gray-500 mb-6'>Pick projects from <strong>{orgDoc?.name}</strong>, give the showcase a title and description, then share it with partners via a code or link.</p>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!user) return;
+                if (!showcaseTitle.trim()) { setShowcaseCreateError('Please enter a title.'); return; }
+                if (selectedProjectIds.length === 0) { setShowcaseCreateError('Select at least one project.'); return; }
+                setShowcaseCreating(true);
+                setShowcaseCreateError('');
+                try {
+                  const code = generateCode('showcase');
+                  await createShowcase({
+                    showcaseId: code,
+                    title: showcaseTitle.trim(),
+                    description: showcaseDesc.trim() || undefined,
+                    ownerUid: user.uid,
+                    orgId: orgDoc?.orgId,
+                    projectDocIds: selectedProjectIds,
+                  });
+                  setShowCreateShowcase(false);
+                  setActiveTab('showcases');
+                } catch (err: any) {
+                  setShowcaseCreateError(err.message || 'Failed to create showcase.');
+                } finally {
+                  setShowcaseCreating(false);
+                }
+              }}
+              className='space-y-5'
+            >
+              {/* Title */}
+              <div>
+                <label className='block text-sm font-semibold text-gray-700 mb-1'>Title <span className='text-red-500'>*</span></label>
+                <input
+                  type='text'
+                  value={showcaseTitle}
+                  onChange={e => setShowcaseTitle(e.target.value)}
+                  placeholder='e.g. Our Impact Projects 2025'
+                  className='w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-main focus:outline-none'
+                  required
+                  disabled={showcaseCreating}
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className='block text-sm font-semibold text-gray-700 mb-1'>Description <span className='text-gray-400 font-normal'>(optional)</span></label>
+                <textarea
+                  value={showcaseDesc}
+                  onChange={e => setShowcaseDesc(e.target.value)}
+                  placeholder='Briefly describe what this showcase represents...'
+                  rows={3}
+                  className='w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-main focus:outline-none resize-none'
+                  disabled={showcaseCreating}
+                />
+              </div>
+
+              {/* Project picker */}
+              <div>
+                <label className='block text-sm font-semibold text-gray-700 mb-2'>Select Projects <span className='text-red-500'>*</span></label>
+                {orgProjectsForPicker.length === 0 ? (
+                  <p className='text-sm text-gray-500 italic'>This organisation has no projects yet.</p>
+                ) : (
+                  <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto'>
+                    {orgProjectsForPicker.map(p => {
+                      const checked = selectedProjectIds.includes(p.id);
+                      return (
+                        <label key={p.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-orange-50 transition ${checked ? 'bg-orange-50' : ''}`}>
+                          <input
+                            type='checkbox'
+                            checked={checked}
+                            onChange={() => setSelectedProjectIds(prev =>
+                              prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                            )}
+                            className='h-4 w-4 rounded border-gray-300 text-brand-main focus:ring-brand-main'
+                            disabled={showcaseCreating}
+                          />
+                          <div className='flex-1 min-w-0'>
+                            <div className='text-sm font-medium text-gray-800 truncate'>{p.name}</div>
+                            <div className='text-xs text-gray-400 font-mono'>{p.projectId}</div>
+                          </div>
+                          {p.coverPhotoUrl && (
+                            <img src={p.coverPhotoUrl} alt='' className='w-10 h-8 object-cover rounded shrink-0' />
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedProjectIds.length > 0 && (
+                  <p className='text-xs text-orange-600 mt-1.5 font-medium'>{selectedProjectIds.length} project{selectedProjectIds.length !== 1 ? 's' : ''} selected</p>
+                )}
+              </div>
+
+              {showcaseCreateError && <p className='text-red-600 text-sm'>{showcaseCreateError}</p>}
+
+              <div className='flex gap-3 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => setShowCreateShowcase(false)}
+                  className='flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 transition'
+                  disabled={showcaseCreating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type='submit'
+                  disabled={showcaseCreating || orgProjectsForPicker.length === 0}
+                  className='flex-1 py-2.5 rounded-lg bg-brand-main text-white text-sm font-semibold hover:bg-brand-dark transition disabled:opacity-60'
+                >
+                  {showcaseCreating ? 'Creating…' : 'Create Showcase'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

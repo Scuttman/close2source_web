@@ -1,6 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { updateOrg, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
+import AITextarea from './AITextarea';
 import { MapPinIcon, PlusIcon, PencilIcon, TrashIcon, XMarkIcon, CheckIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 
 export interface OrgLocation {
@@ -367,23 +368,25 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
             {/* Vision */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Vision <span className="text-gray-400">(shown at top of project proposals)</span></label>
-              <textarea
+              <AITextarea
                 value={form.vision || ''}
-                onChange={e => setForm(prev => ({ ...prev, vision: e.target.value }))}
+                onChange={value => setForm(prev => ({ ...prev, vision: value }))}
                 placeholder="What does this location's work ultimately aim to achieve?"
                 rows={2}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white resize-none"
+                aiContext="a location vision statement for a project proposal"
               />
             </div>
             {/* What We Do */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">What We Do <span className="text-gray-400">(shown at top of project proposals)</span></label>
-              <textarea
+              <AITextarea
                 value={form.whatWeDo || ''}
-                onChange={e => setForm(prev => ({ ...prev, whatWeDo: e.target.value }))}
+                onChange={value => setForm(prev => ({ ...prev, whatWeDo: value }))}
                 placeholder="Describe the activities and work carried out at this location…"
                 rows={3}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white resize-none"
+                aiContext="a description of activities and work carried out at an organisation location"
               />
             </div>
             {/* Description */}

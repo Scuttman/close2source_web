@@ -67,47 +67,47 @@ service firebase.storage {
     function isSuperAdmin() { return request.auth != null && request.auth.token.role == 'SuperAdmin'; }
     function orgOwnerOrTeam(orgId) {
       return request.auth != null && (
-        firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid ||
         (
-          firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.teamUids != null &&
-          request.auth.uid in firestore.get(/databases/$(database)/documents/organizations/$(orgId)).data.teamUids
+          firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.teamUids != null &&
+          request.auth.uid in firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.teamUids
         )
       );
     }
     function canAccessProfile(profileId) {
       return request.auth != null && (
         // profiles/{id}
-        firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerUid == request.auth.uid ||
-        firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.createdBy == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/profiles/$(profileId)).data.ownerUid == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/profiles/$(profileId)).data.createdBy == request.auth.uid ||
         (
-          firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids != null &&
-          request.auth.uid in firestore.get(/databases/$(database)/documents/profiles/$(profileId)).data.teamUids
+          firestore.get(/databases/(default)/documents/profiles/$(profileId)).data.teamUids != null &&
+          request.auth.uid in firestore.get(/databases/(default)/documents/profiles/$(profileId)).data.teamUids
         ) ||
         // fallback via projects/{profileId}
         (
-          firestore.exists(/databases/$(database)/documents/projects/$(profileId)) && (
-            firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.createdBy == request.auth.uid ||
+          firestore.exists(/databases/(default)/documents/projects/$(profileId)) && (
+            firestore.get(/databases/(default)/documents/projects/$(profileId)).data.createdBy == request.auth.uid ||
             (
-              firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.owner.uid == request.auth.uid
+              firestore.get(/databases/(default)/documents/projects/$(profileId)).data.owner.uid == request.auth.uid
             ) ||
             (
-              firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids != null &&
-              request.auth.uid in firestore.get(/databases/$(database)/documents/projects/$(profileId)).data.teamUids
+              firestore.get(/databases/(default)/documents/projects/$(profileId)).data.teamUids != null &&
+              request.auth.uid in firestore.get(/databases/(default)/documents/projects/$(profileId)).data.teamUids
             )
           )
         ) ||
         // organizations/{profileId}
         (
-          firestore.exists(/databases/$(database)/documents/organizations/$(profileId)) && (
-            firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.ownerUid == request.auth.uid ||
+          firestore.exists(/databases/(default)/documents/organizations/$(profileId)) && (
+            firestore.get(/databases/(default)/documents/organizations/$(profileId)).data.ownerUid == request.auth.uid ||
             (
-              firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids != null &&
-              request.auth.uid in firestore.get(/databases/$(database)/documents/organizations/$(profileId)).data.teamUids
+              firestore.get(/databases/(default)/documents/organizations/$(profileId)).data.teamUids != null &&
+              request.auth.uid in firestore.get(/databases/(default)/documents/organizations/$(profileId)).data.teamUids
             )
           )
         ) ||
         // explicit membership doc
-        firestore.exists(/databases/$(database)/documents/profiles/$(profileId)/members/$(request.auth.uid))
+        firestore.exists(/databases/(default)/documents/profiles/$(profileId)/members/$(request.auth.uid))
       );
     }
 
@@ -135,10 +135,11 @@ service firebase.storage {
     // Organization assets (any nested path under organizations/{orgId}/...)
     match /organizations/{orgId}/{allPaths=**} {
       allow read: if true; // public logo/media
-      // Writes: Owner, SuperAdmin, or team member; restrict MIME: images anywhere; arbitrary files only under updates/docs
+      // Writes: Owner, SuperAdmin, or team member; restrict MIME: images anywhere; arbitrary files only under updates/docs or auditor-reports
       allow write: if (isSuperAdmin() || orgOwnerOrTeam(orgId)) && (
                      request.resource.contentType.matches('image/.*') ||
-                     request.resource.name.matches('organizations/' + orgId + '/updates/docs/.*')
+                     request.resource.name.matches('organizations/' + orgId + '/updates/docs/.*') ||
+                     request.resource.name.matches('organizations/' + orgId + '/auditor-reports/.*')
                    );
     }
 

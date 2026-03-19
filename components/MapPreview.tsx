@@ -57,15 +57,18 @@ export const MapPreview: React.FC<MapPreviewProps> = ({ lat, lng, className = ""
       return () => clearInterval(checkLoaded);
     }
 
-    // Script will be loaded by InteractiveMapPicker or load it here
-    const checkLoaded = setInterval(() => {
-      if (window.google && window.google.maps) {
-        setIsLoaded(true);
-        clearInterval(checkLoaded);
-      }
-    }, 100);
+    // No script present — inject it now
+    const callbackName = 'initGoogleMapsPreview';
+    window[callbackName] = () => setIsLoaded(true);
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=${callbackName}`;
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
 
-    return () => clearInterval(checkLoaded);
+    return () => {
+      delete window[callbackName];
+    };
   }, []);
 
   // Initialize map when loaded (only once)

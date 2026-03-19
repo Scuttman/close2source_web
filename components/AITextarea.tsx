@@ -1,6 +1,7 @@
 "use client";
-import { useState } from 'react';
-import { improveTextWithAI, makeTextShorter, makeTextLonger } from '../src/lib/ai';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { improveTextWithAI, makeTextShorter, makeTextLonger, refineTextWithAI } from '../src/lib/ai';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { useAIConsent } from '../src/lib/aiContext';
 
@@ -28,8 +29,13 @@ export default function AITextarea({
   const [improvedText, setImprovedText] = useState('');
   const [originalText, setOriginalText] = useState('');
   const [error, setError] = useState('');
+  const [paragraphPicker, setParagraphPicker] = useState<'longer' | 'shorter' | null>(null);
+  const [extraPrompt, setExtraPrompt] = useState('');
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
-  const handleAIAction = async (action: 'improve' | 'shorter' | 'longer') => {
+  const handleAIAction = async (action: 'improve' | 'shorter' | 'longer', paragraphs?: number) => {
     if (!value.trim()) {
       setError('Please enter some text first');
       setTimeout(() => setError(''), 3000);
@@ -37,6 +43,7 @@ export default function AITextarea({
     }
 
     setShowMenu(false);
+    setParagraphPicker(null);
     setIsProcessing(true);
     setError('');
     setOriginalText(value);
@@ -48,10 +55,10 @@ export default function AITextarea({
           result = await improveTextWithAI(value, aiContext);
           break;
         case 'shorter':
-          result = await makeTextShorter(value);
+          result = await makeTextShorter(value, paragraphs);
           break;
         case 'longer':
-          result = await makeTextLonger(value);
+          result = await makeTextLonger(value, paragraphs);
           break;
       }
       
@@ -76,6 +83,21 @@ export default function AITextarea({
     setShowPreview(false);
     setImprovedText('');
     setOriginalText('');
+    setExtraPrompt('');
+  };
+
+  const handleRegenerate = async () => {
+    if (!extraPrompt.trim()) return;
+    setIsRegenerating(true);
+    try {
+      const refined = await refineTextWithAI(improvedText, extraPrompt);
+      setImprovedText(refined);
+      setExtraPrompt('');
+    } catch {
+      // keep existing text on error
+    } finally {
+      setIsRegenerating(false);
+    }
   };
 
   return (
@@ -143,44 +165,101 @@ export default function AITextarea({
                   <div className="text-xs text-gray-500">Fix grammar, spelling, and clarity</div>
                 </div>
               </button>
+              {/* Make Shorter */}
               <button
-                onClick={() => handleAIAction('shorter')}
+                onClick={() => setParagraphPicker(p => p === 'shorter' ? null : 'shorter')}
                 className="w-full px-4 py-3 text-left hover:bg-orange-50 transition-colors flex items-start gap-3"
               >
                 <div className="p-1.5 bg-orange-100 rounded-lg">
                   <span className="text-sm font-bold text-orange-600">⚡</span>
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="font-medium text-gray-900">Make Shorter</div>
                   <div className="text-xs text-gray-500">More concise, keep key points</div>
                 </div>
+                <span className="text-xs text-gray-400 self-center">{paragraphPicker === 'shorter' ? '▲' : '▼'}</span>
               </button>
+              {paragraphPicker === 'shorter' && (
+                <div className="px-4 pb-3">
+                  <div className="text-xs text-gray-500 mb-2">Number of paragraphs:</div>
+                  <div className="flex gap-1.5">
+                    {[1,2,3,4,5].map(n => (
+                      <button key={n} onClick={() => handleAIAction('shorter', n)}
+                        className="w-8 h-8 rounded-lg text-sm font-semibold bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-200 transition">
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Make Longer */}
               <button
-                onClick={() => handleAIAction('longer')}
+                onClick={() => setParagraphPicker(p => p === 'longer' ? null : 'longer')}
                 className="w-full px-4 py-3 text-left hover:bg-green-50 transition-colors flex items-start gap-3"
               >
                 <div className="p-1.5 bg-green-100 rounded-lg">
                   <span className="text-sm font-bold text-green-600">📝</span>
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="font-medium text-gray-900">Make Longer</div>
                   <div className="text-xs text-gray-500">Add more detail and explanation</div>
                 </div>
+                <span className="text-xs text-gray-400 self-center">{paragraphPicker === 'longer' ? '▲' : '▼'}</span>
               </button>
+              {paragraphPicker === 'longer' && (
+                <div className="px-4 pb-3">
+                  <div className="text-xs text-gray-500 mb-2">Number of paragraphs:</div>
+                  <div className="flex gap-1.5">
+                    {[1,2,3,4,5].map(n => (
+                      <button key={n} onClick={() => handleAIAction('longer', n)}
+                        className="w-8 h-8 rounded-lg text-sm font-semibold bg-green-50 border border-green-200 text-green-700 hover:bg-green-200 transition">
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
       )}
 
-      {/* Preview Modal */}
-      {showPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      {/* Preview Modal — portalled to body so it always centres in the viewport */}
+      {mounted && showPreview && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <SparklesIcon className="w-6 h-6 text-blue-500" />
                 AI Suggestion
               </h2>
+            </div>
+
+            {/* Extra prompt + regenerate */}
+            <div className="px-6 pt-4 pb-2">
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Additional instructions (optional)</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={extraPrompt}
+                  onChange={e => setExtraPrompt(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && extraPrompt.trim()) handleRegenerate(); }}
+                  placeholder="e.g. make it more formal, add a call to action…"
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  disabled={isRegenerating}
+                />
+                <button
+                  onClick={handleRegenerate}
+                  disabled={!extraPrompt.trim() || isRegenerating}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  {isRegenerating
+                    ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <SparklesIcon className="w-4 h-4" />}
+                  {isRegenerating ? 'Generating…' : 'Regenerate'}
+                </button>
+              </div>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1">
@@ -226,7 +305,7 @@ export default function AITextarea({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }
