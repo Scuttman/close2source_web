@@ -5,8 +5,7 @@ import Image from 'next/image';
 import ImageUploadGrid, { ImageUploadEntry } from './ImageUploadGrid';
 import { storage } from '../src/lib/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, getDoc, runTransaction, updateDoc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateProject, mutateProjectUpdates } from '@/lib/dal';
 
 interface Props {
   project: any;                                   // project data
@@ -240,7 +239,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
     });
     if(changed){
       // Persist once; rely on real-time listener to refresh local state.
-      updateDoc(doc(db,'projects',docId), { updates: normalized }).catch(()=>{});
+      updateProject(docId, { updates: normalized }).catch(()=>{});
     }
   },[project?.updates, docId]);
 
@@ -249,12 +248,9 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
     setCommentSubmitting(s=> ({ ...s, [key]: true }));
     try {
       const user = currentUser; if(!user) throw new Error('Sign in required');
-      const ref = doc(db,'projects',docId);
-      await runTransaction(db, async(tx)=>{
-        const snap = await tx.get(ref); if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const updates:any[] = ensureArray(data.updates).map(u=> ({ ...u }));
-        const update = updates[updateIndex]; if(!update) throw new Error('Update missing');
+      await mutateProjectUpdates(docId, (updates) => {
+        if(!updates[updateIndex]) throw new Error('Update missing');
+        const update = { ...updates[updateIndex] };
         update.comments = ensureArray(update.comments);
         const normalize = (arr:any[] = []): any[] => arr.map(c=> ({ id: c.id || randomId(), authorUid: c.authorUid, author: c.author, text: c.text, createdAt: c.createdAt, updatedAt: c.updatedAt, replies: Array.isArray(c.replies)? normalize(c.replies): [] }));
         update.comments = normalize(update.comments);
@@ -268,7 +264,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
         } else {
           update.comments.push(newComment);
         }
-        updates[updateIndex] = update; tx.update(ref,{ updates });
+        updates[updateIndex] = update;
       });
       setCommentInputs(p=> ({ ...p, [key]: '' }));
       if(parentCommentId) setReplyingTo(null);
@@ -280,12 +276,9 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
     const key = `${updateIndex}:edit:${commentId}`; setCommentSubmitting(s=> ({ ...s, [key]: true }));
     try {
       const user = currentUser; if(!user) throw new Error('Sign in required');
-  const ref = doc(db,'projects',docId);
-      await runTransaction(db, async(tx)=>{
-        const snap = await tx.get(ref); if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const updates:any[] = ensureArray(data.updates).map(u=> ({ ...u }));
-        const update = updates[updateIndex]; if(!update) throw new Error('Update missing');
+      await mutateProjectUpdates(docId, (updates) => {
+        if(!updates[updateIndex]) throw new Error('Update missing');
+        const update = { ...updates[updateIndex] };
         update.comments = ensureArray(update.comments);
         const normalize = (arr:any[] = []): any[] => arr.map(c=> ({ id: c.id || randomId(), authorUid: c.authorUid, author: c.author, text: c.text, createdAt: c.createdAt, updatedAt: c.updatedAt, replies: Array.isArray(c.replies)? normalize(c.replies): [] }));
         update.comments = normalize(update.comments);
@@ -296,7 +289,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
         if(!target) throw new Error('Comment missing');
         if(target.authorUid && target.authorUid !== user.uid) throw new Error('Not author');
         target.text = newText; target.updatedAt = new Date().toISOString();
-        updates[updateIndex] = update; tx.update(ref,{ updates });
+        updates[updateIndex] = update;
       });
       setEditingComment(null); setCommentInputs(p=> ({ ...p, [key]: '' }));
     } catch(e:any){ /* silent */ } finally { setCommentSubmitting(s=> ({ ...s, [key]: false })); }
@@ -304,13 +297,10 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
 
   async function deleteComment(updateIndex:number, commentId:string, parentId?:string){
     if(!confirm('Delete this comment?')) return; const user = currentUser; if(!user) return;
-  const ref = doc(db,'projects',docId);
     try {
-      await runTransaction(db, async(tx)=>{
-        const snap = await tx.get(ref); if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const updates:any[] = ensureArray(data.updates).map(u=> ({ ...u }));
-        const update = updates[updateIndex]; if(!update) throw new Error('Update missing');
+      await mutateProjectUpdates(docId, (updates) => {
+        if(!updates[updateIndex]) throw new Error('Update missing');
+        const update = { ...updates[updateIndex] };
         update.comments = ensureArray(update.comments);
         const normalize = (arr:any[] = []): any[] => arr.map(c=> ({ id: c.id || randomId(), authorUid: c.authorUid, author: c.author, text: c.text, createdAt: c.createdAt, updatedAt: c.updatedAt, replies: Array.isArray(c.replies)? normalize(c.replies): [] }));
         update.comments = normalize(update.comments);
@@ -337,7 +327,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
             walk(update.comments);
           }
         }
-        updates[updateIndex] = update; tx.update(ref,{ updates });
+        updates[updateIndex] = update;
       });
     } catch(e:any){ /* silent */ }
   }
@@ -347,12 +337,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
     const key = `${i}:${type}`;
     setReactionSubmitting(s=>({...s,[key]:true}));
     try {
-      await runTransaction(db, async (tx) => {
-        const ref = doc(db, 'projects', projectId);
-        const snap = await tx.get(ref);
-        if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const updates:any[] = Array.isArray(data.updates)? [...data.updates]: [];
+      await mutateProjectUpdates(docId, (updates) => {
         if(!updates[i]) throw new Error('Update missing');
         const u = { ...updates[i] };
         const reactionUsers = { ...(u.reactionUsers||{}) };
@@ -364,7 +349,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
         const legacy = { ...(u.reactions||{}) };
         legacy[type] = arr.length;
         u.reactions = legacy;
-  updates[i] = u; tx.update(ref,{ updates });
+        updates[i] = u;
       });
     } catch(e:any){ /* silent */ }
     finally { setReactionSubmitting(s=>{ const c={...s}; delete c[key]; return c; }); }
@@ -388,12 +373,7 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
     const user = currentUser; if(!user) { alert('Sign in required'); return; }
     setEditSubmitting(true);
     try {
-      await runTransaction(db, async (tx)=>{
-  const ref = doc(db,'projects',docId);
-        const snap = await tx.get(ref);
-        if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const updates:any[] = Array.isArray(data.updates)? [...data.updates]:[];
+      await mutateProjectUpdates(docId, (updates) => {
         if(!updates[i]) throw new Error('Update missing');
         const u = { ...updates[i] };
         if(u.authorUid && u.authorUid !== user.uid) throw new Error('Not author');
@@ -402,7 +382,6 @@ export default function ProjectUpdatesTab({ project, setProject, projectId, proj
         u.tags = Array.from(new Set(editTags.map(t=>t.toLowerCase()).filter(Boolean)));
         u.updatedAt = new Date().toISOString();
         updates[i] = u;
-  tx.update(ref,{updates});
       });
       cancelEdit();
     } catch(e:any){ alert(e.message || 'Failed to save'); }
@@ -772,12 +751,8 @@ function InlineProjectComposer({ projectId, docId, currentUser, onPosted }: { pr
         comments: [],
         imagePaths
       };
-  const refProject = doc(db,'projects',docId);
-      await runTransaction(db, async(tx)=>{
-        const snap = await tx.get(refProject); if(!snap.exists()) throw new Error('Project not found');
-        const data:any = snap.data();
-        const prev:any[] = Array.isArray(data.updates)? data.updates: [];
-        tx.update(refProject, { updates: [newUpdate, ...prev] });
+      await mutateProjectUpdates(docId, (updates) => {
+        updates.unshift(newUpdate);
       });
       // Reset
       setTitle(''); setText(''); setTags([]); setTagInput(''); setImageEntries([]); setResetImagesKey(k=>k+1); setSlideshow(false); setDocFiles([]); onPosted();

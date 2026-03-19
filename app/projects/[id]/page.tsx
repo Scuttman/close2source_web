@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { doc, getDoc, onSnapshot, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../src/lib/firebase";
+import { getProjectByCode, subscribeProject, getOrg } from '@/lib/dal';
 import { getAuth } from "firebase/auth";
 import ProjectFinanceTab from "../../../components/ProjectFinanceTab";
 import ProjectUpdatesTab from "../../../components/ProjectUpdatesTab";
@@ -58,11 +57,9 @@ export default function ProjectDetail() {
       if(/^P[A-Z0-9]{6}$/i.test(routeParam)){
         // treat as projectId code
         try {
-          const qy = query(collection(db,'projects'), where('projectId','==', routeParam.toUpperCase()));
-            const snap = await getDocs(qy);
-            if(snap.empty){ setError('Project not found.'); setResolvedDocId(null); return; }
-            const d = snap.docs[0];
-            setResolvedDocId(d.id);
+          const found = await getProjectByCode(routeParam.toUpperCase());
+            if(!found){ setError('Project not found.'); setResolvedDocId(null); return; }
+            setResolvedDocId(found.id);
             setCanonicalCode(routeParam.toUpperCase());
         } catch(e:any){ setError(e.message || 'Lookup failed'); }
         return;
@@ -77,10 +74,9 @@ export default function ProjectDetail() {
   useEffect(()=> {
     if(!resolvedDocId) return;
     setLoading(true); setError('');
-    const refDoc = doc(db,'projects', resolvedDocId);
-    const unsub = onSnapshot(refDoc, snap=> {
-      if(!snap.exists()){ setError('Project not found.'); setProject(null); setLoading(false); return; }
-      const raw:any = snap.data();
+    const unsub = subscribeProject(resolvedDocId, (data) => {
+      if(!data){ setError('Project not found.'); setProject(null); setLoading(false); return; }
+      const raw:any = data;
       if(!Array.isArray(raw.updates)) raw.updates=[];
       setProject(raw);
       setProjectCurrency(raw.currency || '');
@@ -89,7 +85,7 @@ export default function ProjectDetail() {
       if(raw.projectId && /^P[A-Z0-9]{6}$/i.test(raw.projectId) && routeParam !== raw.projectId){
         try { history.replaceState(null,'', `/projects/${raw.projectId}`); setCanonicalCode(raw.projectId); } catch {/* ignore */}
       } else if(canonicalCode && !raw.projectId){ setCanonicalCode(null); }
-    }, err=> { setError(err.message || 'Error loading project.'); setLoading(false); });
+    }, (err) => { setError(err.message || 'Error loading project.'); setLoading(false); });
     return ()=> unsub();
   },[resolvedDocId]);
   // IMPORTANT: All hooks (useMemo, etc.) must run on every render to preserve order.
@@ -110,10 +106,8 @@ export default function ProjectDetail() {
     let cancelled = false;
     (async () => {
       try {
-        const orgRef = doc(db, 'organizations', project.originatingOrganizationDbId);
-        const orgSnap = await getDoc(orgRef);
-        if (!cancelled && orgSnap.exists()) {
-          const orgData = orgSnap.data();
+        const orgData = await getOrg(project.originatingOrganizationDbId);
+        if (!cancelled && orgData) {
           setIsOrgAdmin(orgData?.ownerUid === currentUser.uid);
         }
       } catch {

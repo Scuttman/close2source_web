@@ -2,8 +2,8 @@
 import { useState, useCallback } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth } from "firebase/auth";
-import { storage, db } from "../src/lib/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { storage } from "../src/lib/firebase";
+import { getProject, updateProject } from '@/lib/dal';
 
 interface CreateProjectUpdateModalProps {
   open: boolean;
@@ -61,10 +61,9 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
           });
         }
       }
-      const projectRef = doc(db, "projects", projectDocId);
-      const snap = await getDoc(projectRef);
-      if (!snap.exists()) throw new Error("Project not found.");
-      const prevUpdates: any[] = Array.isArray(snap.data().updates) ? snap.data().updates : [];
+      const snap = await getProject(projectDocId);
+      if (!snap) throw new Error("Project not found.");
+      const prevUpdates: any[] = Array.isArray((snap as any).updates) ? (snap as any).updates : [];
       const newUpdate = {
   updateId: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
         text: postText,
@@ -80,7 +79,7 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
         reactions: { pray: 0, love: 0 },
         comments: [],
       };
-  await updateDoc(projectRef, { updates: [newUpdate, ...prevUpdates] });
+  await updateProject(projectDocId, { updates: [newUpdate, ...prevUpdates] } as any);
   if(onPostCreated) onPostCreated(newUpdate);
   onClose();
   setPostText(""); setPostTitle(""); setTags([]); setTagInput(""); setPostImages([]); setDocFiles([]); setSlideshow(false);

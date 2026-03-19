@@ -4,7 +4,7 @@
 import { Suspense } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { collection, doc, getDocs, query, updateDoc, where, onSnapshot, deleteField } from "firebase/firestore";
+import { getIndividualByCode, updateIndividual, subscribeIndividual, fieldDelete } from '@/lib/dal';
 import { getAuth } from "firebase/auth";
 import { MapPinIcon, BuildingOfficeIcon, UserGroupIcon, SparklesIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import CreatePostModal from "../../../components/CreatePostModal";
@@ -12,7 +12,6 @@ import IndividualAIReviewModal from "../../../components/IndividualAIReviewModal
 import { generateIndividualPDF } from '../../../src/lib/pdfGenerator';
 import PageShell from "../../../components/PageShell";
 import ProfileLoadingShell from "../../../components/ProfileLoadingShell";
-import { db } from "../../../src/lib/firebase";
 import IndividualOverviewTab from "../../../components/IndividualOverviewTab";
 import IndividualAboutTab from "../../../components/IndividualAboutTab";
 import IndividualUpdatesTab from "../../../components/IndividualUpdatesTab";
@@ -73,11 +72,9 @@ function ProfilePageInner() {
       if(!code) return;
       setLoading(true); setError("");
       try {
-        const qRef = query(collection(db, "individuals"), where("individualId", "==", code));
-        const snap = await getDocs(qRef);
-        if(snap.empty){ if(!cancelled){ setError("No individual found for this code."); setIndividual(null);} return; }
-        const d = snap.docs[0];
-        const raw: any = { id: d.id, ...d.data() };
+        const result = await getIndividualByCode(code);
+        if(!result){ if(!cancelled){ setError("No individual found for this code."); setIndividual(null);} return; }
+        const raw: any = { ...result };
         const patch: any = {};
         if(!Array.isArray(raw.updates)){ raw.updates=[]; patch.updates=[]; }
         if(!Array.isArray(raw.prayerRequests)){ raw.prayerRequests=[]; patch.prayerRequests=[]; }
@@ -94,7 +91,7 @@ function ProfilePageInner() {
           patch.prayerRequests = transformed;
         }
         if(!Array.isArray(raw.financeSummary)){ raw.financeSummary=[]; patch.financeSummary=[]; }
-        if(Object.keys(patch).length){ await updateDoc(doc(db, "individuals", raw.id), patch).catch(()=>{}); }
+        if(Object.keys(patch).length){ await updateIndividual(raw.id, patch as any).catch(()=>{}); }
         if(cancelled) return;
         // Set initial
         // Build unified profilePosts if missing
@@ -117,7 +114,7 @@ function ProfilePageInner() {
           posts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime());
           raw.profilePosts = posts;
           // Delete legacy arrays after migration
-          updateDoc(doc(db, "individuals", raw.id), { profilePosts: posts, updates: deleteField(), prayerRequests: deleteField(), fundingNeeds: deleteField(), feed: deleteField() }).catch(()=>{});
+          updateIndividual(raw.id, { profilePosts: posts, updates: fieldDelete(), prayerRequests: fieldDelete(), fundingNeeds: fieldDelete(), feed: fieldDelete() } as any).catch(()=>{});
         }
         setIndividual(raw);
         const auth = getAuth();
@@ -126,10 +123,9 @@ function ProfilePageInner() {
         setIsOwner(!!u && !!ownerId && u.uid===ownerId);
         // if(u) setRole(computeRole(u, raw)); // TODO: tab permissions
         // Start real-time listener on the doc
-        const ref = doc(db, "individuals", raw.id);
-        unsub = onSnapshot(ref, (snap)=>{
-          if(!snap.exists()) return;
-          const live: any = { id: snap.id, ...snap.data() };
+        unsub = subscribeIndividual(raw.id, (liveData) => {
+          if(!liveData) return;
+          const live: any = { ...liveData };
           // Ensure profilePosts exists (one-time migration for newly viewed docs)
           if(!Array.isArray(live.profilePosts)) {
             const updates = Array.isArray(live.updates)? live.updates: [];
@@ -145,7 +141,7 @@ function ProfilePageInner() {
             funding.forEach((f:any)=> posts.push({ type:'funding', showInUpdatesFeed:false, ...f }));
             posts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime());
             live.profilePosts = posts;
-            updateDoc(ref, { profilePosts: posts, updates: deleteField(), prayerRequests: deleteField(), fundingNeeds: deleteField(), feed: deleteField() }).catch(()=>{});
+            updateIndividual(raw.id, { profilePosts: posts, updates: fieldDelete(), prayerRequests: fieldDelete(), fundingNeeds: fieldDelete(), feed: fieldDelete() } as any).catch(()=>{});
           }
           setIndividual((prev:any) => ({ ...prev, ...live }));
           const authNow = getAuth();
@@ -187,7 +183,7 @@ function ProfilePageInner() {
     const auth = getAuth();
     const u = auth.currentUser; if(!u) return;
     try {
-      await updateDoc(doc(db, "individuals", individual.id), { ownerId: u.uid });
+      await updateIndividual(individual.id, { ownerId: u.uid } as any);
       setIndividual((prev:any)=> prev? {...prev, ownerId: u.uid }: prev);
       setIsOwner(true);
     } catch(e) { /* silent */ }
@@ -199,12 +195,11 @@ function ProfilePageInner() {
       const auth = getAuth();
       const user = auth.currentUser; if(!user) throw new Error("Sign in required");
   if(!individual) throw new Error("Profile not loaded");
-  const ref = doc(db, "individuals", individual.id);
   const updates:any[] = Array.isArray(individual.updates)? [...individual.updates] : [];
   if(!updates[i]) throw new Error("Update missing");
       const newComment = { text: commentInputs[i]||'', author: (user.displayName || user.email || user.uid), createdAt: new Date().toISOString() };
       updates[i].comments = Array.isArray(updates[i].comments)? [...updates[i].comments, newComment] : [newComment];
-      await updateDoc(ref,{updates});
+      await updateIndividual(individual.id, { updates } as any);
   // optimistic local update (snapshot listener will reconcile if needed)
   setIndividual((prev:any)=> prev? ({...prev, updates}): prev);
       setCommentInputs(prev=>({...prev,[i]:''}));

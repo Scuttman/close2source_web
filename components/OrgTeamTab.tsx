@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, updateDoc, doc, setDoc, onSnapshot, serverTimestamp, deleteDoc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { getUser, getUsersByEmails, updateOrg, subscribePendingInvites, createOrgInvite, deleteOrgInvite } from '@/lib/dal';
 
 interface OrgTeamTabProps {
   org: any; // organization doc (expects id, ownerUid, team[])
@@ -48,11 +47,9 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
         if(owner && !owner.name){
           try {
             setLoadingOwner(true);
-            const snap = await getDocs(query(collection(db,'users'), where('__name__','==', org.ownerUid)));
-            if(!snap.empty){
-              const d = snap.docs[0];
-              const data = d.data();
-              const enhanced = { ...owner, ...profileToMember({ uid: d.id, ...data }) };
+            const userData = await getUser(org.ownerUid);
+            if(userData){
+              const enhanced = { ...owner, ...profileToMember({ uid: userData.id, ...userData }) };
               const clone = [...team]; clone[ownerIdx] = enhanced; setTeam(clone);
             }
           } finally { setLoadingOwner(false); }
@@ -61,21 +58,19 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
       }
       try {
         setLoadingOwner(true);
-        const snap = await getDocs(query(collection(db,'users'), where('__name__','==', org.ownerUid)));
-        if(!snap.empty){
-          const d = snap.docs[0];
-          const data = d.data();
-          const ownerMember = { ...profileToMember({ uid: d.id, ...data }), role: 'Owner' };
+        const userData = await getUser(org.ownerUid);
+        if(userData){
+          const ownerMember = { ...profileToMember({ uid: userData.id, ...userData }), role: 'Owner' };
           const newTeam = [ownerMember, ...team];
           setTeam(newTeam);
           if(isOwner){ // persist only if you're the owner viewing (avoid unauthorized writes)
-            try { await updateDoc(doc(db,'organizations', org.id), { team: newTeam }); } catch {/* ignore */}
+            try { await updateOrg(org.id, { team: newTeam }); } catch {/* ignore */}
           }
         } else {
           // Fallback minimal member
           const fallback = { uid: org.ownerUid, id: org.ownerUid, name: 'Owner', type: 'user', role: 'Owner' };
           const newTeam = [fallback, ...team]; setTeam(newTeam);
-          if(isOwner){ try { await updateDoc(doc(db,'organizations', org.id), { team: newTeam }); } catch {/* ignore */} }
+          if(isOwner){ try { await updateOrg(org.id, { team: newTeam }); } catch {/* ignore */} }
         }
       } finally { setLoadingOwner(false); }
     }
@@ -87,24 +82,35 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
   useEffect(()=> {
     if(!org?.id) return;
     setInvitesLoading(true);
-    const qy = query(collection(db,'orgInvites'), where('orgDbId','==', org.id), where('status','==','pending'));
-    const unsub = onSnapshot(qy, snap=> {
-      setPendingInvites(snap.docs.map(d=> ({ id: d.id, ...d.data() })));
+    const unsub = subscribePendingInvites(org.id, (invites) => {
+      setPendingInvites(invites);
       setInvitesLoading(false);
     }, ()=> setInvitesLoading(false));
     return ()=> unsub();
   }, [org?.id]);
 
+  const ROLES = ['Member', 'Admin', 'Representative', 'Supporter'];
+
   async function persist(newTeam:any[]){
-    try { await updateDoc(doc(db,'organizations', org.id), { team: newTeam }); }
+    try { await updateOrg(org.id, { team: newTeam }); }
     catch(e:any){ alert(e.message || 'Save failed'); }
+  }
+
+  async function changeRole(member: any, newRole: string) {
+    const newTeam = team.map(m =>
+      (m.uid && m.uid === member.uid) || (m.email && m.email === member.email)
+        ? { ...m, role: newRole }
+        : m
+    );
+    setTeam(newTeam);
+    await persist(newTeam);
   }
 
   async function resolveUser(email:string){
     try {
-      const qy = query(collection(db,'users'), where('email','==', email));
-      const snap = await getDocs(qy);
-      if(!snap.empty){ const d = snap.docs[0]; const data = d.data(); return profileToMember({ uid: d.id, ...data }); }
+      const byEmail = await getUsersByEmails([email]);
+      const found = Object.values(byEmail)[0];
+      if(found){ return profileToMember({ uid: found.id, ...found }); }
     } catch {/* ignore */}
     return null;
   }
@@ -117,18 +123,17 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
 
   async function createInvite(email:string){
     const token = genToken();
-    const refDoc = doc(collection(db,'orgInvites'), token);
     const invite = {
       orgId: org.orgId,
       orgDbId: org.id,
       orgName: org.name || null,
       email: email.toLowerCase(),
       invitedByUid: org.ownerUid || null,
-      createdAt: serverTimestamp(),
+      createdAt: new Date(),
       status: 'pending',
       role: 'Member'
     };
-    await setDoc(refDoc, invite);
+    await createOrgInvite(token, invite as any);
     return token;
   }
 
@@ -136,13 +141,39 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
     <div className='bg-white border border-brand-main/10 rounded-xl p-6 space-y-5 shadow-sm'>
       <h3 className='text-lg font-semibold text-brand-main'>Team</h3>
       {loadingOwner && <div className='text-[11px] text-gray-500'>Resolving owner…</div>}
-      <div className='flex flex-wrap gap-3'>
+      <div className='flex flex-col gap-2'>
         {team.map((m:any)=> (
-          <div key={m.uid || m.id || m.email} className='px-3 py-2 rounded border border-brand-main/20 bg-brand-main/5 text-xs flex items-center gap-2'>
-            <span>{m.name || m.email || m.id}</span>
-            {m.role === 'Owner' && <span className='text-[9px] font-semibold text-brand-main'>Owner</span>}
+          <div key={m.uid || m.id || m.email} className='flex items-center gap-3 px-4 py-2.5 rounded-lg border border-brand-main/20 bg-brand-main/5'>
+            {/* Avatar */}
+            {m.photoURL ? (
+              <img src={m.photoURL} alt={m.name} className='w-8 h-8 rounded-full object-cover flex-shrink-0' />
+            ) : (
+              <div className='w-8 h-8 rounded-full bg-brand-main/20 flex items-center justify-center flex-shrink-0'>
+                <span className='text-xs font-semibold text-brand-main'>{(m.name || m.email || '?')[0].toUpperCase()}</span>
+              </div>
+            )}
+            {/* Name + email */}
+            <div className='flex-1 min-w-0'>
+              <div className='text-sm font-medium text-gray-900 truncate'>{m.name || m.email || m.id}</div>
+              {m.email && m.name && <div className='text-[11px] text-gray-500 truncate'>{m.email}</div>}
+            </div>
+            {/* Role */}
+            {m.role === 'Owner' ? (
+              <span className='text-[10px] font-bold uppercase tracking-wide text-brand-main bg-brand-main/10 px-2 py-0.5 rounded-full'>Owner</span>
+            ) : isOwner ? (
+              <select
+                value={m.role || 'Member'}
+                onChange={e => changeRole(m, e.target.value)}
+                className='text-xs border border-brand-main/30 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-main'
+              >
+                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            ) : (
+              <span className='text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full'>{m.role || 'Member'}</span>
+            )}
+            {/* Remove */}
             {isOwner && editMode && m.role !== 'Owner' && (
-              <button onClick={()=> { const nt = team.filter(x=> x!==m); setTeam(nt); persist(nt); }} className='text-red-500 hover:text-red-700' aria-label='Remove'>×</button>
+              <button onClick={()=> { const nt = team.filter(x=> x!==m); setTeam(nt); persist(nt); }} className='text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0' aria-label='Remove'>×</button>
             )}
           </div>
         ))}
@@ -192,7 +223,7 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
                 <li key={inv.id} className='flex items-center gap-2 text-[11px] bg-brand-main/5 px-2 py-1 rounded border border-brand-main/10'>
                   <span className='flex-1 truncate'>{inv.email}</span>
                   <button type='button' className='text-brand-main underline' onClick={()=> { if(typeof window!=='undefined') navigator.clipboard.writeText(`${window.location.origin}/org/invite/${inv.id}`); }}>Copy Link</button>
-                  <button type='button' className='text-red-600' onClick={async()=> { if(!confirm('Cancel invite?')) return; try { await deleteDoc(doc(db,'orgInvites', inv.id)); } catch { /* ignore */ } }}>Cancel</button>
+                  <button type='button' className='text-red-600' onClick={async()=> { if(!confirm('Cancel invite?')) return; try { await deleteOrgInvite(inv.id); } catch { /* ignore */ } }}>Cancel</button>
                 </li>
               ))}
             </ul>

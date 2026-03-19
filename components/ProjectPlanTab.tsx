@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { EyeIcon, LightBulbIcon, FlagIcon } from '@heroicons/react/24/outline';
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { getUser, getUsersByEmails, updateProject } from '@/lib/dal';
 
 interface ResourceRef { id: string; name: string; url?: string; note?: string; qty: number; unitCost?: number; cost?: number; currency?: string; }
 interface Task { id: string; title: string; startDate: string; endDate: string; status: 'todo'|'inprogress'|'done'; resources: ResourceRef[]; assignees: string[]; }
@@ -142,10 +141,10 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
         if(m.email && m.email.includes('@')) {
           pending.push((async ()=> {
             try {
-              const q = query(collection(db,'users'), where('email','==', m.email));
-              const snap = await getDocs(q);
-              if(!snap.empty){
-                const d:any = snap.docs[0].data();
+              const byEmail = await getUsersByEmails([m.email!]);
+              const found = Object.values(byEmail)[0];
+              if(found){
+                const d:any = found;
                 const first = d.name || d.firstName || '';
                 const last = d.surname || d.lastName || '';
                 const full = [first,last].filter(Boolean).join(' ') || d.displayName || d.fullName || m.name;
@@ -156,9 +155,9 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
         } else if(!m.id.includes('@')) {
           pending.push((async ()=> {
             try {
-              const snap = await getDoc(doc(db,'users', m.id));
-              if(snap.exists()) {
-                const d:any = snap.data();
+              const snap = await getUser(m.id);
+              if(snap) {
+                const d:any = snap;
                 const first = d.name || d.firstName || '';
                 const last = d.surname || d.lastName || '';
                 const full = [first,last].filter(Boolean).join(' ') || d.displayName || d.fullName || m.name;
@@ -185,9 +184,8 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
   async function save(){
     if(!isProjectCreator || !dirty) return; setSaving(true); setSaveError('');
     try {
-      const ref = doc(db,'projects', projectId);
   const sanitized = stripUndefined(draft);
-  await updateDoc(ref,{ plan: sanitized });
+  await updateProject(projectId, { plan: sanitized } as any);
       onUpdated(draft); setDirty(false);
     } catch(e:any){ setSaveError(e.message || 'Failed to save'); }
     finally { setSaving(false); }

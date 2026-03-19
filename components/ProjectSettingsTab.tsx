@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
+import { storage } from '../src/lib/firebase';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { updateProject, deleteProject } from '@/lib/dal';
 
 interface ProjectSettingsTabProps {
   projectId: string; // display / code id
@@ -126,7 +126,7 @@ export default function ProjectSettingsTab({
     const t = setTimeout(async()=> {
       setSavingVisibility(true);
       try {
-  await updateDoc(doc(db,'projects', docId || projectId), { showOnOrganizationOverview: showOnOrgOverview });
+  await updateProject(docId || projectId, { showOnOrganizationOverview: showOnOrgOverview } as any);
         setProject((p:any)=> ({ ...p, showOnOrganizationOverview: showOnOrgOverview }));
       } catch {/* ignore */}
       finally { setSavingVisibility(false); }
@@ -139,7 +139,7 @@ export default function ProjectSettingsTab({
     const t = setTimeout(async()=> {
       setSavingPublicVisible(true);
       try {
-  await updateDoc(doc(db,'projects', docId || projectId), { publicVisible });
+  await updateProject(docId || projectId, { publicVisible } as any);
         setProject((p:any)=> ({ ...p, publicVisible }));
       } catch {/* ignore */}
       finally { setSavingPublicVisible(false); }
@@ -152,7 +152,7 @@ export default function ProjectSettingsTab({
     const t = setTimeout(async()=> {
       setBgBrightnessSaving(true);
       try {
-        await updateDoc(doc(db,'projects', docId || projectId), { backgroundBrightness });
+        await updateProject(docId || projectId, { backgroundBrightness } as any);
         setProject((p:any)=> ({ ...p, backgroundBrightness }));
         setBgBrightnessSavedAt(Date.now());
       } catch {/* ignore */}
@@ -166,7 +166,7 @@ export default function ProjectSettingsTab({
     const t = setTimeout(async()=> {
       setBgBlurSaving(true);
       try {
-        await updateDoc(doc(db,'projects', docId || projectId), { backgroundBlur });
+        await updateProject(docId || projectId, { backgroundBlur } as any);
         setProject((p:any)=> ({ ...p, backgroundBlur }));
         setBgBlurSavedAt(Date.now());
       } catch {/* ignore */}
@@ -180,7 +180,7 @@ export default function ProjectSettingsTab({
     const t = setTimeout(async()=> {
       setBgFadeSaving(true);
       try {
-        await updateDoc(doc(db,'projects', docId || projectId), { backgroundFade });
+        await updateProject(docId || projectId, { backgroundFade } as any);
         setProject((p:any)=> ({ ...p, backgroundFade }));
         setBgFadeSavedAt(Date.now());
       } catch {/* ignore */}
@@ -243,7 +243,7 @@ export default function ProjectSettingsTab({
     setSavingPerms(true);
     try {
       const clean = sanitizeAccess(accessSettings);
-  await updateDoc(doc(db,'projects', docId || projectId), { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings });
+  await updateProject(docId || projectId, { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings } as any);
       setProject((p:any)=> ({ ...p, accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings }));
       setSavedAt(Date.now());
     } catch(e){ /* ignore */ }
@@ -266,7 +266,7 @@ export default function ProjectSettingsTab({
               const val = e.target.value;
               setProjectCurrency(val);
               try {
-                await updateDoc(doc(db, 'projects', docId || projectId), { currency: val });
+                await updateProject(docId || projectId, { currency: val } as any);
                 setProject((prev: any) => ({ ...prev, currency: val }));
               } catch { /* silent */ }
             }}
@@ -331,7 +331,7 @@ export default function ProjectSettingsTab({
                                   const match = prev.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('projects/')? encoded.substring(encoded.indexOf('projects/')): encoded; const newPath = `projects/${storagePathId}/background.${ext}`; if(objectPath !== newPath){ await deleteObject(ref(storage, objectPath)); } }
                                 } catch {/* ignore */}
                               }
-                              await updateDoc(doc(db,'projects', storagePathId), { backgroundUrl: url });
+                              await updateProject(storagePathId, { backgroundUrl: url } as any);
                               setProject((p:any)=> ({ ...p, backgroundUrl: url }));
                             } catch(e:any){ setBgError(e.message || 'Upload failed'); }
                             finally { setBgUploading(false); setBgProgress(null); }
@@ -347,7 +347,7 @@ export default function ProjectSettingsTab({
                       </div>
                     )}
                     {project.backgroundUrl && !bgUploading && (
-                      <button type='button' onClick={async ev=> { ev.preventDefault(); ev.stopPropagation(); if(!confirm('Remove background image?')) return; setBgUploading(true); setBgError(''); try { try { const prev = project.backgroundUrl; const match = prev.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('projects/')? encoded.substring(encoded.indexOf('projects/')): encoded; await deleteObject(ref(storage, objectPath)); } } catch {/* ignore */} await updateDoc(doc(db,'projects', docId || projectId), { backgroundUrl: null }); setProject((p:any)=> ({ ...p, backgroundUrl: null })); } catch(e:any){ setBgError(e.message || 'Remove failed'); } finally { setBgUploading(false); } }} className='absolute top-2 right-2 bg-red-600 text-white w-7 h-7 rounded-full shadow flex items-center justify-center text-xs hover:bg-red-700' aria-label='Remove background'>×</button>
+                      <button type='button' onClick={async ev=> { ev.preventDefault(); ev.stopPropagation(); if(!confirm('Remove background image?')) return; setBgUploading(true); setBgError(''); try { try { const prev = project.backgroundUrl; const match = prev.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('projects/')? encoded.substring(encoded.indexOf('projects/')): encoded; await deleteObject(ref(storage, objectPath)); } } catch {/* ignore */} await updateProject(docId || projectId, { backgroundUrl: null } as any); setProject((p:any)=> ({ ...p, backgroundUrl: null })); } catch(e:any){ setBgError(e.message || 'Remove failed'); } finally { setBgUploading(false); } }} className='absolute top-2 right-2 bg-red-600 text-white w-7 h-7 rounded-full shadow flex items-center justify-center text-xs hover:bg-red-700' aria-label='Remove background'>×</button>
                     )}
                   </>
                 )}
@@ -428,7 +428,7 @@ export default function ProjectSettingsTab({
               if(!allowEdit) return; setThemeSaving(true);
               try {
                 const patch = { themeHeaderBg, themeHeaderText, themeAccent, themeAccentText, themeAccentHover, themeTabActiveBg, themeTabActiveText, themeTabInactiveText, themeWidgetTitleColor };
-                await updateDoc(doc(db,'projects', docId || projectId), patch);
+                await updateProject(docId || projectId, patch as any);
                 setProject((p:any)=> ({ ...p, ...patch }));
                 setThemeSavedAt(Date.now());
               } catch {/* ignore */}
@@ -557,7 +557,7 @@ export default function ProjectSettingsTab({
                 const isAdmin = (user as any)?.stsTokenManager || false; // placeholder admin check
                 if (!isAdmin) throw new Error('You are not allowed to delete this project');
               }
-              await deleteDoc(doc(db, 'projects', docId || projectId));
+              await deleteProject(docId || projectId);
               router.push('/app/profile');
             } catch (e: any) { setDeleteError(e.message || 'Failed to delete'); }
             finally { setDeleting(false); }

@@ -1,10 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon, SparklesIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import { updateDoc, doc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateProject } from '@/lib/dal';
 
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -158,12 +156,9 @@ ${currentData.otherDetails ? `Other Details: ${currentData.otherDetails}` : ''}`
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('/api/ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           stream: true,
@@ -248,7 +243,7 @@ ${currentData.otherDetails ? `Other Details: ${currentData.otherDetails}` : ''}`
         }
       });
 
-      await updateDoc(doc(db, 'projects', projectId), updateData);
+      await updateProject(projectId, updateData as any);
       
       // Clear localStorage
       localStorage.removeItem(`ai_project_review_${projectId}`);

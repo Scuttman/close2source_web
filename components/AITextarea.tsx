@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { improveTextWithAI, makeTextShorter, makeTextLonger } from '../src/lib/ai';
 import { SparklesIcon } from '@heroicons/react/24/solid';
+import { useAIConsent } from '../src/lib/aiContext';
 
 interface AITextareaProps {
   value: string;
@@ -20,6 +21,7 @@ export default function AITextarea({
   rows = 4,
   aiContext 
 }: AITextareaProps) {
+  const { aiEnabled } = useAIConsent();
   const [showMenu, setShowMenu] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -84,11 +86,11 @@ export default function AITextarea({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
-          className={`${className} pr-12`}
+          className={`${className} ${aiEnabled ? 'pr-12' : ''}`}
         />
         
-        {/* AI Button */}
-        {value.trim() && !isProcessing && (
+        {/* AI Button — only shown when user has AI consent */}
+        {aiEnabled && value.trim() && !isProcessing && (
           <button
             type="button"
             onClick={() => setShowMenu(!showMenu)}
@@ -100,7 +102,7 @@ export default function AITextarea({
         )}
 
         {/* Loading Spinner */}
-        {isProcessing && (
+        {aiEnabled && isProcessing && (
           <div className="absolute top-2 right-2 p-2">
             <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
@@ -115,7 +117,7 @@ export default function AITextarea({
       )}
 
       {/* AI Action Menu */}
-      {showMenu && (
+      {aiEnabled && showMenu && (
         <>
           <div 
             className="fixed inset-0 z-40" 

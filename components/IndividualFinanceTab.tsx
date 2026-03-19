@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useCallback } from "react";
 import { PencilIcon, TrashIcon, XMarkIcon, CheckIcon } from '@heroicons/react/24/outline';
-import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 import { getAuth } from "firebase/auth";
-import { db, storage } from "../src/lib/firebase"; // relative to components folder
+import { storage } from "../src/lib/firebase";
+import { updateIndividual } from '@/lib/dal';
 import ImageUploadGrid, { ImageUploadEntry } from './ImageUploadGrid';
 
 interface FundingNeed {
@@ -95,7 +95,7 @@ export default function IndividualFinanceTab({ individual, onUpdate, readOnly=fa
   prayers.forEach((p:any)=> profilePosts.push({ type:'prayer', showInUpdatesFeed:updateIds.has(p.id), ...p }));
   updatedNeeds.forEach((f:any)=> profilePosts.push({ type:'funding', showInUpdatesFeed:false, ...f }));
       profilePosts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime());
-      await updateDoc(doc(db, "individuals", individual.id), { fundingNeeds: updatedNeeds, givingLinks: updatedLinks, profilePosts });
+      await updateIndividual(individual.id, { fundingNeeds: updatedNeeds, givingLinks: updatedLinks, profilePosts } as any);
     } catch(e) { /* silent */ }
   }
 

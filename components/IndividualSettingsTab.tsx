@@ -1,7 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateIndividual } from '@/lib/dal';
 
 export type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
 const ROLES: AccessLevel[] = ['public','supporter','representative','owner'];
@@ -89,9 +88,8 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
     if(!isOwner) return;
     setSaving(true);
     try {
-      const ref = doc(db, 'individuals', individual.id);
       const clean = sanitizeForSave(settings);
-      await updateDoc(ref, { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings });
+      await updateIndividual(individual.id, { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings } as any);
       onUpdate({ accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings });
       setSavedAt(Date.now());
     } catch(e){ /* ignore */ }

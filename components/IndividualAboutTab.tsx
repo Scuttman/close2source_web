@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../src/lib/firebase";
+import { updateIndividual } from '@/lib/dal';
 import { LightBulbIcon, SparklesIcon, PencilIcon, CheckIcon } from "@heroicons/react/24/outline";
 
 interface IndividualAboutTabProps {
@@ -30,7 +29,7 @@ export default function IndividualAboutTab({ individual, canEdit = false }: Indi
     setSaving(true);
     try {
       const value = editValues[field];
-      await updateDoc(doc(db, "individuals", individual.id), { [field]: value || "" });
+      await updateIndividual(individual.id, { [field]: value || "" } as any);
       setEditMode({ ...editMode, [field]: false });
     } catch (error) {
       console.error("Error saving field:", error);
@@ -45,7 +44,7 @@ export default function IndividualAboutTab({ individual, canEdit = false }: Indi
     setSaving(true);
     try {
       const areas = editValues.focusAreas || [];
-      await updateDoc(doc(db, "individuals", individual.id), { focusAreas: areas });
+      await updateIndividual(individual.id, { focusAreas: areas } as any);
       setEditMode({ ...editMode, focusAreas: false });
     } catch (error) {
       console.error("Error saving focus areas:", error);

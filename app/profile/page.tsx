@@ -2,10 +2,24 @@
 import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged, User, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
-import { getFirestore, doc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, runTransaction } from "firebase/firestore";
 import { app } from "../../src/lib/firebase";
+import {
+  getUser,
+  updateUser,
+  subscribeUserOrgs,
+  subscribeUserProjects,
+  subscribeUserIndividuals,
+  getOrgByCode,
+  getUserIndividuals,
+  getUserOrgs,
+  getUserProjects,
+  getActivityLog,
+  joinOrgByPin,
+} from "@/lib/dal";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon } from "@heroicons/react/24/outline";
+import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon, ShieldCheckIcon, DocumentTextIcon, CheckCircleIcon, XCircleIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline";
+import { updateAIConsent } from "../../src/lib/userConsent";
+import AIConsentModal from "../../components/AIConsentModal";
 import PageShell from "../../components/PageShell";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -24,7 +38,6 @@ function ProfilePageInner() {
   const [dataLoading, setDataLoading] = useState(true);
   
   const auth = getAuth(app);
-  const db = getFirestore(app);
   const storage = getStorage(app);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,22 +62,32 @@ function ProfilePageInner() {
   const [joinError, setJoinError] = useState('');
   const [joinSuccess, setJoinSuccess] = useState('');
 
+  // Compliance / consent state
+  const [consentData, setConsentData] = useState<any>(null);
+  const [aiConsentLocal, setAiConsentLocal] = useState(false);
+  const [aiConsentSaving, setAiConsentSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [showAIReconsentModal, setShowAIReconsentModal] = useState(false);
+
   // Load user profile
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
+        const userData = await getUser(firebaseUser.uid);
+        if (userData) {
+          const d = userData as any;
           setProfile({
-            name: userDoc.data().name || "",
-            surname: userDoc.data().surname || "",
-            email: userDoc.data().email || firebaseUser.email || "",
-            bio: userDoc.data().bio || "",
-            photoURL: userDoc.data().photoURL || "",
-            role: userDoc.data().role || "User",
-            coverPhotoUrl: userDoc.data().coverPhotoUrl || "",
+            name: d.name || "",
+            surname: d.surname || "",
+            email: d.email || firebaseUser.email || "",
+            bio: d.bio || "",
+            photoURL: d.photoURL || "",
+            role: d.role || "User",
+            coverPhotoUrl: d.coverPhotoUrl || "",
           });
+          setConsentData(d?.consent ?? null);
+          setAiConsentLocal(d?.aiConsent === true);
         }
       }
       setLoading(false);
@@ -79,27 +102,18 @@ function ProfilePageInner() {
     setDataLoading(true);
     
     // Organizations where user is owner
-    const orgsQuery = query(collection(db, "organizations"), where("ownerUid", "==", user.uid));
-    const unsubOrgs = onSnapshot(orgsQuery, (snapshot) => {
-      const orgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubOrgs = subscribeUserOrgs(user.uid, (orgs) => {
       setOrganizations(orgs);
     });
 
-    // Projects where user is creator or in team
-    const projectsQuery = query(collection(db, "projects"), where("createdBy", "==", user.uid));
-    const unsubProjects = onSnapshot(projectsQuery, (snapshot) => {
-      const projs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Projects where user is creator
+    const unsubProjects = subscribeUserProjects(user.uid, (projs) => {
       setProjects(projs);
       setDataLoading(false);
     });
 
     // Individual profiles owned by user
-    const individualsQuery = query(
-      collection(db, "individuals"), 
-      where("ownerUid", "==", user.uid)
-    );
-    const unsubIndividuals = onSnapshot(individualsQuery, (snapshot) => {
-      const individuals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubIndividuals = subscribeUserIndividuals(user.uid, (individuals) => {
       setIndividualProfiles(individuals);
     });
 
@@ -120,12 +134,11 @@ function ProfilePageInner() {
       const code = joinCode.trim().toUpperCase();
       const pin = joinPin.trim();
       if (!code || !pin) throw new Error('Please enter both the organization code and PIN.');
-      // Find org by orgId field
-      const q = query(collection(db, 'organizations'), where('orgId', '==', code));
-      const snap = await getDocs(q);
-      if (snap.empty) throw new Error('Organization not found. Check the code and try again.');
-      const orgDocSnap = snap.docs[0];
-      const orgData = orgDocSnap.data();
+      // Find org by orgId field via DAL
+      const orgResult = await getOrgByCode(code);
+      if (!orgResult) throw new Error('Organization not found. Check the code and try again.');
+      const orgData = orgResult as any;
+      const orgDocId = orgResult.id;
       if (!orgData.joinPin || orgData.joinPin !== pin) throw new Error('Incorrect PIN. Please try again.');
       if (!user) throw new Error('You must be logged in.');
       // Check if already a member
@@ -133,22 +146,11 @@ function ProfilePageInner() {
       const alreadyMember = team.some((m: any) => m.uid === user.uid || (m.email && m.email.toLowerCase() === (user.email || '').toLowerCase()));
       if (alreadyMember) throw new Error('You are already a member of this organization.');
       // Add user to team atomically
-      await runTransaction(db, async (transaction) => {
-        const orgRef = orgDocSnap.ref;
-        const latest = await transaction.get(orgRef);
-        const latestTeam: any[] = Array.isArray(latest.data()?.team) ? latest.data()!.team : [];
-        const stillMember = latestTeam.some((m: any) => m.uid === user.uid);
-        if (stillMember) return;
-        const userDocSnap = await getDoc(doc(db, 'users', user.uid));
-        const userData = userDocSnap.exists() ? userDocSnap.data() : {};
-        const member = {
-          uid: user.uid,
-          email: user.email || '',
-          name: `${userData.name || ''} ${userData.surname || ''}`.trim() || user.displayName || user.email || '',
-          type: 'user',
-          role: 'Member',
-        };
-        transaction.update(orgRef, { team: [...latestTeam, member] });
+      const userData = await getUser(user.uid);
+      await joinOrgByPin({
+        orgDocId,
+        user: { uid: user.uid, email: user.email || '', displayName: user.displayName || '' },
+        memberName: `${(userData as any)?.name || ''} ${(userData as any)?.surname || ''}`.trim() || user.displayName || user.email || '',
       });
       setJoinSuccess(`You have joined ${orgData.name}! Refreshing...`);
       setJoinCode('');
@@ -173,11 +175,11 @@ function ProfilePageInner() {
     setProfileError('');
     setProfileSuccess('');
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await updateUser(user.uid, {
         name: profile.name,
         surname: profile.surname,
         bio: profile.bio,
-      });
+      } as any);
       setProfileSuccess('Profile updated successfully!');
       setTimeout(() => setProfileSuccess(''), 3000);
     } catch (err: any) {
@@ -205,7 +207,7 @@ function ProfilePageInner() {
         );
       });
       const url = await getDownloadURL(fileRef);
-      await updateDoc(doc(db, 'users', user.uid), { photoURL: url });
+      await updateUser(user.uid, { photoURL: url } as any);
       setProfile(prev => ({ ...prev, photoURL: url }));
     } catch (err: any) {
       setProfileError(err.message || 'Failed to upload photo.');
@@ -240,7 +242,7 @@ function ProfilePageInner() {
       const fileRef = storageRef(storage, `users/${user.uid}/cover_${Date.now()}.jpg`);
       await uploadBytes(fileRef, file);
       const url = await getDownloadURL(fileRef);
-      await updateDoc(doc(db, "users", user.uid), { coverPhotoUrl: url });
+      await updateUser(user.uid, { coverPhotoUrl: url } as any);
       setProfile(prev => ({ ...prev, coverPhotoUrl: url }));
     } catch (err) {
       console.error("Error uploading cover photo:", err);
@@ -270,6 +272,7 @@ function ProfilePageInner() {
     { id: 'organizations', label: 'Organizations', icon: BuildingOfficeIcon },
     { id: 'projects', label: 'Projects', icon: RectangleGroupIcon },
     { id: 'userprofile', label: 'User Profile', icon: UserCircleIcon },
+    { id: 'compliance', label: 'Compliance', icon: ShieldCheckIcon },
   ];
 
   return (
@@ -657,9 +660,206 @@ function ProfilePageInner() {
                 </div>
               </div>
             )}
+
+            {/* ── Compliance Tab ─────────────────────────────────────────── */}
+            {activeTab === 'compliance' && (
+              <div className="flex flex-col gap-6">
+
+                {/* Header */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                  <div className="flex items-center gap-3 mb-1">
+                    <ShieldCheckIcon className="w-6 h-6 text-brand-main" />
+                    <h2 className="text-xl font-bold text-brand-dark">Compliance &amp; Privacy</h2>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    Your consent records, data rights and account options — all in one place.
+                  </p>
+                </div>
+
+                {/* Consent Status */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-brand-dark mb-4">Consent Records</h3>
+                  <div className="flex flex-col gap-3">
+                    {[
+                      { key: 'privacyPolicy', label: 'Privacy Policy', href: '/privacy' },
+                      { key: 'terms',         label: 'Terms of Service', href: '/terms' },
+                      { key: 'aiPolicy',      label: 'AI Use Policy', href: '/ai-policy' },
+                    ].map(({ key, label, href }) => {
+                      const record = consentData?.[key];
+                      const agreed = record?.agreed === true;
+                      const date = record?.timestamp
+                        ? new Date(record.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+                        : null;
+                      const version = record?.version ?? null;
+                      return (
+                        <div key={key} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            {agreed
+                              ? <CheckCircleIcon className="w-5 h-5 text-green-500 shrink-0" />
+                              : <XCircleIcon className="w-5 h-5 text-red-400 shrink-0" />
+                            }
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">{label}</p>
+                              {date && <p className="text-xs text-gray-400">Agreed {date}{version ? ` · v${version}` : ''}</p>}
+                              {!date && <p className="text-xs text-gray-400">Not yet recorded</p>}
+                            </div>
+                          </div>
+                          <a href={href} className="text-xs text-brand-main hover:underline font-medium" target="_blank" rel="noreferrer">
+                            View
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* AI Consent Toggle */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-brand-dark mb-1">AI Features Consent</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Control whether Close2Source may use AI features on your content. You can change this at any time.
+                  </p>
+                  <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Enable AI features</p>
+                      <p className="text-xs text-gray-400">Allows AI-assisted tools on your projects and profiles.</p>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={aiConsentLocal}
+                      disabled={aiConsentSaving}
+                      onClick={async () => {
+                        if (!user) return;
+                        if (!aiConsentLocal) {
+                          // Turning ON — require fresh re-agreement
+                          setShowAIReconsentModal(true);
+                          return;
+                        }
+                        // Turning OFF — no modal needed
+                        setAiConsentSaving(true);
+                        try {
+                          await updateAIConsent(user.uid, false);
+                          setAiConsentLocal(false);
+                          setConsentData((prev: any) => ({
+                            ...prev,
+                            aiPolicy: { agreed: false, version: '1.0', timestamp: new Date().toISOString() },
+                          }));
+                        } finally {
+                          setAiConsentSaving(false);
+                        }
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-main ${aiConsentLocal ? 'bg-brand-main' : 'bg-gray-300'} ${aiConsentSaving ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${aiConsentLocal ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Data Rights */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-brand-dark mb-1">Your Data Rights</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Under UK GDPR you have the right to access, port and erase your personal data.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      disabled={exporting}
+                      onClick={async () => {
+                        if (!user) return;
+                        setExporting(true);
+                        try {
+                          const [userData, individualsData, orgsData, projectsData, activityData] = await Promise.all([
+                            getUser(user.uid),
+                            getUserIndividuals(user.uid),
+                            getUserOrgs(user.uid),
+                            getUserProjects(user.uid),
+                            getActivityLog(user.uid),
+                          ]);
+                          const payload = {
+                            exportedAt: new Date().toISOString(),
+                            user: userData,
+                            individuals: individualsData,
+                            organizations: orgsData,
+                            projects: projectsData,
+                            activityLog: activityData,
+                          };
+                          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `close2source-data-${user.uid.slice(0, 8)}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } finally {
+                          setExporting(false);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-5 py-2 bg-brand-main text-white text-sm font-semibold rounded-lg hover:bg-brand-dark transition disabled:opacity-60"
+                    >
+                      <ArrowDownTrayIcon className="w-4 h-4" />
+                      {exporting ? 'Exporting…' : 'Download My Data'}
+                    </button>
+                    <button
+                      onClick={() => router.push('/settings')}
+                      className="flex items-center gap-2 px-5 py-2 bg-red-50 text-red-700 border border-red-200 text-sm font-semibold rounded-lg hover:bg-red-100 transition"
+                    >
+                      <XCircleIcon className="w-4 h-4" />
+                      Close / Delete Account
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-3">
+                    Account deletion is managed in Settings. This action is permanent and cannot be undone.
+                  </p>
+                </div>
+
+              </div>
+            )}
         </div>
+        {/* Right Tools Panel */}
+        {user && (
+          <div className="hidden lg:flex flex-col w-60 shrink-0 self-start sticky top-4 gap-4">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <PlusCircleIcon className="w-4 h-4 text-orange-500" />
+                Profile Tools
+              </h3>
+              <button
+                disabled
+                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg bg-orange-50 border border-orange-200 text-orange-800 text-sm font-medium opacity-70 cursor-not-allowed"
+                title="Coming soon"
+              >
+                <UserCircleIcon className="w-5 h-5 text-orange-500" />
+                <span className="flex-1 text-left">Add Profile</span>
+                <span className="text-xs bg-orange-200 text-orange-700 px-2 py-0.5 rounded-full">Soon</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
+      {/* AI Re-consent Modal */}
+      {showAIReconsentModal && (
+        <AIConsentModal
+          saving={aiConsentSaving}
+          onAgree={async () => {
+            if (!user) return;
+            setAiConsentSaving(true);
+            try {
+              await updateAIConsent(user.uid, true);
+              setAiConsentLocal(true);
+              setConsentData((prev: any) => ({
+                ...prev,
+                aiPolicy: { agreed: true, version: '1.0', timestamp: new Date().toISOString() },
+              }));
+              setShowAIReconsentModal(false);
+            } finally {
+              setAiConsentSaving(false);
+            }
+          }}
+          onCancel={() => setShowAIReconsentModal(false)}
+        />
+      )}
+
       {/* Join Organization Modal */}
       {showJoinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

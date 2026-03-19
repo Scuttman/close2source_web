@@ -1,8 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { db } from '../src/lib/firebase';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
+import { getUserOrgs, updateProject, fieldArrayUnion, fieldServerTimestamp } from '@/lib/dal';
 import { XMarkIcon, BuildingOfficeIcon, UserIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 
@@ -130,15 +129,13 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
     if (!u) return;
     setLoadingOrgs(true);
     try {
-      const q = query(collection(db, 'organizations'), where('ownerUid', '==', u.uid));
-      const snapshot = await getDocs(q);
-      const orgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        orgId: doc.data().orgId,
-        logoUrl: doc.data().logoUrl
-      }));
-      setOrganizations(orgs);
+      const orgs = await getUserOrgs(u.uid);
+      setOrganizations(orgs.map((o: any) => ({
+        id: o.id,
+        name: o.name,
+        orgId: o.orgId,
+        logoUrl: o.logoUrl
+      })));
     } catch (e: any) {
       console.error('Error loading organizations:', e);
     } finally {
@@ -186,8 +183,6 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
     setError('');
 
     try {
-      const projectRef = doc(db, 'projects', projectDocId);
-      
       // Build partner object
       const partnerData: any = {
         uid: activeUser.uid,
@@ -197,7 +192,7 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
         supportType,
         message: message || undefined,
         addedAt: new Date().toISOString(),
-        timestamp: serverTimestamp()
+        timestamp: fieldServerTimestamp()
       };
 
       if (partnerType === 'organization' && selectedOrg) {
@@ -218,15 +213,15 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
       }
 
       // Update project with new partner
-      await updateDoc(projectRef, {
-        partners: arrayUnion(partnerData),
-        updatedAt: serverTimestamp()
-      });
+      await updateProject(projectDocId, {
+        partners: fieldArrayUnion(partnerData),
+        updatedAt: fieldServerTimestamp()
+      } as any);
 
       // If there's a pledge amount, update amountPledged
       if (partnerData.pledgeAmount) {
         const currentPledged = project.amountPledged || 0;
-        await updateDoc(projectRef, {
+        await updateProject(projectDocId, {
           amountPledged: currentPledged + partnerData.pledgeAmount
         });
       }
@@ -614,6 +609,17 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
                       {error}
                     </div>
                   )}
+
+                  {/* Privacy notice (Art. 13 GDPR) */}
+                  <p className="text-xs text-gray-500">
+                    Your name, contact details, and organisation (if applicable) will be stored by the
+                    project owner in connection with this partnership, and may be visible to other
+                    members of the project team. See our{" "}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
+                      Privacy Policy
+                    </a>{" "}
+                    for details of how your data is handled and your rights.
+                  </p>
 
                   {/* Submit Button */}
                   <button

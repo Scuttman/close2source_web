@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy, limit, startAfter, doc, getDoc } from "firebase/firestore";
-import { db } from "../../src/lib/firebase";
+import { getPublicProjectsPage, getUser } from '@/lib/dal';
 import PageShell from "../../components/PageShell";
 import Link from "next/link";
 
@@ -19,30 +18,12 @@ export default function ProjectsPage() {
   async function loadPage(initial=false){
     if(loading) return; setLoading(true);
     try {
-      let qRef = query(
-        collection(db,'projects'),
-        where('publicVisible','!=', false), // include undefined or true
-        orderBy('publicVisible'), // needed because of inequality; false filtered later when == false
-        orderBy('nameLower'),
-        limit(PAGE_SIZE)
-      );
-      if(!initial && lastDoc){
-        qRef = query(
-          collection(db,'projects'),
-            where('publicVisible','!=', false),
-            orderBy('publicVisible'),
-            orderBy('nameLower'),
-            startAfter(lastDoc),
-            limit(PAGE_SIZE)
-        );
-      }
-      const snap = await getDocs(qRef);
-      if(snap.empty){
+      const { rows, cursor } = await getPublicProjectsPage(PAGE_SIZE, initial ? null : lastDoc);
+      if(!rows.length){
         if(initial) setProjects([]);
         setExhausted(true); return;
       }
-      const rows = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
-      setLastDoc(snap.docs[snap.docs.length-1]);
+      setLastDoc(cursor);
       setProjects(prev=> initial? rows : [...prev, ...rows]);
       if(rows.length < PAGE_SIZE) setExhausted(true);
     } finally { setLoading(false); }
@@ -61,10 +42,9 @@ export default function ProjectsPage() {
       });
       for(const uid of toFetch){
         try {
-          const userSnap = await getDoc(doc(db,'users', uid));
-          if(userSnap.exists()){
-            const data = userSnap.data() as any;
-            const fullName = [data.name, data.surname].filter(Boolean).join(' ') || data.name || data.email || 'Individual';
+          const userData = await getUser(uid);
+          if(userData){
+            const fullName = [userData.name, (userData as any).surname].filter(Boolean).join(' ') || userData.name || userData.email || 'Individual';
             setOwnerNames(prev=> ({ ...prev, [uid]: fullName }));
           } else {
             setOwnerNames(prev=> ({ ...prev, [uid]: 'Individual' }));

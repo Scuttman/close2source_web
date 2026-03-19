@@ -2,8 +2,7 @@
 import { Suspense } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../src/lib/firebase";
+import { getProjectByCode } from "@/lib/dal";
 
 // This page now only resolves a short project code (projectId field) and redirects
 // to the canonical project route /projects/[firestoreDocId]. If not found, an
@@ -24,13 +23,12 @@ function ProjectCodeRedirectInner() {
       setLoading(true);
       setError("");
       try {
-        const q = query(collection(db, "projects"), where("projectId", "==", code));
-        const snap = await getDocs(q);
+        const project = await getProjectByCode(code);
         if (cancelled) return;
-        if (snap.empty) {
+        if (!project) {
           setError("No project found for this code.");
         } else {
-          const docId = snap.docs[0].id;
+          const docId = project.id;
           redirectedRef.current = true;
           // Use replace so the short URL doesn't stay in history before canonical.
           router.replace(`/projects/${docId}`);

@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { doc, updateDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { db } from "../src/lib/firebase";
+import { updateIndividual } from '@/lib/dal';
 import ImageUploadGrid, { ImageUploadEntry } from "./ImageUploadGrid";
 
 interface PrayerRequest {
@@ -110,7 +109,7 @@ export default function IndividualPrayerTab({ individual, onUpdate, onUpdatesCha
       const profilePosts = buildProfilePosts(updated, updatesArr, fundingNeeds, individual.profilePosts);
       const sanitizedRequests = updated.map(r=> sanitize(r));
       const sanitizedProfilePosts = profilePosts.map(p=> sanitize(p));
-      await updateDoc(doc(db, "individuals", individual.id), { prayerRequests: sanitizedRequests, profilePosts: sanitizedProfilePosts });
+      await updateIndividual(individual.id, { prayerRequests: sanitizedRequests, profilePosts: sanitizedProfilePosts } as any);
     } catch {}
   }
 
@@ -155,7 +154,7 @@ export default function IndividualPrayerTab({ individual, onUpdate, onUpdatesCha
           const sanitizedRequests = nextRequests.map(r=> sanitize(r));
           const sanitizedUpdates = newUpdates.map(u=> sanitize(u));
           const sanitizedProfilePosts = profilePosts.map(p=> sanitize(p));
-          await updateDoc(doc(db, "individuals", individual.id), { prayerRequests: sanitizedRequests, updates: sanitizedUpdates, profilePosts: sanitizedProfilePosts });
+          await updateIndividual(individual.id, { prayerRequests: sanitizedRequests, updates: sanitizedUpdates, profilePosts: sanitizedProfilePosts } as any);
           onUpdate?.(nextRequests);
           onUpdatesChange?.(newUpdates);
         } catch (err) {
@@ -172,7 +171,7 @@ export default function IndividualPrayerTab({ individual, onUpdate, onUpdatesCha
             const profilePosts = buildProfilePosts(nextRequests, standaloneUpdates, fundingNeeds, individual.profilePosts);
             const sanitizedUpdates = standaloneUpdates.map(u=> sanitize(u));
             const sanitizedProfilePosts = profilePosts.map(p=> sanitize(p));
-            await updateDoc(doc(db, "individuals", individual.id), { updates: sanitizedUpdates, profilePosts: sanitizedProfilePosts });
+            await updateIndividual(individual.id, { updates: sanitizedUpdates, profilePosts: sanitizedProfilePosts } as any);
             onUpdatesChange?.(standaloneUpdates);
           } catch(e3){
             console.error('[PrayerTab] Secondary updates-only write failed.', e3);

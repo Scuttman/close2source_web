@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useMemo } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateProject } from '@/lib/dal';
 import ProjectSpendingBreakdown from './ProjectSpendingBreakdown';
 import ProjectTransactionsManager from './ProjectTransactionsManager';
 
@@ -54,7 +53,7 @@ export default function ProjectFinanceTab({
     let cancelled = false;
     async function persist() {
       try {
-        await updateDoc(doc(db, 'projects', projectId), { financeSummary: summary });
+        await updateProject(projectId, { financeSummary: summary } as any);
         if (cancelled) return;
       } catch { /* silent */ }
     }

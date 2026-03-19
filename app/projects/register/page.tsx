@@ -2,9 +2,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth } from "firebase/auth";
-import { db, storage } from "../../../src/lib/firebase";
+import { storage } from "../../../src/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { doc, runTransaction, serverTimestamp, collection } from "firebase/firestore";
+import { getProjectByCode, createProjectWithCredits } from '@/lib/dal';
 import PageShell from "../../../components/PageShell";
 
 export default function RegisterProject() {
@@ -57,35 +57,22 @@ export default function RegisterProject() {
       // Generate a unique 7-letter projectId
       let projectId = "";
       let isUnique = false;
-      const projectsCol = collection(db, "projects");
       for (let attempts = 0; attempts < 10 && !isUnique; attempts++) {
         projectId = generateProjectId();
-        // Check if this projectId exists
-        const q = await import("firebase/firestore").then(firestore => firestore.query);
-        const where = await import("firebase/firestore").then(firestore => firestore.where);
-        const getDocs = await import("firebase/firestore").then(firestore => firestore.getDocs);
-        const qSnap = await getDocs(q(projectsCol, where("projectId", "==", projectId)));
-        if (qSnap.empty) isUnique = true;
+        const existing = await getProjectByCode(projectId);
+        if (!existing) isUnique = true;
       }
       if (!isUnique) throw new Error("Could not generate a unique project ID. Please try again.");
 
-  // Firestore transaction: create project, deduct credits
-      await runTransaction(db, async (transaction) => {
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await transaction.get(userRef);
-        if (!userSnap.exists()) throw new Error("User profile not found.");
-        const userData = userSnap.data();
-        if ((userData.credits || 0) < 50) throw new Error("Not enough credits.");
-
-        // Create project
-        const newProjectRef = doc(projectsCol);
-        transaction.set(newProjectRef, {
+  // Create project and deduct credits via DAL
+      await createProjectWithCredits({
+        uid: user.uid,
+        projectData: {
           name,
-          nameLower: name.toLowerCase(), // for indexed ordering & pagination
+          nameLower: name.toLowerCase(),
           description,
           coverPhotoUrl,
           users: [{ uid: user.uid, role: "Admin" }],
-          createdAt: serverTimestamp(),
           createdBy: user.uid,
           projectId,
           showOnOrganizationOverview: !!showOnOrgOverview,
@@ -95,12 +82,9 @@ export default function RegisterProject() {
             town: town || null,
             latitude: latNum,
             longitude: lngNum,
-            // convenience string for simple text search
             search: [country, town].filter(Boolean).join(" ").toLowerCase() || null,
           },
-        });
-        // Deduct credits
-        transaction.update(userRef, { credits: (userData.credits || 0) - 50 });
+        },
       });
   router.push("/");
     } catch (e: any) {

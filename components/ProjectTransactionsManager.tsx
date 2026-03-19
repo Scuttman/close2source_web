@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { collection, addDoc, getDocs, query, orderBy, setDoc } from 'firebase/firestore';
+import { getFinanceTransactions, addFinanceTransaction } from '@/lib/dal';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
-import { db } from '../src/lib/firebase';
 
 interface ProjectTransactionsManagerProps {
   projectId: string;
@@ -36,10 +35,7 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
     async function loadFinance(){
       setFinanceLoading(true); setFinanceError('');
       try {
-        const txRef = collection(db, 'projects', projectId, 'financeTransactions');
-        const qRef = query(txRef, orderBy('createdAt','desc'));
-        const snap = await getDocs(qRef);
-        const rows = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+        const rows = await getFinanceTransactions(projectId);
         const sorted = rows.sort((a:any,b:any)=>{
           const ad = (a.transactionDate || (a.createdAt? String(a.createdAt).slice(0,10):'')) as string;
           const bd = (b.transactionDate || (b.createdAt? String(b.createdAt).slice(0,10):'')) as string;
@@ -98,12 +94,9 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
         txData.receipts = uploaded;
         setUploadingReceipts(false);
       }
-      const colRef = collection(db,'projects', projectId, 'financeTransactions');
-      const docRef = await addDoc(colRef, txData);
-      // Persist the id field inside the document for redundancy / export convenience
-      try { await setDoc(docRef, { id: docRef.id }, { merge: true }); } catch {/* ignore */}
+      const newDocId = await addFinanceTransaction(projectId, txData as any);
       setTransactions(prev=> {
-        const list = [{ id: docRef.id, ...txData }, ...prev.filter(t=> t.id !== docRef.id)];
+        const list = [{ id: newDocId, ...txData }, ...prev.filter(t=> t.id !== newDocId)];
         return list.sort((a:any,b:any)=>{
           const ad = (a.transactionDate || (a.createdAt? String(a.createdAt).slice(0,10):'')) as string;
           const bd = (b.transactionDate || (b.createdAt? String(b.createdAt).slice(0,10):'')) as string;

@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import { app } from "../src/lib/firebase";
 import Link from "next/link";
 import Image from "next/image";
-import { getFirestore, doc, onSnapshot } from "firebase/firestore";
+import { subscribeUser } from "@/lib/dal";
 
 export default function UserHero() {
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
   const auth = getAuth(app);
-  const db = getFirestore(app);
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -24,14 +23,9 @@ export default function UserHero() {
         unsubscribeSnap = null;
       }
       if (firebaseUser) {
-        // Listen to credits in real-time
-        const userRef = doc(db, "users", firebaseUser.uid);
-        unsubscribeSnap = onSnapshot(userRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setCredits(docSnap.data().credits ?? 0);
-          } else {
-            setCredits(0);
-          }
+        // Listen to credits in real-time via DAL
+        unsubscribeSnap = subscribeUser(firebaseUser.uid, (userData) => {
+          setCredits(userData?.credits ?? 0);
         });
       } else {
         setCredits(null);
@@ -41,7 +35,7 @@ export default function UserHero() {
       unsubscribeAuth();
       if (unsubscribeSnap) unsubscribeSnap();
     };
-  }, [auth, db]);
+  }, [auth]);
 
   if (!user) {
     return (

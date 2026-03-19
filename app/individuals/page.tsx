@@ -1,21 +1,29 @@
-
 "use client";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../../src/lib/firebase";
+import { getAuth, onAuthStateChanged, User } from "firebase/auth";
+import { app } from "../../src/lib/firebase";
+import { subscribeUserIndividuals } from '@/lib/dal';
 import PageShell from "../../components/PageShell";
 import Link from "next/link";
 
 export default function IndividualsPage() {
+  const [user, setUser] = useState<User | null>(null);
   const [individuals, setIndividuals] = useState<any[]>([]);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "individuals"), (snap) => {
-      setIndividuals(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    const auth = getAuth(app);
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) { setIndividuals([]); return; }
+    const unsub = subscribeUserIndividuals(user.uid, (rows) => {
+      setIndividuals(rows);
     });
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const filtered = individuals.filter((ind) => {
     const s = search.toLowerCase();
@@ -28,7 +36,7 @@ export default function IndividualsPage() {
 
   return (
     <PageShell
-      title={<span>Individuals</span>}
+      title={<span>My Individuals</span>}
       contentClassName="p-6 md:p-8"
       searchEnabled
       searchValue={search}
@@ -44,9 +52,11 @@ export default function IndividualsPage() {
       }
     >
       <div className="max-w-6xl">
-        <h1 className="text-3xl font-bold mb-6 text-brand-main">All Individuals</h1>
+        <h1 className="text-3xl font-bold mb-6 text-brand-main">My Individuals</h1>
   <div className="flex flex-wrap gap-3 justify-start">
-          {filtered.length === 0 ? (
+          {!user ? (
+            <div className="col-span-full text-brand-dark text-center">Sign in to see your individual profiles.</div>
+          ) : filtered.length === 0 ? (
             <div className="col-span-full text-brand-dark text-center">No individuals found.</div>
           ) : (
             filtered.map((ind) => (

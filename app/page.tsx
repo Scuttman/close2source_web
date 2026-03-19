@@ -2,18 +2,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, User } from "firebase/auth";
-import { app, db } from "../src/lib/firebase";
-import { collection, query, where, onSnapshot, getDocs, updateDoc, doc } from "firebase/firestore";
-import { inferKindFromCode, needsMigration, generateCode } from "../src/lib/codes";
+import { app } from "../src/lib/firebase";
+import {
+  getProjectByCode,
+  getOrgByCode,
+  getIndividualByCode,
+} from "@/lib/dal";
+import { inferKindFromCode } from "../src/lib/codes";
 import Link from "next/link";
 import dynamic from 'next/dynamic';
 import PageShell from "../components/PageShell";
-import { SparklesIcon, DevicePhoneMobileIcon, ChartBarIcon, CheckCircleIcon, ArrowRightIcon, UserGroupIcon, GlobeAltIcon, MegaphoneIcon, ShareIcon, QrCodeIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon, DevicePhoneMobileIcon, ChartBarIcon, CheckCircleIcon, ArrowRightIcon, UserGroupIcon, GlobeAltIcon, MegaphoneIcon, ShieldCheckIcon, QrCodeIcon } from '@heroicons/react/24/outline';
 
 function Home() {
   const [user, setUser] = useState<User | null>(null);
-  const [myOrganizations, setMyOrganizations] = useState<any[]>([]);
-  const [myIndividuals, setMyIndividuals] = useState<any[]>([]);
   const [codeInput, setCodeInput] = useState('');
   const [codeSearching, setCodeSearching] = useState(false);
   const [codeError, setCodeError] = useState('');
@@ -30,14 +32,14 @@ function Home() {
     (async () => {
       try {
         if (kind === 'project') {
-          const snap = await getDocs(query(collection(db, 'projects'), where('projectId', '==', raw)));
-          if (!snap.empty) { window.location.replace(`/projects/${snap.docs[0].id}/proposal`); return; }
+          const proj = await getProjectByCode(raw);
+          if (proj) { window.location.replace(`/projects/${proj.id}/proposal`); return; }
         } else if (kind === 'organization') {
-          const snap = await getDocs(query(collection(db, 'organizations'), where('orgId', '==', raw)));
-          if (!snap.empty) { window.location.replace(`/org/${raw}`); return; }
+          const org = await getOrgByCode(raw);
+          if (org) { window.location.replace(`/org/${raw}`); return; }
         } else if (kind === 'individual') {
-          const snap = await getDocs(query(collection(db, 'individuals'), where('individualId', '==', raw)));
-          if (!snap.empty) { window.location.replace(`/individuals/profile?id=${raw}`); return; }
+          const ind = await getIndividualByCode(raw);
+          if (ind) { window.location.replace(`/individuals/profile?id=${raw}`); return; }
         }
       } catch { /* ignore */ }
     })();
@@ -49,46 +51,6 @@ function Home() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(()=> {
-    if(!user){ setMyOrganizations([]); return; }
-    const qOrg = query(collection(db,'organizations'), where('ownerUid','==', user.uid));
-    const unsub = onSnapshot(qOrg, snap=> setMyOrganizations(snap.docs.map(d=> ({ id: d.id, ...d.data() }))));
-    return ()=> unsub();
-  }, [user]);
-  
-  useEffect(()=> {
-    if(!user){ setMyIndividuals([]); return; }
-    const qInd = query(collection(db,'individuals'), where('ownerUid','==', user.uid));
-    const unsub = onSnapshot(qInd, snap=> setMyIndividuals(snap.docs.map(d=> ({ id: d.id, ...d.data() }))));
-    return ()=> unsub();
-  }, [user]);
-
-  useEffect(()=> {
-    let cancelled=false;
-    (async()=> {
-      try {
-        const projSnap = await getDocs(query(collection(db,'projects')));
-        let changed=0;
-        for(const d of projSnap.docs){
-          if(changed>=10) break;
-          const data:any = d.data();
-          if(data.projectId && needsMigration(data.projectId)){
-            const newId = generateCode('project');
-            await updateDoc(doc(db,'projects', d.id), { projectId: newId });
-            changed++;
-          }
-        }
-        const orgSnap = await getDocs(query(collection(db,'organizations')));
-        changed=0;
-        for(const d of orgSnap.docs){ if(changed>=10) break; const data:any = d.data(); if(data.orgId && needsMigration(data.orgId)){ const newId = generateCode('organization'); await updateDoc(doc(db,'organizations', d.id), { orgId: newId }); changed++; } }
-        const indSnap = await getDocs(query(collection(db,'individuals')));
-        changed=0;
-        for(const d of indSnap.docs){ if(changed>=10) break; const data:any = d.data(); if(data.individualId && needsMigration(data.individualId)){ const newId = generateCode('individual'); await updateDoc(doc(db,'individuals', d.id), { individualId: newId }); changed++; } }
-      } catch {/* ignore silently */}
-    })();
-    return ()=> { cancelled=true; };
-  }, []);
-
   async function handleCodeSearch(e?: React.FormEvent){
     if(e) e.preventDefault();
     const raw = codeInput.trim().toUpperCase();
@@ -98,14 +60,14 @@ function Home() {
       const kind = inferKindFromCode(raw);
       if(!kind){ setCodeError('Unknown code prefix'); return; }
       if(kind==='project'){
-        const snap = await getDocs(query(collection(db,'projects'), where('projectId','==', raw)));
-        if(!snap.empty){ window.location.href = `/projects/${snap.docs[0].id}/proposal`; return; }
+        const proj = await getProjectByCode(raw);
+        if(proj){ window.location.href = `/projects/${proj.id}/proposal`; return; }
       } else if(kind==='organization'){
-        const snap = await getDocs(query(collection(db,'organizations'), where('orgId','==', raw)));
-        if(!snap.empty){ window.location.href = `/org/${raw}`; return; }
+        const org = await getOrgByCode(raw);
+        if(org){ window.location.href = `/org/${raw}`; return; }
       } else if(kind==='individual'){
-        const snap = await getDocs(query(collection(db,'individuals'), where('individualId','==', raw)));
-        if(!snap.empty){ window.location.href = `/individuals/profile?id=${raw}`; return; }
+        const ind = await getIndividualByCode(raw);
+        if(ind){ window.location.href = `/individuals/profile?id=${raw}`; return; }
       }
       setCodeError('Code not found');
     } catch(err:any){ setCodeError(err.message || 'Search failed'); }
@@ -255,15 +217,15 @@ function Home() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {[
-              { icon: ChartBarIcon, title: "Digital Financial Tools", desc: "Live grant spending tracking with receipt uploads and automatic categorization" },
-              { icon: DevicePhoneMobileIcon, title: "Mobile First", desc: "Field teams update progress and spending directly from their phones" },
-              { icon: SparklesIcon, title: "AI-Assisted Updates", desc: "Auto-generate reports, social posts, and updates with AI help, saving hours of work" },
-              { icon: GlobeAltIcon, title: "Direct Connection", desc: "Partners see unfiltered updates straight from project teams" },
-              { icon: MegaphoneIcon, title: "Marketing Tools", desc: "Professional profiles, PDFs, and QR codes turn your work into compelling marketing materials" },
-              { icon: ShareIcon, title: "Easy Sharing", desc: "Unique codes and shareable links make promoting your projects effortless" },
-              { icon: CheckCircleIcon, title: "Verified Impact", desc: "Photo documentation and progress tracking ensure accountability" },
-              { icon: QrCodeIcon, title: "Instant Access", desc: "QR codes on all materials provide immediate access to project details and updates" },
-              { icon: UserGroupIcon, title: "Community Profiles", desc: "Follow individuals and organizations doing the work you care about" }
+              { icon: ChartBarIcon, title: "Digital Financial Tools", desc: "Live grant spending tracking with receipt uploads and automatic categorisation — every pound accounted for and visible to your partners" },
+              { icon: DevicePhoneMobileIcon, title: "Mobile First", desc: "Field teams update progress and spending directly from their phones, in real time, from wherever the work is happening" },
+              { icon: SparklesIcon, title: "Responsible AI", desc: "AI features run entirely server-side — your content is never exposed via browser keys. Opt in or out at any time from Settings. All AI use is disclosed in our AI Policy." },
+              { icon: GlobeAltIcon, title: "Direct Connection", desc: "Partners see unfiltered updates straight from project teams — no intermediaries, no spin, just the real story" },
+              { icon: ShieldCheckIcon, title: "Privacy by Design", desc: "Firestore security rules enforce access control at the database level. Private projects stay private. Your email is never exposed to other users." },
+              { icon: MegaphoneIcon, title: "Marketing Tools", desc: "Professional profiles, PDFs, and QR codes turn your work into compelling marketing materials that open doors" },
+              { icon: CheckCircleIcon, title: "Safe Content Platform", desc: "Every profile passes an AI safety review before going live. Flagged content is reviewed by our team — protecting the community before publication." },
+              { icon: UserGroupIcon, title: "Your Data, Your Rights", desc: "Download a copy of all your data, delete your account, or withdraw AI consent at any time from Settings — full UK GDPR compliance built in." },
+              { icon: QrCodeIcon, title: "Transparent & Compliant", desc: "Cookie consent, full privacy policy with lawful basis stated, ICO complaint rights, breach notification — built to the UK GDPR standard from day one." }
             ].map((feature, i) => (
               <div key={i} className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition border border-gray-100">
                 <div className="bg-orange-50 rounded-lg w-12 h-12 flex items-center justify-center mb-4">

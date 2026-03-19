@@ -2,9 +2,8 @@
 import { useState } from "react";
 import { getAuth } from "firebase/auth";
 import { useSearchParams, useRouter } from "next/navigation";
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from "firebase/firestore";
+import { getUser, updateUser, createIndividual } from '@/lib/dal';
 import { generateCode } from "../../../src/lib/codes";
-import { db } from "../../../src/lib/firebase";
 import { logCreditTransaction } from "../../../src/lib/credits";
 import PageShell from "../../../components/PageShell";
 
@@ -28,23 +27,21 @@ export default function CreateIndividualProfileForm() {
       if (!user) throw new Error("You must be signed in to create a profile.");
   const generatedId = generateCode('individual');
       // Deduct 50 credits from user
-      const userRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userRef);
-      const currentCredits = userDoc.exists() ? userDoc.data().credits ?? 0 : 0;
+      const userData = await getUser(user.uid);
+      const currentCredits = userData ? (userData.credits ?? 0) : 0;
       if (currentCredits < 50) throw new Error("Not enough credits to create a profile.");
-      await updateDoc(userRef, { credits: currentCredits - 50 });
-      const docRef = await addDoc(collection(db, "individuals"), {
+      await updateUser(user.uid, { credits: currentCredits - 50 } as any);
+      await createIndividual({
         name,
         bio,
         type,
-        createdAt: serverTimestamp(),
         individualId: generatedId,
         ownerUid: user.uid,
-  feed: [],
-  updates: [], // legacy arrays kept for backward compatibility
-  prayerRequests: [],
+        feed: [],
+        updates: [], // legacy arrays kept for backward compatibility
+        prayerRequests: [],
         financeSummary: [],
-      });
+      } as any);
       // Log credit spend
       await logCreditTransaction(user.uid, "spend", 50, `Created ${type} profile: ${name}`);
       setSuccess(true);

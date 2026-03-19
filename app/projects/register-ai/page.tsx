@@ -4,10 +4,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeftIcon, PaperAirplaneIcon, SparklesIcon, CheckIcon } from '@heroicons/react/24/outline';
 import PageShell from '../../../components/PageShell';
 import { sanitizeUserMessage, sanitizePromptParam, MAX_USER_MESSAGE_LENGTH } from '../../../src/lib/sanitizeAIInput';
-import { db } from '../../../src/lib/firebase';
-import { collection, doc, runTransaction, serverTimestamp, getDocs, query, where, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getOrgByCode, getProjectByCode, updateOrg, createProjectWithCredits, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
 import { generateCode } from '../../../src/lib/codes';
+import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../src/lib/moderation';
 
 export interface AIProjectProfile {
   locationName?: string;
@@ -29,7 +29,6 @@ interface Message {
   content: string;
 }
 
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
 const SYSTEM_PROMPT = (orgName: string) => `You are a project registration assistant for Close2Source — a platform connecting organisations with community projects. You are helping someone from "${orgName}" create a compelling, well-written project profile.
 
@@ -158,6 +157,7 @@ function AIRegisterProjectPageInner() {
   const [initialized, setInitialized] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [pendingReviewMsg, setPendingReviewMsg] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -220,12 +220,9 @@ function AIRegisterProjectPageInner() {
     const userHistory = isInit ? [] : history;
 
     try {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      const resp = await fetch('/api/ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         signal: abortRef.current.signal,
         body: JSON.stringify({
           model: 'gpt-4o-mini',
@@ -321,11 +318,9 @@ function AIRegisterProjectPageInner() {
       if (!user) throw new Error('You must be logged in.');
 
       // Fetch organization data
-      const orgQuery = query(collection(db, 'organizations'), where('orgId', '==', orgId));
-      const orgSnap = await getDocs(orgQuery);
-      if (orgSnap.empty) throw new Error('Organization not found.');
-      const orgDoc = orgSnap.docs[0];
-      const org = { id: orgDoc.id, ...orgDoc.data() };
+      const orgResult = await getOrgByCode(orgId);
+      if (!orgResult) throw new Error('Organization not found.');
+      const org = orgResult;
 
       // ── Location matching & auto-add ─────────────────────────────────────
       let locationId: string | null = null;
@@ -352,12 +347,12 @@ function AIRegisterProjectPageInner() {
             const cleanUpdated: any = Object.fromEntries(
               Object.entries(updated).filter(([, v]) => v !== undefined)
             );
-            await updateDoc(doc(db, 'organizations', orgDoc.id), {
-              locations: arrayRemove(matched),
-            });
-            await updateDoc(doc(db, 'organizations', orgDoc.id), {
-              locations: arrayUnion(cleanUpdated),
-            });
+            await updateOrg(org.id, {
+              locations: fieldArrayRemove(matched),
+            } as any);
+            await updateOrg(org.id, {
+              locations: fieldArrayUnion(cleanUpdated),
+            } as any);
           }
         } else {
           // Create new org location from AI-gathered data
@@ -370,54 +365,54 @@ function AIRegisterProjectPageInner() {
               whatWeDo: currentProfile.whatWeDo?.trim() || undefined,
             }).filter(([, v]) => v !== undefined)
           );
-          await updateDoc(doc(db, 'organizations', orgDoc.id), {
-            locations: arrayUnion(newLoc),
-          });
+          await updateOrg(org.id, {
+            locations: fieldArrayUnion(newLoc),
+          } as any);
           locationId = newId;
         }
       }
       // ─────────────────────────────────────────────────────────────────────
 
       // Generate unique projectId
-      const projectsCol = collection(db, 'projects');
       let projectId = '';
       let unique = false;
       for (let attempt = 0; attempt < 10 && !unique; attempt++) {
         projectId = generateCode('project');
-        const checkSnap = await getDocs(query(projectsCol, where('projectId', '==', projectId)));
-        if (checkSnap.empty) unique = true;
+        const existing = await getProjectByCode(projectId);
+        if (!existing) unique = true;
       }
       if (!unique) throw new Error('Could not generate a unique project ID, try again.');
 
-      // Create project in transaction (deduct credits)
-      await runTransaction(db, async (transaction) => {
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await transaction.get(userRef);
-        if (!userSnap.exists()) throw new Error('User profile not found.');
-        const userData = userSnap.data();
-        if ((userData.credits || 0) < 50) throw new Error('Not enough credits (need 50).');
+      // ── Mandatory content moderation BEFORE creating ───────────────────
+      const contentToScan: Record<string, string> = {};
+      (['name', 'description', 'vision', 'whatWeDo', 'whoIsInvolved', 'projectSummary', 'projectImpact'] as const).forEach(f => {
+        const v = (currentProfile as any)[f];
+        if (v && typeof v === 'string') contentToScan[f] = v;
+      });
+      const modResult = await moderateProfileContent(contentToScan, 'project');
+      const initialStatus = modResult.flagged ? 'pending_review' : 'live';
+      // ──────────────────────────────────────────────────────────────────────
 
-        const newProjectRef = doc(projectsCol);
-        
-        // Inherit org theme
-        const THEME_KEYS = [
-          'themeHeaderBg', 'themeHeaderText', 'themeAccent', 'themeAccentText', 'themeAccentHover',
-          'themeTabActiveBg', 'themeTabActiveText', 'themeTabInactiveText', 'themeWidgetTitleColor'
-        ] as const;
-        const inheritedTheme: Record<string, any> = {};
-        THEME_KEYS.forEach(k => {
-          if (org && typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k];
-        });
-        if (!inheritedTheme.themeAccent && (org as any)?.themeHeaderBg) inheritedTheme.themeAccent = (org as any).themeHeaderBg;
-        if (!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
+      // Inherit org theme
+      const THEME_KEYS = [
+        'themeHeaderBg', 'themeHeaderText', 'themeAccent', 'themeAccentText', 'themeAccentHover',
+        'themeTabActiveBg', 'themeTabActiveText', 'themeTabInactiveText', 'themeWidgetTitleColor'
+      ] as const;
+      const inheritedTheme: Record<string, any> = {};
+      THEME_KEYS.forEach(k => {
+        if (org && typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k];
+      });
+      if (!inheritedTheme.themeAccent && (org as any)?.themeHeaderBg) inheritedTheme.themeAccent = (org as any).themeHeaderBg;
+      if (!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
 
-        // Map AI profile to project structure
-        const projectData = {
+      // Create project via DAL (deducts credits atomically)
+      const { docId: newProjectDocId } = await createProjectWithCredits({
+        uid: user.uid,
+        projectData: {
           name: currentProfile.name || 'Untitled Project',
           description: currentProfile.description || '',
           projectId,
           users: [{ uid: user.uid, role: 'Admin' }],
-          createdAt: serverTimestamp(),
           createdBy: user.uid,
           
           // Organization linkage
@@ -425,7 +420,7 @@ function AIRegisterProjectPageInner() {
           organizationName: (org as any).name || null,
           organizationLogoUrl: (org as any).logoUrl || null,
           originatingOrganizationId: (org as any).orgId,
-          originatingOrganizationDbId: orgDoc.id,
+          originatingOrganizationDbId: org.id,
 
           // AI-gathered project details
           vision: currentProfile.vision || null,
@@ -438,7 +433,7 @@ function AIRegisterProjectPageInner() {
           timeline: currentProfile.timeline || null,
           goals: currentProfile.goals || [],
           
-          // Location (parsed from locationName - can be refined later in edit mode)
+          // Location
           location: currentProfile.locationName ? {
             search: currentProfile.locationName.toLowerCase(),
             country: null,
@@ -449,25 +444,38 @@ function AIRegisterProjectPageInner() {
           locationName: currentProfile.locationName || null,
           locationId: locationId || null,
 
-          // Cover photo placeholder (user can add later in edit mode)
+          // Cover photo placeholder
           coverPhotoUrl: null,
           
           // Visibility defaults
           showOnOrganizationOverview: true,
           publicVisible: true,
-          status: 'live',
+          status: initialStatus,
           visibility: 'public',
 
           // Inherit theme
           ...inheritedTheme,
-        };
-
-        transaction.set(newProjectRef, projectData);
-        transaction.update(userRef, { credits: (userData.credits || 0) - 50 });
-        
-        // Store the new project ID for navigation
-        (newProjectRef as any)._projectId = projectId;
+        },
       });
+
+      // ── Submit to moderation queue if flagged ────────────────────────────
+      if (modResult.flagged && newProjectDocId) {
+        const _auth = getAuth();
+        await submitToModerationQueue({
+          type: 'project',
+          docId: newProjectDocId,
+          docCollection: 'projects',
+          profileName: currentProfile.name || 'Untitled Project',
+          profileCode: projectId,
+          ownerUid: _auth.currentUser?.uid || '',
+          result: modResult,
+          contentSnapshot: contentToScan,
+        });
+        setPendingReviewMsg(getPendingReviewMessage('project'));
+        setCreating(false);
+        return; // Stay on page to show message
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       // Clear saved conversation
       localStorage.removeItem(storageKey);
@@ -653,6 +661,12 @@ function AIRegisterProjectPageInner() {
               <div className="mb-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 {createError}
+              </div>
+            )}
+            {pendingReviewMsg && (
+              <div className="mb-2 text-xs text-yellow-800 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2 flex items-start gap-2">
+                <svg className="w-4 h-4 flex-shrink-0 mt-0.5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+                {pendingReviewMsg}
               </div>
             )}
             {currentProfile && !creating && (

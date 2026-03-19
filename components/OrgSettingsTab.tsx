@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
-import { doc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
+import { updateOrg, getUser, addOrgInvite } from '@/lib/dal';
+import { storage } from '../src/lib/firebase';
 import { ClipboardDocumentIcon, ArrowPathIcon, EyeIcon, EyeSlashIcon, LinkIcon } from '@heroicons/react/24/outline';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
@@ -25,7 +25,7 @@ function MemberAccessSection({ org, isOwner, onOrgUpdate }: { org: any; isOwner:
 		setRegenerating(true);
 		try {
 			const newPin = String(Math.floor(1000 + Math.random() * 9000));
-			await updateDoc(doc(db, 'organizations', org.id), { joinPin: newPin });
+			await updateOrg(org.id, { joinPin: newPin });
 			onOrgUpdate({ joinPin: newPin });
 		} catch { /* ignore */ }
 		finally { setRegenerating(false); }
@@ -41,15 +41,15 @@ function MemberAccessSection({ org, isOwner, onOrgUpdate }: { org: any; isOwner:
 	async function generateInviteLink() {
 		setGeneratingInvite(true);
 		try {
-			const inviteRef = await addDoc(collection(db, 'orgInvites'), {
+			const inviteId = await addOrgInvite({
 				orgId: org.orgId,
 				orgDbId: org.id,
 				orgName: org.name || org.orgId,
 				email: '',
 				status: 'pending',
 				createdAt: new Date(),
-			});
-			const link = `${window.location.origin}/org/invite/${inviteRef.id}`;
+			} as any);
+			const link = `${window.location.origin}/org/invite/${inviteId}`;
 			setInviteLink(link);
 			navigator.clipboard.writeText(link).then(() => {
 				setCopied('invite');
@@ -231,7 +231,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 	function toggleView(tab:string, role:AccessLevel){ setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], view: s[tab].view.includes(role)? s[tab].view.filter(r=> r!==role): [...s[tab].view, role].sort((a,b)=> ROLE_ORDER.indexOf(a)-ROLE_ORDER.indexOf(b)) }})); }
 	function toggleEdit(tab:string, role:AccessLevel){ if(role==='public') return; setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], edit: s[tab].edit.includes(role)? s[tab].edit.filter(r=> r!==role): [...s[tab].edit, role].sort((a,b)=> ROLE_ORDER.indexOf(a)-ROLE_ORDER.indexOf(b)) }})); }
 	function sanitizePerms(inSet:AccessSettings): AccessSettings { const copy:AccessSettings = {} as any; Object.entries(inSet).forEach(([k,v])=> { const view = Array.from(new Set(v.view)).filter(r=> ROLE_ORDER.includes(r)); const edit = Array.from(new Set(v.edit)).filter(r=> ROLE_ORDER.includes(r) && view.includes(r)); copy[k] = { view, edit }; }); return copy; }
-	async function savePermissions(){ if(!isOwner) return; setPermissionsSaving(true); try { const clean = sanitizePerms(accessSettings); await updateDoc(doc(db,'organizations', org.id), { accessSettings: clean }); onOrgUpdate({ accessSettings: clean }); setPermissionsSavedAt(Date.now()); } catch {/* ignore */} finally { setPermissionsSaving(false); } }
+	async function savePermissions(){ if(!isOwner) return; setPermissionsSaving(true); try { const clean = sanitizePerms(accessSettings); await updateOrg(org.id, { accessSettings: clean }); onOrgUpdate({ accessSettings: clean }); setPermissionsSavedAt(Date.now()); } catch {/* ignore */} finally { setPermissionsSaving(false); } }
 
 	useEffect(()=> { if(typeof org.backgroundBrightness === 'number') setBgBrightness(org.backgroundBrightness); }, [org.backgroundBrightness]);
 	useEffect(()=> { if(typeof org.backgroundBlur === 'number') setBgBlur(org.backgroundBlur); }, [org.backgroundBlur]);
@@ -257,9 +257,9 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 			let cancelled = false;
 			(async()=> {
 				try {
-					const snap = await getDoc(doc(db,'users', org.ownerUid));
-					if(!snap.exists()) { if(!cancelled) setOwnerDisplayName(org.ownerUid); return; }
-					const data:any = snap.data();
+					const snap = await getUser(org.ownerUid);
+					if(!snap) { if(!cancelled) setOwnerDisplayName(org.ownerUid); return; }
+					const data:any = snap;
 					const full = [data.name, data.surname].filter(Boolean).join(' ').trim();
 					const display = full || data.displayName || data.email || org.ownerUid;
 					if(!cancelled) setOwnerDisplayName(display);
@@ -272,7 +272,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		const h = setTimeout(async ()=> {
 			try {
 				setBgBrightnessSaving(true);
-				await updateDoc(doc(db,'organizations', org.id), { backgroundBrightness: bgBrightness });
+				await updateOrg(org.id, { backgroundBrightness: bgBrightness });
 				onOrgUpdate({ backgroundBrightness: bgBrightness });
 				setBgBrightnessSavedAt(Date.now());
 			} catch {/* ignore */}
@@ -285,7 +285,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		const h = setTimeout(async ()=> {
 			try {
 				setBgBlurSaving(true);
-				await updateDoc(doc(db,'organizations', org.id), { backgroundBlur: bgBlur });
+				await updateOrg(org.id, { backgroundBlur: bgBlur });
 				onOrgUpdate({ backgroundBlur: bgBlur });
 				setBgBlurSavedAt(Date.now());
 			} catch {/* ignore */}
@@ -298,7 +298,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		const h = setTimeout(async ()=> {
 			try {
 				setBgFadeSaving(true);
-				await updateDoc(doc(db,'organizations', org.id), { backgroundFade: bgFade });
+				await updateOrg(org.id, { backgroundFade: bgFade });
 				onOrgUpdate({ backgroundFade: bgFade });
 				setBgFadeSavedAt(Date.now());
 			} catch {/* ignore */}
@@ -311,7 +311,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		const h = setTimeout(async ()=> {
 			try {
 				setVisibilitySaving(true);
-				await updateDoc(doc(db,'organizations', org.id), { publicVisible });
+				await updateOrg(org.id, { publicVisible });
 				onOrgUpdate({ publicVisible });
 				setVisibilitySavedAt(Date.now());
 			} catch {/* ignore */} finally { setVisibilitySaving(false); }
@@ -383,7 +383,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 																const match = prev.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('organizations/')? encoded.substring(encoded.indexOf('organizations/')): encoded; const newPath = `organizations/${org.id}/background.${ext}`; if(objectPath !== newPath){ await deleteObject(ref(storage, objectPath)); } }
 															} catch {/* ignore */}
 														}
-														await updateDoc(doc(db,'organizations', org.id), { backgroundUrl: url });
+														await updateOrg(org.id, { backgroundUrl: url });
 														onOrgUpdate({ backgroundUrl: url });
 													} catch(e:any){ setBgError(e.message || 'Upload failed'); }
 													finally { setBgUploading(false); setBgProgress(null); }
@@ -402,7 +402,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 									{org.backgroundUrl && !bgUploading && (
 										<button
 											type='button'
-											onClick={async ev=> { ev.preventDefault(); ev.stopPropagation(); if(!confirm('Remove background image?')) return; setBgUploading(true); setBgError(''); try { try { const match = org.backgroundUrl.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('organizations/')? encoded.substring(encoded.indexOf('organizations/')): encoded; await deleteObject(ref(storage, objectPath)); } } catch {/* ignore */} await updateDoc(doc(db,'organizations', org.id), { backgroundUrl: null }); onOrgUpdate({ backgroundUrl: null }); } catch(e:any){ setBgError(e.message || 'Remove failed'); } finally { setBgUploading(false); } }}
+											onClick={async ev=> { ev.preventDefault(); ev.stopPropagation(); if(!confirm('Remove background image?')) return; setBgUploading(true); setBgError(''); try { try { const match = org.backgroundUrl.match(/\/o\/([^?]+)/); if(match){ const encoded = decodeURIComponent(match[1]).replace(/%2F/g,'/'); const objectPath = encoded.includes('organizations/')? encoded.substring(encoded.indexOf('organizations/')): encoded; await deleteObject(ref(storage, objectPath)); } } catch {/* ignore */} await updateOrg(org.id, { backgroundUrl: null }); onOrgUpdate({ backgroundUrl: null }); } catch(e:any){ setBgError(e.message || 'Remove failed'); } finally { setBgUploading(false); } }}
 											className='absolute top-2 right-2 bg-red-600 text-white w-7 h-7 rounded-full shadow flex items-center justify-center text-xs hover:bg-red-700'
 											aria-label='Remove background'
 										>×</button>
@@ -471,7 +471,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 							if(!isOwner) return; setThemeSaving(true);
 							try {
 								const patch = { themeHeaderBg, themeHeaderText, themeAccent, themeAccentText, themeAccentHover, themeTabActiveBg, themeTabActiveText, themeTabInactiveText, themeWidgetTitleColor };
-								await updateDoc(doc(db,'organizations', org.id), patch);
+						await updateOrg(org.id, patch);
 								onOrgUpdate(patch);
 								setThemeSavedAt(Date.now());
 							} catch {/* ignore */}
@@ -541,7 +541,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 						<option value=''>— Select Team Member —</option>
 						{enrichedTeam.filter(m=> m.uid && m.uid !== org.ownerUid).map(m=> (<option key={m.uid} value={m.uid}>{m.name || m.email || m.uid}</option>))}
 					</select>
-					<button type='button' disabled={!ownerTransferTarget || ownerTransferBusy} onClick={async()=> { if(!ownerTransferTarget) return; if(!confirm('Transfer ownership to this member? This gives them full control.')) return; setOwnerTransferBusy(true); setOwnerTransferMsg(''); try { await updateDoc(doc(db,'organizations', org.id), { ownerUid: ownerTransferTarget }); setOwnerTransferMsg('Ownership transferred. Reloading...'); setTimeout(()=> { setOwnerTransferBusy(false); }, 600); } catch(e:any){ setOwnerTransferMsg(e.message || 'Transfer failed'); setOwnerTransferBusy(false); } }} className='mt-2 inline-flex items-center px-4 py-2 rounded bg-brand-main text-white text-xs font-semibold hover:bg-brand-dark disabled:opacity-50'>{ownerTransferBusy? 'Transferring...' : 'Transfer'}</button>
+					<button type='button' disabled={!ownerTransferTarget || ownerTransferBusy} onClick={async()=> { if(!ownerTransferTarget) return; if(!confirm('Transfer ownership to this member? This gives them full control.')) return; setOwnerTransferBusy(true); setOwnerTransferMsg(''); try { await updateOrg(org.id, { ownerUid: ownerTransferTarget }); setOwnerTransferMsg('Ownership transferred. Reloading...'); setTimeout(()=> { setOwnerTransferBusy(false); }, 600); } catch(e:any){ setOwnerTransferMsg(e.message || 'Transfer failed'); setOwnerTransferBusy(false); } }} className='mt-2 inline-flex items-center px-4 py-2 rounded bg-brand-main text-white text-xs font-semibold hover:bg-brand-dark disabled:opacity-50'>{ownerTransferBusy? 'Transferring...' : 'Transfer'}</button>
 					{ownerTransferMsg && <div className='text/[11px] text-gray-600 mt-1'>{ownerTransferMsg}</div>}
 					{(!enrichedTeam.some(m=> m.uid && m.uid !== org.ownerUid)) && <div className='text-[11px] text-gray-500 mt-1'>Add at least one registered user to the team to enable transfer.</div>}
 				</div>

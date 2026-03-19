@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import PageShell from "../../components/PageShell";
+import ConsentStage from "../../components/ConsentStage";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { getAuth, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
-import { getFirestore, doc, setDoc, runTransaction, getDoc } from "firebase/firestore";
 import { app } from "../../src/lib/firebase";
+import { getUser, createUserDoc, mergeUserDoc, getOrgInvite, acceptOrgInvite } from "@/lib/dal";
 import { logCreditTransaction } from "../../src/lib/credits";
+import { logUserActivity, recordConsent } from "../../src/lib/userConsent";
 
 // Legacy role selection removed. Users register first, then create profiles.
 
@@ -42,8 +44,17 @@ function RegisterPage() {
   const [description, setDescription] = useState("");
   const [currentUid, setCurrentUid] = useState<string>("");
   const auth = getAuth(app);
-  const db = getFirestore(app);
   const storage = getStorage(app);
+
+  // Consent flow state
+  type ConsentStep = 'privacy' | 'terms' | 'ai';
+  const [consentStep, setConsentStep] = useState<ConsentStep | null>(null);
+  const [privacyAgreed, setPrivacyAgreed] = useState(false);
+  const [termsAgreed, setTermsAgreed] = useState(false);
+  const [aiAgreed, setAiAgreed] = useState(false);
+  const [consentSubmitting, setConsentSubmitting] = useState(false);
+  // Whether the user arrived via Google/Apple (so we skip the form-only stages)
+  const [oauthFlow, setOauthFlow] = useState(false);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -55,7 +66,7 @@ function RegisterPage() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       setCurrentUid(userCredential.user.uid);
-      await setDoc(doc(db, "users", userCredential.user.uid), {
+      await createUserDoc(userCredential.user.uid, {
         email,
         name,
         surname,
@@ -70,42 +81,74 @@ function RegisterPage() {
         // Non-fatal; continue flow even if credit logging fails
         console.warn('Failed to award initial credits', creditErr);
       }
+      // Log account creation event
+      try { await logUserActivity(userCredential.user.uid, 'account_created'); } catch { /* non-fatal */ }
 
       // If arriving via invitation token, attempt to accept & attach to org team
       if(inviteToken){
         setInviteAccepting(true);
         try {
-          await runTransaction(db, async(transaction)=> {
-            const inviteRef = doc(db,'orgInvites', inviteToken);
-            const inviteSnap = await transaction.get(inviteRef);
-            if(!inviteSnap.exists()) throw new Error('Invite not found');
-            const inv:any = inviteSnap.data();
-            if(inv.status !== 'pending') throw new Error('Invite already processed');
-            if(inv.email && inv.email.toLowerCase() !== email.toLowerCase()) throw new Error('Invitation email mismatch');
-            const orgRef = doc(db,'organizations', inv.orgDbId);
-            const orgSnap = await transaction.get(orgRef);
-            if(!orgSnap.exists()) throw new Error('Organization missing');
-            const orgData:any = orgSnap.data();
-            const team = Array.isArray(orgData.team)? orgData.team : [];
-            const already = team.some((m:any)=> (m.uid && m.uid === userCredential.user.uid) || (m.email && m.email.toLowerCase() === email.toLowerCase()));
-            const member = { uid: userCredential.user.uid, email, name: `${name} ${surname}`.trim(), type: 'user', role: 'Member' };
-            const newTeam = already? team : [...team, member];
-            transaction.update(orgRef, { team: newTeam });
-            transaction.update(inviteRef, { status: 'accepted', acceptedAt: new Date().toISOString(), acceptedBy: userCredential.user.uid });
-            setInviteOrgId(inv.orgId || inv.orgDbId || '');
-            setInviteOrgName(inv.orgName || 'Organization');
+          const result = await acceptOrgInvite({
+            inviteToken,
+            user: { uid: userCredential.user.uid, email, displayName: `${name} ${surname}`.trim() },
+            memberName: `${name} ${surname}`.trim(),
+            memberRole: 'Member',
           });
+          setInviteOrgId(result.orgId);
+          setInviteOrgName(result.orgName);
           setInviteAccepted(true);
         } catch(invErr:any){
           console.warn('Invite acceptance failed', invErr?.message || invErr);
         } finally { setInviteAccepting(false); }
       }
       setSuccess("Account created!");
-      // proceed to profile picture stage
-      setStage(2);
+      // Proceed to consent flow before profile picture stage
+      setConsentStep('privacy');
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+  // ─── Consent handlers ────────────────────────────────────────────────────────
+
+  async function handlePrivacyAgree() {
+    if (!currentUid) return;
+    setConsentSubmitting(true);
+    try {
+      await recordConsent(currentUid, { privacyPolicy: true });
+      setConsentStep('terms');
+      setTermsAgreed(false);
+    } finally { setConsentSubmitting(false); }
+  }
+
+  async function handleTermsAgree() {
+    if (!currentUid) return;
+    setConsentSubmitting(true);
+    try {
+      await recordConsent(currentUid, { terms: true });
+      setConsentStep('ai');
+      setAiAgreed(false);
+    } finally { setConsentSubmitting(false); }
+  }
+
+  async function handleAIAgree() {
+    if (!currentUid) return;
+    setConsentSubmitting(true);
+    try {
+      await recordConsent(currentUid, { aiPolicy: true });
+      setConsentStep(null);
+      if (oauthFlow) { router.push('/profile'); } else { setStage(2); }
+    } finally { setConsentSubmitting(false); }
+  }
+
+  async function handleAIDecline() {
+    if (!currentUid) return;
+    setConsentSubmitting(true);
+    try {
+      await recordConsent(currentUid, { aiPolicy: false });
+      setConsentStep(null);
+      if (oauthFlow) { router.push('/profile'); } else { setStage(2); }
+    } finally { setConsentSubmitting(false); }
   }
 
   async function handleGoogleSignIn() {
@@ -117,16 +160,15 @@ function RegisterPage() {
       const user = result.user;
       
       // Check if user already exists
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
+      const existingUser = await getUser(user.uid);
       
-      if (!userDoc.exists()) {
+      if (!existingUser) {
         // Create new user document
         const displayNameParts = (user.displayName || "").split(" ");
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await setDoc(userDocRef, {
+        await createUserDoc(user.uid, {
           email: user.email,
           name: firstName,
           surname: lastName,
@@ -142,13 +184,19 @@ function RegisterPage() {
         } catch (creditErr) {
           console.warn('Failed to award initial credits', creditErr);
         }
+        try { await logUserActivity(user.uid, 'account_created'); } catch { /* non-fatal */ }
         
         setSuccess("Account created with Google!");
+        // New user — run consent flow before redirecting
+        setCurrentUid(user.uid);
+        setOauthFlow(true);
+        setConsentStep('privacy');
+        return; // don't redirect yet
       } else {
         setSuccess("Welcome back!");
       }
       
-      setTimeout(() => router.push("/app/profile"), 1000);
+      setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
       setError(err.message || "Google sign-in failed");
     }
@@ -163,16 +211,15 @@ function RegisterPage() {
       const user = result.user;
       
       // Check if user already exists
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
+      const existingUser = await getUser(user.uid);
       
-      if (!userDoc.exists()) {
+      if (!existingUser) {
         // Create new user document
         const displayNameParts = (user.displayName || "").split(" ");
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await setDoc(userDocRef, {
+        await createUserDoc(user.uid, {
           email: user.email,
           name: firstName || "User",
           surname: lastName,
@@ -188,13 +235,19 @@ function RegisterPage() {
         } catch (creditErr) {
           console.warn('Failed to award initial credits', creditErr);
         }
+        try { await logUserActivity(user.uid, 'account_created'); } catch { /* non-fatal */ }
         
         setSuccess("Account created with Apple!");
+        // New user — run consent flow
+        setCurrentUid(user.uid);
+        setOauthFlow(true);
+        setConsentStep('privacy');
+        return;
       } else {
         setSuccess("Welcome back!");
       }
       
-      setTimeout(() => router.push("/app/profile"), 1000);
+      setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
       setError(err.message || "Apple sign-in failed");
     }
@@ -217,7 +270,7 @@ function RegisterPage() {
     }, async () => {
       const url = await getDownloadURL(uploadTask.snapshot.ref);
       setPhotoURL(url);
-      await setDoc(doc(db, "users", currentUid), { photoURL: url }, { merge: true });
+      await mergeUserDoc(currentUid, { photoURL: url });
       setUploading(false);
     });
   }
@@ -228,11 +281,65 @@ function RegisterPage() {
       return;
     }
     try {
-      await setDoc(doc(db, "users", currentUid), { description }, { merge: true });
+      await mergeUserDoc(currentUid, { description });
       setStage(4);
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+  // ─── Consent step rendering ────────────────────────────────────────────────
+  if (consentStep === 'privacy') {
+    return (
+      <PageShell title="Privacy Policy" contentClassName="!p-0">
+        <ConsentStage
+          title="Step 1 of 3 — Privacy Policy"
+          policyHref="/privacy"
+          policyBody={<PrivacyPolicySummary />}
+          checkLabel="I have read and agree to the Close2Source Privacy Policy."
+          agreed={privacyAgreed}
+          setAgreed={setPrivacyAgreed}
+          submitting={consentSubmitting}
+          onAgree={handlePrivacyAgree}
+        />
+      </PageShell>
+    );
+  }
+
+  if (consentStep === 'terms') {
+    return (
+      <PageShell title="Terms of Service" contentClassName="!p-0">
+        <ConsentStage
+          title="Step 2 of 3 — Terms of Service"
+          policyHref="/terms"
+          policyBody={<TermsSummary />}
+          checkLabel="I have read and agree to the Close2Source Terms of Service."
+          agreed={termsAgreed}
+          setAgreed={setTermsAgreed}
+          submitting={consentSubmitting}
+          onAgree={handleTermsAgree}
+        />
+      </PageShell>
+    );
+  }
+
+  if (consentStep === 'ai') {
+    return (
+      <PageShell title="AI Use Policy" contentClassName="!p-0">
+        <ConsentStage
+          title="Step 3 of 3 — AI Use Policy"
+          policyHref="/ai-policy"
+          policyBody={<AIPolicySummary />}
+          checkLabel="I have read and agree to the Close2Source AI Use Policy and consent to my content being processed by AI tools."
+          agreed={aiAgreed}
+          setAgreed={setAiAgreed}
+          submitting={consentSubmitting}
+          onAgree={handleAIAgree}
+          onDecline={handleAIDecline}
+          declineLabel="Decline — I don't want AI features"
+        />
+      </PageShell>
+    );
   }
 
   // (Removed deferred query param extraction; values now initialized synchronously above.)
@@ -245,10 +352,9 @@ function RegisterPage() {
       if (email) return; // user started typing; don't override
       try {
         setInviteLoading(true);
-        const inviteRef = doc(db, 'orgInvites', inviteToken);
-        const snap = await getDoc(inviteRef);
-        if (snap.exists()) {
-          const inv: any = snap.data();
+        const invite = await getOrgInvite(inviteToken);
+        if (invite) {
+          const inv: any = invite;
           if (inv.status === 'pending' && inv.email) {
             setEmail(inv.email);
             setEmailLocked(true);
@@ -261,7 +367,7 @@ function RegisterPage() {
       }
     };
     fetchInviteEmail();
-  }, [inviteToken, email, emailLocked, db]);
+  }, [inviteToken, email, emailLocked]);
 
   // Registration form
   if (stage === 1) {
@@ -549,6 +655,134 @@ function RegisterPage() {
   }
 
   return null;
+}
+
+// ─── Inline policy summary components ────────────────────────────────────────
+// These render inside the ConsentStage scroll panel. They are compact summaries;
+// the full documents are linked via policyHref (opens in a new tab).
+
+function PrivacyPolicySummary() {
+  return (
+    <div className="space-y-4 text-sm text-gray-700">
+      <p className="font-semibold text-gray-900">Close2Source — Privacy Policy Summary (v1.0, 18 March 2026)</p>
+      <p>This is a summary of our full <a href="/privacy" target="_blank" className="text-brand-main underline">Privacy Policy</a>. Please read the full document via the link above.</p>
+      <section><p className="font-semibold mb-1">What we collect</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>Account details: name, email, password (hashed)</li>
+          <li>Profile information you choose to add (photo, bio, description)</li>
+          <li>Organisation and project data you create on the platform</li>
+          <li>Usage data collected automatically via Firebase Analytics (only with your cookie consent)</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Why we collect it</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>To provide and secure your account (legal basis: contract)</li>
+          <li>To operate organisation and project features (legal basis: contract)</li>
+          <li>To send transactional emails (legal basis: contract)</li>
+          <li>To improve the platform using anonymised analytics (legal basis: consent)</li>
+          <li>To comply with legal obligations</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Who we share it with</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li><strong>Google Firebase</strong> — authentication, database, file storage (London region)</li>
+          <li><strong>SMTP email provider</strong> — transactional emails only</li>
+          <li>We do not sell your data to third parties</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Your rights (UK GDPR)</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>Access, correct, or delete your data</li>
+          <li>Export your data (data portability)</li>
+          <li>Withdraw consent at any time</li>
+          <li>Lodge a complaint with the ICO at ico.org.uk</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Retention</p>
+        <p>Your data is retained while your account is active. You may request deletion at any time via Settings. We will complete deletion within 30 days.</p>
+      </section>
+      <p className="text-gray-500 text-xs">For the full policy including cookie information, legal bases, and international transfer details, see <a href="/privacy" target="_blank" className="underline">close2source.com/privacy</a>.</p>
+    </div>
+  );
+}
+
+function TermsSummary() {
+  return (
+    <div className="space-y-4 text-sm text-gray-700">
+      <p className="font-semibold text-gray-900">Close2Source — Terms of Service Summary (v1.0, 18 March 2026)</p>
+      <p>This is a summary of our full <a href="/terms" target="_blank" className="text-brand-main underline">Terms of Service</a>. Please read the full document via the link above.</p>
+      <section><p className="font-semibold mb-1">Your account</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>You must be 18 or over (or have parental consent) to register</li>
+          <li>You are responsible for keeping your password secure</li>
+          <li>You may not share your account or use it for unlawful purposes</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Content you post</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>You retain ownership of content you create</li>
+          <li>You grant Close2Source a licence to display it on the platform</li>
+          <li>You must not post false, misleading, or harmful content</li>
+          <li>We may remove content that violates these terms</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Credits and payments</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>Platform credits have no monetary value and cannot be withdrawn</li>
+          <li>Refunds are at our discretion as set out in the full Terms</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Limitation of liability</p>
+        <p>Close2Source is provided &ldquo;as is&rdquo;. We are not liable for the accuracy of user-generated content or project outcomes. Our liability is limited to the maximum extent permitted by law.</p>
+      </section>
+      <section><p className="font-semibold mb-1">Termination</p>
+        <p>We reserve the right to suspend or terminate accounts that violate these Terms. You may close your account at any time via Settings.</p>
+      </section>
+      <p className="text-gray-500 text-xs">Governing law: England and Wales. For the full terms, see <a href="/terms" target="_blank" className="underline">close2source.com/terms</a>.</p>
+    </div>
+  );
+}
+
+function AIPolicySummary() {
+  return (
+    <div className="space-y-4 text-sm text-gray-700">
+      <p className="font-semibold text-gray-900">Close2Source — AI Use Policy Summary (v1.0, 18 March 2026)</p>
+      <p>This is a summary of our full <a href="/ai-policy" target="_blank" className="text-brand-main underline">AI Use Policy</a>. Please read the full document via the link above.</p>
+      <section><p className="font-semibold mb-1">What AI features do</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>Help you improve, shorten, or lengthen text in forms and profiles</li>
+          <li>Assist you in building project proposals via a guided chat</li>
+          <li>Help you craft individual and ministry profiles</li>
+          <li>All AI features are <strong>optional</strong> — you can use the platform fully without them</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">What data is sent to AI</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>The text content of the specific field(s) you are working on</li>
+          <li>Conversation history within an AI chat session</li>
+          <li><strong>We do not send</strong> your email, password, payment details, or account credentials to AI providers</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Who processes the data — international transfer</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>AI requests are processed by <strong>OpenAI, Inc. (USA)</strong> via a secure server-side connection</li>
+          <li>This transfer is covered by OpenAI&rsquo;s Data Processing Addendum and UK International Data Transfer Addendum (IDTA)</li>
+          <li>OpenAI does not use API submissions to train its models</li>
+        </ul>
+      </section>
+      <section><p className="font-semibold mb-1">Legal basis</p>
+        <p>Processing your content through AI tools is based on your <strong>explicit consent</strong> (UK GDPR Art. 6(1)(a)). You can withdraw consent at any time in Settings → AI Features.</p>
+      </section>
+      <section><p className="font-semibold mb-1">Your choices</p>
+        <ul className="list-disc pl-4 space-y-1">
+          <li>Agree below to enable AI features now</li>
+          <li>Decline to keep AI features hidden — you can enable them later in Settings</li>
+          <li>Change your preference whenever you like in Settings → AI Features toggle</li>
+        </ul>
+      </section>
+      <p className="text-gray-500 text-xs">Full policy: <a href="/ai-policy" target="_blank" className="underline">close2source.com/ai-policy</a></p>
+    </div>
+  );
 }
 
 // Disable SSR for this page to avoid intermittent hydration attribute mismatches from dynamic client-only logic.

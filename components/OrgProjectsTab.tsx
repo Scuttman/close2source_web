@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import OrgProjectsMap from './OrgProjectsMap';
-import { db, storage } from '../src/lib/firebase';
+import { storage } from '../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { generateCode } from '../src/lib/codes';
+import { subscribeOrgProjects, getProjectByCode, createProjectWithCredits } from '@/lib/dal';
 
 interface OrgProjectsTabProps {
 	org: any; // organization document (with id, orgId, name, ownerUid, etc.)
@@ -46,17 +46,15 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 		} else {
 			setLoading(true);
 		}
-		const qy = query(collection(db,'projects'), where('organizationId','==', org.orgId));
-		const unsub = onSnapshot(qy, snap=> {
-			const rows = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
-			rows.sort((a:any,b:any)=> {
+		const unsub = subscribeOrgProjects(org.orgId, (rows) => {
+			const sorted = [...rows].sort((a:any,b:any)=> {
 				const an = (a.name||'').toLowerCase(); const bn = (b.name||'').toLowerCase();
 				if(an && bn) return an.localeCompare(bn);
 				if(an) return -1; if(bn) return 1;
 				return (a.projectId||'').localeCompare(b.projectId||'');
 			});
-			setProjects(rows);
-			sessionStorage.setItem(cacheKey, JSON.stringify(rows));
+			setProjects(sorted as any);
+			sessionStorage.setItem(cacheKey, JSON.stringify(sorted));
 			setLoading(false);
 		}, ()=> setLoading(false));
 		return ()=> unsub();
@@ -70,53 +68,42 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 		setCreating(true);
 		try {
 			// Generate unique projectId (up to 10 attempts)
-			const projectsCol = collection(db,'projects');
 			let projectId = ''; let unique=false;
 			for(let attempt=0; attempt<10 && !unique; attempt++){
 				projectId = generateProjectId();
-				const { query: qFn, where: wFn, getDocs } = await import('firebase/firestore');
-				const snap = await getDocs(qFn(projectsCol, wFn('projectId','==', projectId)));
-				if(snap.empty) unique = true;
+				const existing = await getProjectByCode(projectId);
+				if(!existing) unique = true;
 			}
 			if(!unique) throw new Error('Could not generate a unique project ID, try again.');
 
-			// Transaction: create project & deduct user credits (same cost 50) but also embed org ownership reference snapshot
-			await runTransaction(db, async(transaction)=> {
-				const userRef = doc(db,'users', currentUser.uid);
-				const userSnap = await transaction.get(userRef);
-				if(!userSnap.exists()) throw new Error('User profile not found.');
-				const userData = userSnap.data();
-				if((userData.credits||0) < 50) throw new Error('Not enough credits.');
-				const newProjectRef = doc(projectsCol);
-				// Inherit org theme (only copy defined values) so project starts visually consistent
-				const THEME_KEYS = [
-					'themeHeaderBg','themeHeaderText','themeAccent','themeAccentText','themeAccentHover',
-					'themeTabActiveBg','themeTabActiveText','themeTabInactiveText','themeWidgetTitleColor'
-				] as const;
-				const inheritedTheme: Record<string, any> = {};
-				THEME_KEYS.forEach(k=> { if(org && typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k]; });
-				// Provide sensible fallbacks when some org fields missing
-				if(!inheritedTheme.themeAccent && org?.themeHeaderBg) inheritedTheme.themeAccent = org.themeHeaderBg;
-				if(!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
-				transaction.set(newProjectRef, {
+			// Inherit org theme (only copy defined values) so project starts visually consistent
+			const THEME_KEYS = [
+				'themeHeaderBg','themeHeaderText','themeAccent','themeAccentText','themeAccentHover',
+				'themeTabActiveBg','themeTabActiveText','themeTabInactiveText','themeWidgetTitleColor'
+			] as const;
+			const inheritedTheme: Record<string, any> = {};
+			THEME_KEYS.forEach(k=> { if(org && typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k]; });
+			if(!inheritedTheme.themeAccent && org?.themeHeaderBg) inheritedTheme.themeAccent = org.themeHeaderBg;
+			if(!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
+
+			// Create project via DAL (deducts credits atomically)
+			await createProjectWithCredits({
+				uid: currentUser.uid,
+				projectData: {
 					name,
-						description,
-						coverPhotoUrl,
-						users: [{ uid: currentUser.uid, role: 'Admin' }],
-						createdAt: serverTimestamp(),
-						createdBy: currentUser.uid,
-						projectId,
-						location: null,
-						// Organization linkage (use stable orgId string, plus display name & logo for denormalized quick access)
-						organizationId: org.orgId,
-						organizationName: org.name || null,
-						organizationLogoUrl: org.logoUrl || null,
-						// Persist original owning organization id to preserve ownership even if organization owner changes later
-						originatingOrganizationId: org.orgId,
-						originatingOrganizationDbId: org.id,
-						...inheritedTheme,
-				});
-				transaction.update(userRef, { credits: (userData.credits||0) - 50 });
+					description,
+					coverPhotoUrl,
+					users: [{ uid: currentUser.uid, role: 'Admin' }],
+					createdBy: currentUser.uid,
+					projectId,
+					location: null,
+					organizationId: org.orgId,
+					organizationName: org.name || null,
+					organizationLogoUrl: org.logoUrl || null,
+					originatingOrganizationId: org.orgId,
+					originatingOrganizationDbId: org.id,
+					...inheritedTheme,
+				},
 			});
 			// Reset form
 			setName(''); setDescription(''); setCoverPhotoUrl(''); setShowCreate(false);

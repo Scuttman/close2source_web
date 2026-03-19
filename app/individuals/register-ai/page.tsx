@@ -2,14 +2,13 @@
 import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
-import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../src/lib/firebase';
+import { createIndividualWithCredits } from '@/lib/dal';
 import PageShell from '../../../components/PageShell';
 import { SparklesIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { generateCode } from '../../../src/lib/codes';
 import { sanitizeUserMessage, MAX_USER_MESSAGE_LENGTH } from '../../../src/lib/sanitizeAIInput';
+import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../src/lib/moderation';
 
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -97,6 +96,7 @@ function RegisterAIPageInner() {
   const [currentProfile, setCurrentProfile] = useState<AIIndividualProfile | null>(null);
   const [profileReady, setProfileReady] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [pendingReviewMsg, setPendingReviewMsg] = useState('');
   const [showManualFinish, setShowManualFinish] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -162,12 +162,9 @@ function RegisterAIPageInner() {
     const userHistory = isInit ? [] : history;
 
     try {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      const resp = await fetch('/api/ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         signal: abortRef.current.signal,
         body: JSON.stringify({
           model: 'gpt-4o-mini',
@@ -351,40 +348,56 @@ function RegisterAIPageInner() {
     if (!currentProfile || !auth.currentUser) return;
 
     setApplying(true);
+    setPendingReviewMsg('');
     try {
       const user = auth.currentUser;
       const individualId = generateCode('individual');
-      
-      // Create individual profile and deduct credits
-      await runTransaction(db, async (transaction) => {
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await transaction.get(userRef);
-        
-        if (!userSnap.exists()) throw new Error('User profile not found.');
-        
-        const userData = userSnap.data();
-        if ((userData.credits || 0) < 50) throw new Error('Not enough credits. You need 50 credits to create an individual profile.');
 
-        const individualRef = doc(collection(db, 'individuals'));
-        
-        transaction.set(individualRef, {
+      // ── Mandatory content moderation BEFORE creating ───────────────────
+      const contentToScan: Record<string, string> = {};
+      (['name', 'bio', 'story', 'vision', 'serviceLocation', 'ministryDescription'] as const).forEach(f => {
+        const v = (currentProfile as any)[f];
+        if (v && typeof v === 'string') contentToScan[f] = v;
+      });
+      const modResult = await moderateProfileContent(contentToScan, 'individual');
+      const initialStatus = modResult.flagged ? 'pending_review' : 'live';
+      // ──────────────────────────────────────────────────────────────────────
+
+      // Create individual profile and deduct credits
+      const { docId: newIndividualDocId } = await createIndividualWithCredits({
+        uid: user.uid,
+        individualData: {
           ...currentProfile,
           individualId,
           ownerUid: user.uid,
           ownerId: user.uid,
           type: 'missionary',
           profileType: 'missionary',
-          createdAt: serverTimestamp(),
+          status: initialStatus,
           updates: [],
           prayerRequests: [],
           financeSummary: [],
           profilePosts: [],
-        });
-
-        transaction.update(userRef, {
-          credits: (userData.credits || 0) - 50
-        });
+        },
       });
+
+      // ── Submit to moderation queue if flagged ────────────────────────────
+      if (modResult.flagged && newIndividualDocId) {
+        await submitToModerationQueue({
+          type: 'individual',
+          docId: newIndividualDocId,
+          docCollection: 'individuals',
+          profileName: currentProfile.name || 'Unnamed profile',
+          profileCode: individualId,
+          ownerUid: user.uid,
+          result: modResult,
+          contentSnapshot: contentToScan,
+        });
+        setPendingReviewMsg(getPendingReviewMessage('individual'));
+        setApplying(false);
+        return; // Stay on page to show message
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       // Clear localStorage
       localStorage.removeItem(`ai_individual_registration`);
@@ -481,14 +494,22 @@ function RegisterAIPageInner() {
 
           {/* Create Profile button - inline */}
           {profileReady && currentProfile && (
-            <div className="flex justify-center pt-2">
-              <button
-                onClick={handleApply}
-                disabled={applying}
-                className="px-8 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-lg"
-              >
-                {applying ? 'Creating Profile...' : 'Create My Profile'}
-              </button>
+            <div className="flex flex-col items-center gap-3 pt-2">
+              {!pendingReviewMsg && (
+                <button
+                  onClick={handleApply}
+                  disabled={applying}
+                  className="px-8 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg text-lg"
+                >
+                  {applying ? 'Creating Profile...' : 'Create My Profile'}
+                </button>
+              )}
+              {pendingReviewMsg && (
+                <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3 flex items-start gap-2 max-w-md text-sm text-yellow-800">
+                  <svg className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+                  {pendingReviewMsg}
+                </div>
+              )}
             </div>
           )}
           

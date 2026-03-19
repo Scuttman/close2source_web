@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 class AITextService {
   // Store your API key securely - consider using flutter_dotenv or similar
   // API key must be set via environment/config - do not hardcode
-  static const String _apiKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
+  static const String _apiKey =
+      String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
 
   /// Improves the given text using ChatGPT

@@ -1,10 +1,10 @@
 "use client";
 import { useState } from 'react';
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getUser, updateUser, createOrg } from '@/lib/dal';
 import { generateCode } from '../../../src/lib/codes';
-import { db, storage } from '../../../src/lib/firebase';
+import { storage } from '../../../src/lib/firebase';
 import PageShell from '../../../components/PageShell';
 import { logCreditTransaction } from '../../../src/lib/credits';
 import { useRouter } from 'next/navigation';
@@ -83,9 +83,8 @@ export default function CreateOrganizationPage(){
       const user = auth.currentUser;
       if(!user) throw new Error('You must be signed in to create an organization.');
       
-      const userRef = doc(db,'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      const currentCredits = userSnap.exists()? (userSnap.data().credits ?? 0) : 0;
+      const userData = await getUser(user.uid);
+      const currentCredits = userData? (userData.credits ?? 0) : 0;
       if(currentCredits < ORG_CREATE_COST) throw new Error(`Not enough credits (need ${ORG_CREATE_COST}).`);
       
       // Upload logo if provided with progress
@@ -121,13 +120,13 @@ export default function CreateOrganizationPage(){
         safeguardingUrl = await getDownloadURL(safeguardingRef);
       }
       
-      await updateDoc(userRef, { credits: currentCredits - ORG_CREATE_COST });
+      await updateUser(user.uid, { credits: currentCredits - ORG_CREATE_COST } as any);
       
       const orgId = generateCode('organization');
       const finalType = orgType === 'Other' ? (customType.trim() || 'Other') : orgType;
       const joinPin = String(Math.floor(1000 + Math.random() * 9000));
       
-      await addDoc(collection(db,'organizations'), {
+      await createOrg({
         name: name.trim(),
         logoUrl,
         address: {
@@ -145,13 +144,12 @@ export default function CreateOrganizationPage(){
         bio: bio.trim() || null,
         orgId,
         ownerUid: user.uid,
-        createdAt: serverTimestamp(),
         team: [],
         accessSettings: {},
         supporters: [],
         representatives: [],
         joinPin,
-      });
+      } as any);
       
       await logCreditTransaction(user.uid, 'spend', ORG_CREATE_COST, `Created organization: ${name}`);
       setSuccess(true);

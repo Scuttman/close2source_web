@@ -1,7 +1,6 @@
 "use client";
 import { useState } from 'react';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateOrg, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
 import { MapPinIcon, PlusIcon, PencilIcon, TrashIcon, XMarkIcon, CheckIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 
 export interface OrgLocation {
@@ -190,11 +189,10 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
     setSaving(true);
     setError('');
     try {
-      const orgRef = doc(db, 'organizations', org.id);
       if (editingId) {
         // Replace old entry with updated one
         const oldEntry = locations.find(l => l.id === editingId);
-        if (oldEntry) await updateDoc(orgRef, { locations: arrayRemove(oldEntry) });
+        if (oldEntry) await updateOrg(org.id, { locations: fieldArrayRemove(oldEntry) } as any);
         const updated: OrgLocation = {
           id: editingId,
           name: form.name!.trim(),
@@ -209,7 +207,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
         };
         // Remove undefined keys for Firestore
         const clean: any = Object.fromEntries(Object.entries(updated).filter(([, v]) => v !== undefined));
-        await updateDoc(orgRef, { locations: arrayUnion(clean) });
+        await updateOrg(org.id, { locations: fieldArrayUnion(clean) } as any);
       } else {
         const newLoc: OrgLocation = {
           id: nanoid8(),
@@ -224,7 +222,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
           whatWeDo: form.whatWeDo?.trim() || undefined,
         };
         const clean: any = Object.fromEntries(Object.entries(newLoc).filter(([, v]) => v !== undefined));
-        await updateDoc(orgRef, { locations: arrayUnion(clean) });
+        await updateOrg(org.id, { locations: fieldArrayUnion(clean) } as any);
       }
       closeForm();
     } catch (e: any) {
@@ -238,7 +236,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
     if (!org?.id) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'organizations', org.id), { locations: arrayRemove(loc) });
+      await updateOrg(org.id, { locations: fieldArrayRemove(loc) } as any);
       setDeleteConfirm(null);
     } catch (e: any) {
       alert('Failed to delete: ' + (e.message || 'Unknown error'));

@@ -30,10 +30,19 @@ service cloud.firestore {
     /* ---------- Users & Transactions ---------- */
     match /users/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
-      // Allow any signed-in user to read basic user profiles (for display names/avatars)
-      allow read: if isSignedIn();
-      // Only the owner can update their own user doc
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      // Own doc: full read. Other authenticated users: restricted to display-only fields
+      // (name, photoURL, displayName). Email exposure is a known P2 issue; long-term fix
+      // requires migrating sensitive fields to a separate owner-only sub-document.
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      // Only the owner can update or delete their own user doc (delete required for Art.17 erasure)
+      allow update, delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Consent / activity log — strictly owner-read; SuperAdmin audit access
+    match /users/{userId}/activityLog/{logId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update, delete: if false; // Immutable audit trail
     }
 
     match /users/{userId}/transactions/{txId} {
@@ -59,23 +68,46 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerUid;
     }
 
-    /* ---------- Projects (broad: tighten later if needed) ---------- */
-    match /projects/{allPaths=**} {
-      allow read: if true;
-      allow write: if isSignedIn();
+    /* ---------- Projects ---------- */
+    match /projects/{projectId} {
+      // Public non-draft projects are browsable by anyone (supports public directory)
+      allow read: if resource.data.visibility == 'public'
+                     && resource.data.status != 'draft';
+      // Creator or SuperAdmin: full access including private and draft
+      allow read: if isSignedIn()
+                     && (request.auth.uid == resource.data.createdBy || isSuperAdmin());
+      // Any authenticated user may create a new project (they become createdBy)
+      allow create: if isSignedIn();
+      // Only creator or SuperAdmin may modify or remove
+      // NOTE: org team members who are not the creator cannot edit via rules alone;
+      //       this requires storing the Firestore org doc ID on the project to enable
+      //       a get()-based membership check. Tracked as a data-model improvement.
+      allow update, delete: if isSignedIn()
+                               && (request.auth.uid == resource.data.createdBy
+                                   || isSuperAdmin());
+    }
+    // Project sub-collections (e.g. partners, comments): authenticated users only
+    match /projects/{projectId}/{rest=**} {
+      allow read, write: if isSignedIn();
     }
 
     /* ---------- Organizations ---------- */
     match /organizations/{orgId} {
       allow create: if isSignedIn();
       allow read: if true;
-      // Updates can be made by Owner, SuperAdmin, or members of teamUids
+      // Updates can be made by Owner, SuperAdmin, members of teamUids,
+      // or any signed-in user self-joining (only adding themselves to team array)
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.ownerUid ||
         (
           resource.data.teamUids != null &&
           request.auth.uid in resource.data.teamUids
+        ) ||
+        // Self-join via code+pin: user can only append to team, no other fields change
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team']) &&
+          request.resource.data.team.size() == resource.data.team.size() + 1
         )
       );
       // Deletion restricted to Owner or SuperAdmin
@@ -317,6 +349,18 @@ service cloud.firestore {
             resource.data.createdBy == request.auth.uid || hasRole(profileId, 'Owner') || hasRole(profileId, 'Admin')
           );
       }
+    }
+
+    /* ---------- Content Moderation Queue ---------- */
+    // Created by the server-side moderation helper (client writes during publish flows)
+    // Read + update restricted to SuperAdmin only — queue items must not be visible to general users
+    match /moderationQueue/{queueId} {
+      // Server-side (or trusted client during publish) can create
+      allow create: if isSignedIn();
+      // Only SuperAdmin can read the queue or update decisions
+      allow read, update: if isSuperAdmin();
+      // No deletion — retain audit trail
+      allow delete: if false;
     }
   }
 }

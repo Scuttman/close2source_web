@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "../../components/PageShell";
 import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import { app } from "../../src/lib/firebase";
+import { getUser, createUserDoc } from "@/lib/dal";
 import { logCreditTransaction } from "../../src/lib/credits";
 
 export default function LoginPage() {
@@ -14,7 +14,6 @@ export default function LoginPage() {
   const [success, setSuccess] = useState("");
   const [userRole, setUserRole] = useState<string | null>(null);
   const auth = getAuth(app);
-  const db = getFirestore(app);
   const router = useRouter();
 
   async function handleLogin(e: React.FormEvent) {
@@ -24,11 +23,10 @@ export default function LoginPage() {
     setUserRole(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setUserRole(data.role);
-        setSuccess("Login successful! Welcome, " + (data.role === "partner" ? "Partner" : "Field Worker") + ".");
+      const userData = await getUser(userCredential.user.uid);
+      if (userData) {
+        setUserRole(userData.role);
+        setSuccess("Login successful! Welcome, " + ((userData.role as string) === "partner" ? "Partner" : "Field Worker") + ".");
         setTimeout(() => router.push("/profile"), 1000);
       } else {
         setError("User profile not found in Firestore.");
@@ -48,16 +46,15 @@ export default function LoginPage() {
       const user = result.user;
       
       // Check if user already exists
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
+      const existingUser = await getUser(user.uid);
       
-      if (!userDoc.exists()) {
+      if (!existingUser) {
         // Create new user document if signing in for first time
         const displayNameParts = (user.displayName || "").split(" ");
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await setDoc(userDocRef, {
+        await createUserDoc(user.uid, {
           email: user.email,
           name: firstName,
           surname: lastName,
@@ -75,7 +72,7 @@ export default function LoginPage() {
         }
       }
       
-      const data = userDoc.exists() ? userDoc.data() : { role: "User" };
+      const data = existingUser ? existingUser : { role: "User" };
       setUserRole(data.role);
       setSuccess("Login successful!");
       setTimeout(() => router.push("/profile"), 1000);
@@ -94,16 +91,15 @@ export default function LoginPage() {
       const user = result.user;
       
       // Check if user already exists
-      const userDocRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userDocRef);
+      const existingUser = await getUser(user.uid);
       
-      if (!userDoc.exists()) {
+      if (!existingUser) {
         // Create new user document if signing in for first time
         const displayNameParts = (user.displayName || "").split(" ");
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await setDoc(userDocRef, {
+        await createUserDoc(user.uid, {
           email: user.email,
           name: firstName || "User",
           surname: lastName,
@@ -121,7 +117,7 @@ export default function LoginPage() {
         }
       }
       
-      const data = userDoc.exists() ? userDoc.data() : { role: "User" };
+      const data = existingUser ? existingUser : { role: "User" };
       setUserRole(data.role);
       setSuccess("Login successful!");
       setTimeout(() => router.push("/profile"), 1000);

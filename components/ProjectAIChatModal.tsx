@@ -27,7 +27,6 @@ interface Props {
   onClose: () => void;
 }
 
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
 const SYSTEM_PROMPT = (orgName: string) => `You are a project registration assistant for Close2Source — a platform connecting organisations with community projects. You are helping someone from "${orgName}" create a compelling, well-written project profile.
 
@@ -145,12 +144,9 @@ export default function ProjectAIChatModal({ orgName, onApply, onClose }: Props)
     const userHistory = isInit ? [] : history;
 
     try {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      const resp = await fetch('/api/ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         signal: abortRef.current.signal,
         body: JSON.stringify({
           model: 'gpt-4o-mini',

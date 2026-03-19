@@ -1,16 +1,17 @@
 "use client";
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { collection, query, where, getDocs, doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { db, storage } from '../../../src/lib/firebase';
+import { getOrgByCode, updateOrg, subscribeOrg, getUsersByEmails, subscribeOrgProjects } from '@/lib/dal';
+import { storage } from '../../../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import PageShell from '../../../components/PageShell';
-import { InformationCircleIcon, UserGroupIcon, ArrowPathIcon, Cog6ToothIcon, CurrencyDollarIcon, ArrowLeftOnRectangleIcon, Squares2X2Icon, PencilIcon, EyeIcon, PhotoIcon, ArrowUpTrayIcon, ShieldCheckIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, UserGroupIcon, ArrowPathIcon, Cog6ToothIcon, CurrencyDollarIcon, ArrowLeftOnRectangleIcon, Squares2X2Icon, PencilIcon, EyeIcon, PhotoIcon, ArrowUpTrayIcon, ShieldCheckIcon, MapPinIcon, LinkIcon, DocumentTextIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import OrgEnhancedOverviewTab from 'components/OrgEnhancedOverviewTab';
 import OrgSettingsTab from 'components/OrgSettingsTab';
 import OrgProjectsTab from 'components/OrgProjectsTab';
 import OrgTeamTab from 'components/OrgTeamTab';
+import OrgPartnersTab from 'components/OrgPartnersTab';
 import OrgLocationsTab from 'components/OrgLocationsTab';
 import ProfileLoadingShell from 'components/ProfileLoadingShell';
 
@@ -59,17 +60,14 @@ export default function OrganizationDetailPage(){
     (async()=>{
       setLoading(true); setError(''); setOrgDoc(null);
       try {
-        const qy = query(collection(db,'organizations'), where('orgId','==', orgIdParam));
-        const snap = await getDocs(qy);
-        if(snap.empty){ setError('Organization not found'); setLoading(false); return; }
-        const first = snap.docs[0];
-        unsub = onSnapshot(doc(db,'organizations', first.id), d=> {
-          if(!d.exists()){ setError('Organization not found'); setOrgDoc(null); setLoading(false); return; }
-          const data:any = d.data();
-          setOrgDoc({ id: d.id, ...data });
-          setDescDraft(data.bio || '');
+        const orgResult = await getOrgByCode(orgIdParam);
+        if(!orgResult){ setError('Organization not found'); setLoading(false); return; }
+        unsub = subscribeOrg(orgResult.id, (data) => {
+          if(!data){ setError('Organization not found'); setOrgDoc(null); setLoading(false); return; }
+          setOrgDoc(data);
+          setDescDraft((data as any).bio || '');
           setLoading(false);
-        }, err=> { setError(err.message || 'Error loading organization'); setLoading(false); });
+        }, (err) => { setError(err.message || 'Error loading organization'); setLoading(false); });
       } catch(e:any){ if(!cancelled){ setError(e.message || 'Error loading organization'); setLoading(false);} }
     })();
     return ()=> { cancelled = true; if(unsub) unsub(); };
@@ -89,9 +87,8 @@ export default function OrganizationDetailPage(){
         const uniqueEmails = Array.from(new Set(emails)).slice(0,10); // Firestore 'in' limit
         let userDocs: Record<string, any> = {};
         if(uniqueEmails.length){
-          const usersQ = query(collection(db,'users'), where('email','in', uniqueEmails));
-          const snap = await getDocs(usersQ);
-          snap.forEach(d=> { const data = d.data(); userDocs[(data.email||'').toLowerCase()] = { uid: d.id, ...data }; });
+          const fetched = await getUsersByEmails(uniqueEmails);
+          Object.entries(fetched).forEach(([key, data]) => { userDocs[key] = { uid: data.id, ...data }; });
         }
         if(cancelled) return;
         const enriched = members.map(m=> {
@@ -121,7 +118,7 @@ export default function OrganizationDetailPage(){
       const sRef = storageRef(storage, `organizations/${orgDoc.id}/coverPhoto.${ext}`);
       await uploadBytes(sRef, file);
       const url = await getDownloadURL(sRef);
-      await updateDoc(doc(db, 'organizations', orgDoc.id), { coverPhotoUrl: url });
+      await updateOrg(orgDoc.id, { coverPhotoUrl: url } as any);
     } catch (e: any) {
       console.error('Cover photo upload failed', e);
     } finally {
@@ -129,25 +126,32 @@ export default function OrganizationDetailPage(){
     }
   }
 
-  type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
+  type AccessLevel = 'public' | 'supporter' | 'representative' | 'admin' | 'owner';
   const accessSettings = orgDoc?.accessSettings || {};
   const representatives: string[] = Array.isArray(orgDoc?.representatives)? orgDoc.representatives: [];
   const supporters: string[] = Array.isArray(orgDoc?.supporters)? orgDoc.supporters: [];
+  const teamMembers: any[] = Array.isArray(orgDoc?.team) ? orgDoc.team : [];
+  const isActualAdmin = !isActualOwner && !!user &&
+    teamMembers.some(m => (m.uid === user.uid || m.email === user.email) && m.role === 'Admin');
+  const isAdmin = isActualAdmin && !previewMode;
+  const canEdit = isOwner || isAdmin;
   let viewerRole: AccessLevel = 'public';
   if(isOwner) viewerRole = 'owner';
+  else if(isAdmin) viewerRole = 'admin';
   else if(user){
     const ident = [user.uid, user.email, user.displayName].filter(Boolean);
     if(representatives.some(r=> ident.includes(r))) viewerRole = 'representative';
     else if(supporters.some(s=> ident.includes(s))) viewerRole = 'supporter';
   }
   const DEFAULT_VIEW: Record<string, AccessLevel[]> = {
-    overview: ['public','supporter','representative','owner'],
-    projects: ['public','supporter','representative','owner'],
-    locations: ['public','supporter','representative','owner'],
-    updates: ['supporter','representative','owner'],
-    team: ['supporter','representative','owner'],
-    finance: ['representative','owner'],
-    compliance: ['representative','owner'],
+    overview: ['public','supporter','representative','admin','owner'],
+    projects: ['public','supporter','representative','admin','owner'],
+    locations: ['public','supporter','representative','admin','owner'],
+    updates: ['supporter','representative','admin','owner'],
+    team: ['supporter','representative','admin','owner'],
+    partners: ['supporter','representative','admin','owner'],
+    finance: ['representative','admin','owner'],
+    compliance: ['representative','admin','owner'],
     settings: ['owner']
   };
   function canView(tabId:string): boolean {
@@ -163,6 +167,7 @@ export default function OrganizationDetailPage(){
     { id: 'locations', label: 'Locations', icon: MapPinIcon },
     { id: 'updates', label: 'Updates', icon: ArrowPathIcon },
     { id: 'team', label: 'Team', icon: UserGroupIcon },
+    { id: 'partners', label: 'Partners', icon: LinkIcon },
     { id: 'finance', label: 'Finance', icon: CurrencyDollarIcon },
     { id: 'compliance', label: 'Compliance', icon: ShieldCheckIcon },
     ...(isActualOwner ? [{ id: 'settings', label: 'Settings', icon: Cog6ToothIcon }] : []),
@@ -221,7 +226,7 @@ export default function OrganizationDetailPage(){
               <ArrowLeftOnRectangleIcon className='h-4 w-4' /> Exit
             </a>
           )}
-          {isActualOwner && user && (
+          {(isActualOwner || isActualAdmin) && user && (
             <>
               <button
                 onClick={() => setPreviewMode(p => !p)}
@@ -280,8 +285,8 @@ export default function OrganizationDetailPage(){
             </div>
           </div>
 
-          {/* Cover photo upload (owner, edit mode) */}
-          {isOwner && editMode && (
+          {/* Cover photo upload (owner or admin, edit mode) */}
+          {canEdit && editMode && (
             <div className='absolute bottom-4 left-[2.7rem] z-20'>
               <label className='flex items-center gap-2 px-3 py-2 bg-black/50 backdrop-blur-sm text-white text-xs font-medium rounded-lg border border-white/20 cursor-pointer hover:bg-black/70 transition'>
                 {uploadingCover ? (
@@ -353,17 +358,22 @@ export default function OrganizationDetailPage(){
             )}
             {activeTab === 'projects' && canView('projects') && (
               <div className='flex-1 flex flex-col min-h-0'>
-                <OrgProjectsTab org={orgDoc} isOwner={isOwner} currentUser={user} />
+                <OrgProjectsTab org={orgDoc} isOwner={canEdit} currentUser={user} />
               </div>
             )}
             {activeTab === 'team' && canView('team') && (
               <div className='flex-1 flex flex-col min-h-0'>
-                <OrgTeamTab org={orgDoc} isOwner={isOwner} editMode={editMode} />
+                <OrgTeamTab org={orgDoc} isOwner={canEdit} editMode={editMode} />
+              </div>
+            )}
+            {activeTab === 'partners' && canView('partners') && (
+              <div className='flex-1 flex flex-col min-h-0'>
+                <OrgPartnersTab org={orgDoc} isOwner={canEdit} />
               </div>
             )}
             {activeTab === 'locations' && canView('locations') && (
               <div className='flex-1 flex flex-col min-h-0'>
-                <OrgLocationsTab org={orgDoc} isOwner={isOwner} />
+                <OrgLocationsTab org={orgDoc} isOwner={canEdit} />
               </div>
             )}
             {activeTab === 'finance' && canView('finance') && (
@@ -373,7 +383,7 @@ export default function OrganizationDetailPage(){
             )}
             {activeTab === 'compliance' && canView('compliance') && (
               <div className='flex-1 flex flex-col min-h-0'>
-                <OrgComplianceTab org={orgDoc} isOwner={isOwner} />
+                <OrgComplianceTab org={orgDoc} isOwner={canEdit} />
               </div>
             )}
             {isOwner && activeTab === 'settings' && (
@@ -397,6 +407,14 @@ export default function OrganizationDetailPage(){
   );
 }
 
+interface AuditorReport {
+  url: string;
+  year: string;
+  label: string;
+  fileName: string;
+  uploadedAt: string;
+}
+
 function OrgComplianceTab({ org, isOwner }: { org: any; isOwner: boolean }) {
   const ORG_TYPES = ['Religious Organization', 'NGO', 'Business', 'Church', 'Other'];
   const [companyNumber, setCompanyNumber] = useState(org.companyNumber || '');
@@ -410,16 +428,67 @@ function OrgComplianceTab({ org, isOwner }: { org: any; isOwner: boolean }) {
   const [safeguardingError, setSafeguardingError] = useState('');
   const [safeguardingUrl, setSafeguardingUrl] = useState(org.safeguardingPolicyUrl || '');
 
+  // Auditor reports
+  const [auditorReports, setAuditorReports] = useState<AuditorReport[]>(
+    Array.isArray(org.auditorReports) ? org.auditorReports : []
+  );
+  const [reportUploading, setReportUploading] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [reportYear, setReportYear] = useState(String(new Date().getFullYear()));
+  const [reportLabel, setReportLabel] = useState('');
+  const [deletingIdx, setDeletingIdx] = useState<number | null>(null);
+
+  async function handleReportUpload(file: File) {
+    if (!reportYear.trim()) { setReportError('Please enter a year for this report.'); return; }
+    setReportUploading(true); setReportError('');
+    try {
+      const uid = getAuth().currentUser?.uid;
+      if (!uid) throw new Error('You must be signed in.');
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const sRef = storageRef(storage, `organizations/${org.id}/auditor-reports/${reportYear}_${Date.now()}_${safeName}`);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      const newReport: AuditorReport = {
+        url,
+        year: reportYear.trim(),
+        label: reportLabel.trim(),
+        fileName: file.name,
+        uploadedAt: new Date().toISOString(),
+      };
+      const updated = [...auditorReports, newReport].sort((a, b) => b.year.localeCompare(a.year));
+      await updateOrg(org.id, { auditorReports: updated } as any);
+      setAuditorReports(updated);
+      setReportLabel('');
+    } catch (e: any) {
+      setReportError(e.message || 'Upload failed');
+    } finally {
+      setReportUploading(false);
+    }
+  }
+
+  async function handleDeleteReport(idx: number) {
+    setDeletingIdx(idx);
+    try {
+      const updated = auditorReports.filter((_, i) => i !== idx);
+      await updateOrg(org.id, { auditorReports: updated } as any);
+      setAuditorReports(updated);
+    } catch (e: any) {
+      setReportError(e.message || 'Delete failed');
+    } finally {
+      setDeletingIdx(null);
+    }
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true); setSaveError(''); setSaveSuccess(false);
     try {
       const finalType = orgType === 'Other' ? (customType.trim() || 'Other') : orgType;
-      await updateDoc(doc(db, 'organizations', org.id), {
+      await updateOrg(org.id, {
         companyNumber: companyNumber.trim() || null,
         taxId: taxId.trim() || null,
         orgType: finalType || null,
-      });
+      } as any);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e: any) {
@@ -437,7 +506,7 @@ function OrgComplianceTab({ org, isOwner }: { org: any; isOwner: boolean }) {
       const sRef = storageRef(storage, `organizations/safeguarding/${uid}_${Date.now()}_${file.name}`);
       await uploadBytes(sRef, file);
       const url = await getDownloadURL(sRef);
-      await updateDoc(doc(db, 'organizations', org.id), { safeguardingPolicyUrl: url });
+      await updateOrg(org.id, { safeguardingPolicyUrl: url } as any);
       setSafeguardingUrl(url);
     } catch (e: any) {
       setSafeguardingError(e.message || 'Upload failed');
@@ -583,6 +652,117 @@ function OrgComplianceTab({ org, isOwner }: { org: any; isOwner: boolean }) {
           </dl>
         )}
       </div>
+
+      {/* Auditor Reports */}
+      <div className='bg-white rounded-xl border border-gray-200 shadow-sm p-6'>
+        <div className='flex items-center gap-2 mb-4'>
+          <DocumentTextIcon className='h-5 w-5 text-brand-main' />
+          <h2 className='text-base font-semibold text-gray-900'>Auditor Reports</h2>
+          <span className='ml-auto text-xs text-gray-400'>{auditorReports.length} report{auditorReports.length !== 1 ? 's' : ''}</span>
+        </div>
+
+        {/* Report list */}
+        {auditorReports.length === 0 ? (
+          <p className='text-sm text-gray-500 mb-4'>No auditor reports have been uploaded yet.</p>
+        ) : (
+          <ul className='divide-y divide-gray-100 mb-4'>
+            {auditorReports.map((r, i) => (
+              <li key={i} className='flex items-center gap-3 py-3'>
+                <div className='flex-shrink-0 w-10 h-10 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center'>
+                  <DocumentTextIcon className='w-5 h-5 text-orange-500' />
+                </div>
+                <div className='flex-1 min-w-0'>
+                  <div className='flex items-center gap-2 flex-wrap'>
+                    <span className='text-sm font-semibold text-gray-900'>{r.year}</span>
+                    {r.label && <span className='text-sm text-gray-600'>— {r.label}</span>}
+                  </div>
+                  <div className='flex items-center gap-3 mt-0.5'>
+                    <a
+                      href={r.url}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      className='text-xs text-brand-main hover:underline truncate max-w-[200px]'
+                      title={r.fileName}
+                    >
+                      {r.fileName}
+                    </a>
+                    <span className='text-xs text-gray-400 flex-shrink-0'>
+                      {new Date(r.uploadedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+                <a
+                  href={r.url}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='flex-shrink-0 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium transition'
+                >
+                  View
+                </a>
+                {isOwner && (
+                  <button
+                    onClick={() => handleDeleteReport(i)}
+                    disabled={deletingIdx === i}
+                    className='flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition disabled:opacity-50'
+                    title='Remove report'
+                  >
+                    <TrashIcon className='w-4 h-4' />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Upload form — owner only */}
+        {isOwner && (
+          <div className='border-t border-gray-100 pt-4'>
+            <p className='text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3'>Upload New Report</p>
+            <div className='flex flex-wrap gap-3 items-end'>
+              <div>
+                <label className='block text-xs font-medium text-gray-600 mb-1'>Year <span className='text-red-500'>*</span></label>
+                <input
+                  type='text'
+                  value={reportYear}
+                  onChange={e => setReportYear(e.target.value)}
+                  placeholder='e.g. 2025'
+                  maxLength={4}
+                  className='w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/30 focus:border-brand-main transition'
+                />
+              </div>
+              <div className='flex-1 min-w-[180px]'>
+                <label className='block text-xs font-medium text-gray-600 mb-1'>Description <span className='text-gray-400'>(optional)</span></label>
+                <input
+                  type='text'
+                  value={reportLabel}
+                  onChange={e => setReportLabel(e.target.value)}
+                  placeholder='e.g. Annual Financial Audit'
+                  className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/30 focus:border-brand-main transition'
+                />
+              </div>
+              <div>
+                <label className='block text-xs font-medium text-gray-600 mb-1'>File</label>
+                <label className='inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-main hover:bg-brand-dark text-white text-sm font-medium cursor-pointer transition'>
+                  {reportUploading ? (
+                    <><ArrowUpTrayIcon className='h-4 w-4 animate-bounce' /><span>Uploading…</span></>
+                  ) : (
+                    <><ArrowUpTrayIcon className='h-4 w-4' /><span>Choose & Upload</span></>
+                  )}
+                  <input
+                    type='file'
+                    accept='.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xls,.xlsx'
+                    className='hidden'
+                    disabled={reportUploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleReportUpload(f); e.target.value = ''; }}
+                  />
+                </label>
+              </div>
+            </div>
+            <p className='text-xs text-gray-400 mt-2'>Accepted: PDF, DOC, DOCX, XLS, XLSX</p>
+            {reportError && <p className='text-xs text-red-600 mt-1'>{reportError}</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -590,10 +770,10 @@ function OrgComplianceTab({ org, isOwner }: { org: any; isOwner: boolean }) {
 function OrgProjectsList({ orgId }: { orgId:string }){
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(()=>{ let mounted=true; (async()=>{
-    try { const qy = query(collection(db,'projects'), where('organizationId','==', orgId)); const snap = await getDocs(qy); if(!mounted) return; setProjects(snap.docs.map(d=> ({ id: d.id, ...d.data() }))); }
-    catch{ /* ignore */ } finally { if(mounted) setLoading(false); }
-  })(); return ()=> { mounted=false; }; }, [orgId]);
+  useEffect(()=>{ const unsub = subscribeOrgProjects(orgId, (rows) => {
+    setProjects(rows); setLoading(false);
+  }, () => { setLoading(false); });
+  return ()=> unsub(); }, [orgId]);
   if(loading) return <div className='text-xs text-gray-500'>Loading...</div>;
   if(!projects.length) return <div className='text-xs text-gray-500'>No linked projects.</div>;
   return (
@@ -611,7 +791,7 @@ function OrgTypeEditor({ current, orgDbId }: { current?: string; orgDbId: string
   const PRESETS = ['Religious Organization','NGO','Business','Church','Other'];
   async function save(newType:string){
     setSaving(true); setError('');
-    try { await updateDoc(doc(db,'organizations', orgDbId), { orgType: newType }); }
+    try { await updateOrg(orgDbId, { orgType: newType } as any); }
     catch(e:any){ setError(e.message || 'Save failed'); }
     finally { setSaving(false); }
   }

@@ -1,8 +1,7 @@
 "use client";
 import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { getUser, getUsersByEmails, updateProject } from '@/lib/dal';
 
 interface ProjectTeamTabProps {
   project: any;
@@ -101,7 +100,7 @@ export default function ProjectTeamTab({ project, projectId, isProjectCreator, a
       return val;
     }
     const cleaned = stripUndefined(updated);
-    try { await updateDoc(doc(db,'projects', projectId), { team: cleaned }); setProject((p:any)=> ({ ...p, team: cleaned })); }
+    try { await updateProject(projectId, { team: cleaned }); setProject((p:any)=> ({ ...p, team: cleaned })); }
     catch(e:any){ setError(e.message || 'Failed to save team'); }
     finally { setSaving(false); }
   }
@@ -184,10 +183,10 @@ export default function ProjectTeamTab({ project, projectId, isProjectCreator, a
         if(m.email && m.email.includes('@')) {
           tasks.push((async ()=> {
             try {
-              const q = query(collection(db,'users'), where('email','==', m.email));
-              const snap = await getDocs(q);
-              if(!snap.empty){
-                const d:any = snap.docs[0].data();
+              const byEmail = await getUsersByEmails([m.email!]);
+              const found = Object.values(byEmail)[0];
+              if(found){
+                const d:any = found;
                 const first = d.name || d.firstName || d.givenName || '';
                 const last = d.surname || d.lastName || d.familyName || '';
                 const combined = [first, last].filter(Boolean).join(' ') || d.displayName || d.fullName || m.name;
@@ -198,9 +197,9 @@ export default function ProjectTeamTab({ project, projectId, isProjectCreator, a
         } else if(!m.id.includes('@')) {
           tasks.push((async ()=> {
             try {
-              const userDoc = await getDoc(doc(db,'users', m.id));
-              if(userDoc.exists()) {
-                const d:any = userDoc.data();
+              const userDoc = await getUser(m.id);
+              if(userDoc) {
+                const d:any = userDoc;
                 const first = d.name || d.firstName || d.givenName || '';
                 const last = d.surname || d.lastName || d.familyName || '';
                 const combined = [first, last].filter(Boolean).join(' ') || d.displayName || d.fullName || m.name;

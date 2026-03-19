@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged, User } from "firebase/auth";
-import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
+import { getUser, updateUser } from "@/lib/dal";
 import { logCreditTransaction, getCreditStatement } from "../../src/lib/credits";
 import { useRouter } from "next/navigation";
 import { app } from "../../src/lib/firebase";
@@ -17,16 +17,15 @@ export default function CreditsPage() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const auth = getAuth(app);
-  const db = getFirestore(app);
   const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          setCredits(userDoc.data().credits ?? 0);
+        const userData = await getUser(firebaseUser.uid);
+        if (userData) {
+          setCredits((userData as any).credits ?? 0);
         }
         // Fetch statement
         const txs = await getCreditStatement(firebaseUser.uid);
@@ -35,7 +34,7 @@ export default function CreditsPage() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [auth, db]);
+  }, [auth]);
 
   async function handlePurchase(e: React.FormEvent) {
     e.preventDefault();
@@ -43,10 +42,9 @@ export default function CreditsPage() {
     setSuccess("");
     if (!user) return;
     try {
-      const userRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userRef);
-      const currentCredits = userDoc.exists() ? userDoc.data().credits ?? 0 : 0;
-      await updateDoc(userRef, { credits: currentCredits + amount });
+      const userData = await getUser(user.uid);
+      const currentCredits = userData ? (userData as any).credits ?? 0 : 0;
+      await updateUser(user.uid, { credits: currentCredits + amount } as any);
       setCredits(currentCredits + amount);
       await logCreditTransaction(user.uid, "purchase", amount, "Purchased credits");
       // Refresh statement

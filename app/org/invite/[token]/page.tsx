@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, getDoc, runTransaction } from 'firebase/firestore';
-import { db } from '../../../../src/lib/firebase';
+import { getOrgInvite, acceptOrgInvite } from '@/lib/dal';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import PageShell from '../../../../components/PageShell';
 
@@ -22,12 +21,10 @@ export default function OrgInviteAcceptPage(){
   }, []);
   useEffect(()=> { (async()=> {
     try {
-      const ref = doc(db,'orgInvites', token);
-      const snap = await getDoc(ref);
-      if(!snap.exists()) { setError('Invite not found.'); setLoading(false); return; }
-      const data = snap.data();
-      if(data.status !== 'pending') { setError('Invite already processed.'); setLoading(false); return; }
-      setInvite({ id: snap.id, ...data });
+      const inviteData = await getOrgInvite(token);
+      if(!inviteData) { setError('Invite not found.'); setLoading(false); return; }
+      if(inviteData.status !== 'pending') { setError('Invite already processed.'); setLoading(false); return; }
+      setInvite(inviteData);
     } catch(e:any){ setError(e.message || 'Failed to load invite'); }
     finally { setLoading(false); }
   })(); }, [token]);
@@ -37,22 +34,9 @@ export default function OrgInviteAcceptPage(){
     if(invite.email && user.email?.toLowerCase() !== invite.email){ setError('Email mismatch. Please sign in with invited email.'); return; }
     setAccepting(true); setError('');
     try {
-      await runTransaction(db, async(transaction)=> {
-        const inviteRef = doc(db,'orgInvites', invite.id);
-        const inviteSnap = await transaction.get(inviteRef);
-        if(!inviteSnap.exists()) throw new Error('Invite disappeared');
-        const inv = inviteSnap.data();
-        if(inv.status !== 'pending') throw new Error('Invite already processed');
-        const orgRef = doc(db,'organizations', inv.orgDbId);
-        const orgSnap = await transaction.get(orgRef);
-        if(!orgSnap.exists()) throw new Error('Organization missing');
-        const orgData = orgSnap.data();
-        const existingTeam = Array.isArray(orgData.team)? orgData.team: [];
-        const already = existingTeam.some((m:any)=> m.uid === user.uid || m.email === user.email);
-        const member = { uid: user.uid, email: user.email, name: user.displayName || user.email, type: 'user' };
-        const newTeam = already? existingTeam : [...existingTeam, member];
-        transaction.update(orgRef, { team: newTeam });
-        transaction.update(inviteRef, { status: 'accepted', acceptedAt: new Date(), acceptedBy: user.uid });
+      await acceptOrgInvite({
+        inviteToken: invite.id,
+        user: { uid: user.uid, email: user.email, displayName: user.displayName || user.email },
       });
       router.push(`/org/${invite.orgId}?tab=team`);
     } catch(e:any){ setError(e.message || 'Failed to accept invite'); }

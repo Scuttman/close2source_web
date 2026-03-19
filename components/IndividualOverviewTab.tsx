@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../src/lib/firebase";
+import { updateIndividual } from '@/lib/dal';
 import { MapPinIcon, BuildingOfficeIcon, UserGroupIcon, PencilIcon, CheckIcon } from "@heroicons/react/24/outline";
 
 interface IndividualOverviewTabProps {
@@ -32,7 +31,7 @@ export default function IndividualOverviewTab({ individual, canEdit = false }: I
     setSaving(true);
     try {
       const value = editValues[field];
-      await updateDoc(doc(db, "individuals", individual.id), { [field]: value || "" });
+      await updateIndividual(individual.id, { [field]: value || "" } as any);
       setEditMode({ ...editMode, [field]: false });
     } catch (error) {
       console.error("Error saving field:", error);
@@ -71,7 +70,7 @@ export default function IndividualOverviewTab({ individual, canEdit = false }: I
               <button
                 onClick={() => {
                   const newIsFamily = !isFamily;
-                  updateDoc(doc(db, "individuals", individual.id), { isFamily: newIsFamily }).catch(console.error);
+                  updateIndividual(individual.id, { isFamily: newIsFamily } as any).catch(console.error);
                 }}
                 className="px-3 py-1.5 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 transition shrink-0"
               >

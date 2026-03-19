@@ -4,8 +4,8 @@ import { useState } from "react";
 import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 // Correct relative path to firebase utilities (components and src are siblings)
-import { storage, db } from "../src/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { storage } from "../src/lib/firebase";
+import { updateIndividual } from '@/lib/dal';
 
 // Helper for resumable upload with progress
 function uploadBytesResumableWithProgress(storageRef: any, file: File, onProgress: (percent: number) => void): Promise<string> {
@@ -75,7 +75,6 @@ export default function CreatePostModal({ open, onClose, individualId, individua
               }
               // Add to updates array in Firestore
               if(!individualDocId) throw new Error("Missing profile document id.");
-              const docRef = doc(db, "individuals", individualDocId);
               const prevUpdates = Array.isArray(existingUpdates) ? existingUpdates : [];
               const newUpdate = {
                 id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
@@ -97,7 +96,7 @@ export default function CreatePostModal({ open, onClose, individualId, individua
               onPostCreated(newUpdate);
               // Sanitize undefined values
               const sanitize = (v:any):any => Array.isArray(v)? v.map(sanitize): (v && typeof v==='object'? Object.fromEntries(Object.entries(v).filter(([_,val])=> val!==undefined).map(([k,val])=> [k,sanitize(val)])): v);
-              await updateDoc(docRef, { updates: updatedUpdates.map(sanitize), feed: updatedFeed.map(sanitize), profilePosts: updatedProfilePosts.map(sanitize) });
+              await updateIndividual(individualDocId, { updates: updatedUpdates.map(sanitize), feed: updatedFeed.map(sanitize), profilePosts: updatedProfilePosts.map(sanitize) } as any);
               onClose();
               setPostText("");
               setPostTitle("");

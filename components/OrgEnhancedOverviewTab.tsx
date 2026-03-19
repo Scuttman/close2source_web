@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { doc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
+import { updateOrg, subscribeOrgProjects } from '@/lib/dal';
+import { storage } from '../src/lib/firebase';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
 interface OrgEnhancedOverviewProps {
@@ -27,20 +27,12 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
   useEffect(()=> {
     if(!org?.orgId){ setShowcaseProjects([]); return; }
     setProjectsLoading(true);
-    // OrderBy removed to avoid composite index requirement; can reintroduce once index added.
-    const qy = query(
-      collection(db,'projects'),
-      where('organizationId','==', org.orgId),
-      where('showOnOrganizationOverview','==', true)
-    );
-    const unsub = onSnapshot(qy, snap=> {
-      // Sort client-side by createdAt desc if present
-      // Also enforce: must be live + public (guard against stale showcase flag on private/draft projects)
-      const rows = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
+    const unsub = subscribeOrgProjects(org.orgId, (rows) => {
       const filtered = rows.filter((p: any) =>
+        p.showOnOrganizationOverview === true &&
         (p.status ?? 'live') === 'live' && (p.visibility ?? 'public') === 'public'
       );
-      filtered.sort((a:any,b:any)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+      filtered.sort((a:any,b:any)=> ((b.createdAt as any)?.seconds||0) - ((a.createdAt as any)?.seconds||0));
       setShowcaseProjects(filtered.slice(0,12)); setProjectsLoading(false);
     }, ()=> setProjectsLoading(false));
     return ()=> unsub();
@@ -59,7 +51,7 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
     const trimmed = taglineDraft.trim();
     setSavingTagline(true);
     try {
-      await updateDoc(doc(db,'organizations', org.id), { tagline: trimmed });
+      await updateOrg(org.id, { tagline: trimmed });
       onOrgUpdate({ tagline: trimmed });
     } catch {/* ignore */}
     finally { setSavingTagline(false); }
@@ -148,7 +140,7 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
                                 }
                               } catch {/* ignore deletion errors */}
                             }
-                            await updateDoc(doc(db,'organizations', org.id), { logoUrl: url });
+                            await updateOrg(org.id, { logoUrl: url });
                             onOrgUpdate({ logoUrl: url });
                           } catch(err:any){ setLogoError(err.message || 'Upload failed'); }
                           finally { setLogoUploading(false); setLogoProgress(null); }
@@ -184,7 +176,7 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
                               await deleteObject(ref(storage, objectPath));
                             }
                           } catch {/* ignore */}
-                          await updateDoc(doc(db,'organizations', org.id), { logoUrl: null });
+                          await updateOrg(org.id, { logoUrl: null });
                           onOrgUpdate({ logoUrl: null });
                         } catch(err:any){ setLogoError(err.message || 'Remove failed'); }
                         finally { setLogoUploading(false); }
@@ -244,7 +236,7 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
         {isOwner && editMode ? (
           <div>
             <textarea className="w-full border rounded px-3 py-2 min-h-[140px]" value={aboutDraft} onChange={e=> setAboutDraft(e.target.value)} />
-            <button disabled={savingAbout} onClick={async()=> { setSavingAbout(true); try { await updateDoc(doc(db,'organizations', org.id), { bio: aboutDraft }); onOrgUpdate({ bio: aboutDraft }); } catch(e:any){} finally { setSavingAbout(false); } }} className="mt-2 px-4 py-2 rounded text-xs font-semibold org-accent-btn disabled:opacity-50 transition">{savingAbout? 'Saving...' : 'Save'}</button>
+            <button disabled={savingAbout} onClick={async()=> { setSavingAbout(true); try { await updateOrg(org.id, { bio: aboutDraft }); onOrgUpdate({ bio: aboutDraft }); } catch(e:any){} finally { setSavingAbout(false); } }} className="mt-2 px-4 py-2 rounded text-xs font-semibold org-accent-btn disabled:opacity-50 transition">{savingAbout? 'Saving...' : 'Save'}</button>
           </div>
         ) : (
           <p className="text-sm text-brand-dark whitespace-pre-line">{org.bio || '—'}</p>
@@ -310,7 +302,7 @@ function OrgTypeEditor({ current, orgDbId }: { current?: string; orgDbId: string
   const PRESETS = ['Religious Organization','NGO','Business','Church','Other'];
   async function save(newType:string){
     setSaving(true); setError('');
-    try { await updateDoc(doc(db,'organizations', orgDbId), { orgType: newType }); }
+    try { await updateOrg(orgDbId, { orgType: newType }); }
     catch(e:any){ setError(e.message || 'Save failed'); }
     finally { setSaving(false); }
   }

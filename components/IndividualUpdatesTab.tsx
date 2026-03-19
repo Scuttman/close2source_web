@@ -4,8 +4,8 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from "react"
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { getAuth } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
+import { updateIndividual } from '@/lib/dal';
+import { storage } from '../src/lib/firebase';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import ImageUploadGrid, { ImageUploadEntry } from './ImageUploadGrid';
 
@@ -97,7 +97,6 @@ export default function IndividualUpdatesTab(props: IndividualUpdatesTabProps) {
 		if(!individual?.id) return;
 		if(!confirm('Delete this post? This cannot be undone.')) return;
 		try {
-			const refDoc = doc(db,'individuals',individual.id);
 			// Remove from legacy arrays & unified profilePosts if present
 			const prevProfilePosts = Array.isArray(individual.profilePosts)? individual.profilePosts: [];
 			const nextProfilePosts = prevProfilePosts.filter((p:any)=> p.id!==post.id);
@@ -105,7 +104,7 @@ export default function IndividualUpdatesTab(props: IndividualUpdatesTabProps) {
 			const nextFeed = prevFeed.filter((f:any)=> f.id!==post.id);
 			const prevUpdates = Array.isArray(individual.updates)? individual.updates: [];
 			const nextUpdates = prevUpdates.filter((u:any)=> u.id!==post.id);
-			await updateDoc(refDoc,{ profilePosts: nextProfilePosts, feed: nextFeed, updates: nextUpdates });
+			await updateIndividual(individual.id, { profilePosts: nextProfilePosts, feed: nextFeed, updates: nextUpdates } as any);
 			// Delete any stored image paths (we stored path in imagesPaths when created) or derive from URL if pattern matches
 			const imagePaths: string[] = Array.isArray(post.imagePaths)? post.imagePaths: [];
 			if(imagePaths.length){
@@ -539,9 +538,8 @@ function InlineComposer({ individual, code, onPostCreated, onClose }: { individu
 			const updatedFeed = [feedEntry, ...prevFeed];
 			const prevProfilePosts = Array.isArray(individual.profilePosts)? individual.profilePosts: [];
 			const updatedProfilePosts = [{ type:'update', showInUpdatesFeed:true, ...newUpdate }, ...prevProfilePosts];
-			const refDoc = doc(db, 'individuals', docId);
 			const sanitize = (v:any):any => Array.isArray(v)? v.map(sanitize): (v && typeof v==='object'? Object.fromEntries(Object.entries(v).filter(([_,val])=> val!==undefined).map(([k,val])=> [k,sanitize(val)])): v);
-			await updateDoc(refDoc, { updates: updatedUpdates.map(sanitize), feed: updatedFeed.map(sanitize), profilePosts: updatedProfilePosts.map(sanitize) });
+			await updateIndividual(docId, { updates: updatedUpdates.map(sanitize), feed: updatedFeed.map(sanitize), profilePosts: updatedProfilePosts.map(sanitize) } as any);
 			onPostCreated(newUpdate);
 			setTitle(''); setText(''); setTags([]); setTagInput(''); setImageEntries([]); setSlideshow(false); setResetImagesKey(k=>k+1); onClose();
 		} catch(err){ /* silent */ } finally { setPosting(false); }

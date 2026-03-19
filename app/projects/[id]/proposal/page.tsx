@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useParams } from "next/navigation";
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteField, arrayUnion, arrayRemove } from "firebase/firestore";
-import { db, storage } from "../../../../src/lib/firebase";
+import { storage } from "../../../../src/lib/firebase";
+import { getProject, getProjectByCode, updateProject, getOrgByCode, fieldDelete, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 import PageShell from "../../../../components/PageShell";
@@ -44,6 +44,7 @@ import {
   ShareIcon
 } from '@heroicons/react/24/outline';
 import { generateProjectPDF } from '../../../../src/lib/pdfGenerator';
+import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../../src/lib/moderation';
 
 const auth = typeof window !== "undefined" ? getAuth() : null;
 
@@ -105,7 +106,7 @@ interface Project {
   keyDocuments?: ProjectDocument[];
   galleryImages?: string[];
   visibility?: 'public' | 'private';
-  status?: 'draft' | 'live';
+  status?: 'draft' | 'live' | 'pending_review';
   showOnOrganizationOverview?: boolean;
   locationId?: string;
 }
@@ -130,6 +131,7 @@ export default function ProjectProposal() {
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
+  const [pendingReviewMsg, setPendingReviewMsg] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [ytInput, setYtInput] = useState('');
   const [locationModalOpen, setLocationModalOpen] = useState(false);
@@ -245,15 +247,15 @@ export default function ProjectProposal() {
     
     setSaving(true);
     try {
-      const refDoc = doc(db, 'projects', resolvedDocId);
+      const refDoc = resolvedDocId;
       const updates: any = {};
       fields.forEach(field => {
         const val = editValues[field as keyof Project];
         if (val === undefined) return; // skip unset fields
-        updates[field] = (val === '' || val === null) ? deleteField() : val;
+        updates[field] = (val === '' || val === null) ? fieldDelete() : val;
       });
       
-      await updateDoc(refDoc, updates);
+      await updateProject(resolvedDocId, updates as any);
       
       setProject(prev => prev ? { ...prev, ...updates } : null);
       setEditMode(prev => ({ ...prev, [section]: false }));
@@ -280,20 +282,16 @@ export default function ProjectProposal() {
       if (/^P[A-Z0-9]{6}$/i.test(routeParam)) {
         console.log('Treating as project code');
         try {
-          const qy = query(
-            collection(db, 'projects'),
-            where('projectId', '==', routeParam.toUpperCase())
-          );
-          const snap = await getDocs(qy);
-          if (snap.empty) {
+          const found = await getProjectByCode(routeParam.toUpperCase());
+          if (!found) {
             console.log('Project code not found');
             setError('Project not found.');
             setResolvedDocId(null);
             setLoading(false);
             return;
           }
-          console.log('Found project doc:', snap.docs[0].id);
-          setResolvedDocId(snap.docs[0].id);
+          console.log('Found project doc:', found.id);
+          setResolvedDocId(found.id);
         } catch (e: any) {
           console.error('Error looking up project:', e);
           setError(e.message || 'Lookup failed');
@@ -320,10 +318,9 @@ export default function ProjectProposal() {
       setError('');
       try {
         console.log('Loading project:', resolvedDocId);
-        const refDoc = doc(db, 'projects', resolvedDocId);
-        const snap = await getDoc(refDoc);
+        const projectData = await getProject(resolvedDocId);
         
-        if (!snap.exists()) {
+        if (!projectData) {
           console.log('Project not found');
           setError('Project not found.');
           setProject(null);
@@ -331,7 +328,7 @@ export default function ProjectProposal() {
           return;
         }
         
-        const data = snap.data() as Project;
+        const data = projectData as unknown as Project;
         console.log('Project loaded:', data);
         console.log('Has cover photo:', !!data.coverPhotoUrl);
         console.log('Has org logo from project:', !!data.organizationLogoUrl);
@@ -340,16 +337,11 @@ export default function ProjectProposal() {
         // Fetch organization logo if not in project data
         if (data.organizationId && !data.organizationLogoUrl) {
           try {
-            const orgQuery = query(
-              collection(db, 'organizations'),
-              where('orgId', '==', data.organizationId)
-            );
-            const orgSnap = await getDocs(orgQuery);
-            if (!orgSnap.empty) {
-              const orgData = orgSnap.docs[0].data();
+            const orgData = await getOrgByCode(data.organizationId);
+            if (orgData) {
               console.log('Fetched org logo:', orgData.logoUrl);
-              setOrgLogo(orgData.logoUrl || null);
-              setOrgLocations(Array.isArray(orgData.locations) ? orgData.locations : []);
+              setOrgLogo((orgData as any).logoUrl || null);
+              setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
             }
           } catch (err) {
             console.error('Error fetching org logo:', err);
@@ -359,9 +351,8 @@ export default function ProjectProposal() {
           // Still need to fetch org locations even if logo is in project data
           if (data.organizationId) {
             try {
-              const orgQuery = query(collection(db, 'organizations'), where('orgId', '==', data.organizationId));
-              const orgSnap = await getDocs(orgQuery);
-              if (!orgSnap.empty) setOrgLocations(Array.isArray(orgSnap.docs[0].data().locations) ? orgSnap.docs[0].data().locations : []);
+              const orgData = await getOrgByCode(data.organizationId);
+              if (orgData) setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
             } catch {/* ignore */}
           }
         }
@@ -456,8 +447,42 @@ export default function ProjectProposal() {
   async function saveVisibilityField(patch: Partial<Pick<Project, 'visibility' | 'status' | 'showOnOrganizationOverview'>>) {
     if (!resolvedDocId) return;
     setSavingVisibility(true);
+    setPendingReviewMsg(null);
     try {
-      await updateDoc(doc(db, 'projects', resolvedDocId), patch as any);
+      // Run mandatory moderation scan before going live
+      if (patch.status === 'live' && project) {
+        const contentSnapshot: Record<string, string> = {};
+        const scanFields: (keyof Project)[] = [
+          'name', 'description', 'vision', 'projectSummary', 'projectImpact',
+          'beneficiaries', 'oversight', 'otherDetails',
+        ];
+        scanFields.forEach(f => {
+          const v = project[f];
+          if (v && typeof v === 'string') contentSnapshot[f] = v;
+        });
+
+        const modResult = await moderateProfileContent(contentSnapshot, 'project');
+
+        if (modResult.flagged) {
+          // Set to pending_review instead of live
+          await updateProject(resolvedDocId, { status: 'pending_review' } as any);
+          setProject(prev => prev ? { ...prev, status: 'pending_review' } : null);
+          await submitToModerationQueue({
+            type: 'project',
+            docId: resolvedDocId,
+            docCollection: 'projects',
+            profileName: project.name || 'Unnamed project',
+            profileCode: project.projectId || resolvedDocId,
+            ownerUid: currentUser?.uid || '',
+            result: modResult,
+            contentSnapshot,
+          });
+          setPendingReviewMsg(getPendingReviewMessage('project'));
+          return;
+        }
+      }
+
+      await updateProject(resolvedDocId, patch as any);
       setProject(prev => prev ? { ...prev, ...patch } : null);
     } catch (e: any) {
       console.error('Failed to save visibility:', e);
@@ -470,6 +495,7 @@ export default function ProjectProposal() {
   const projectStatus = project.status ?? 'live';
   const isPublic = projectVisibility === 'public';
   const isLive = projectStatus === 'live';
+  const isPendingReview = projectStatus === 'pending_review';
 
   return (
     <PageShell
@@ -479,122 +505,23 @@ export default function ProjectProposal() {
           {project?.projectId && (
             <span className="text-lg font-mono font-bold text-white tracking-widest">{project.projectId}</span>
           )}
-          {isActualCreator && (<>
-          {/* Visibility: Public / Private */}
-          <button
-            disabled={savingVisibility}
-            onClick={() => {
-              const next = isPublic ? 'private' : 'public';
-              const patch: any = { visibility: next };
-              // If switching to private, clear showcase
-              if (next === 'private') patch.showOnOrganizationOverview = false;
-              saveVisibilityField(patch);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
-              isPublic
-                ? 'bg-white/15 text-white border-white/25 hover:bg-white/25'
-                : 'bg-amber-500/90 text-white border-amber-400 hover:bg-amber-600'
-            }`}
-            title={isPublic ? 'Project is Public — click to make Private' : 'Project is Private — click to make Public'}
-          >
-            {isPublic ? <GlobeAltIcon className="w-3.5 h-3.5" /> : <LockClosedIcon className="w-3.5 h-3.5" />}
-            <span>{isPublic ? 'Public' : 'Private'}</span>
-          </button>
-
-          {/* Status: Draft / Live */}
-          <button
-            disabled={savingVisibility}
-            onClick={() => saveVisibilityField({ status: isLive ? 'draft' : 'live' })}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
-              isLive
-                ? 'bg-green-600/80 text-white border-green-500 hover:bg-green-700'
-                : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
-            }`}
-            title={isLive ? 'Project is Live — click to set to Draft' : 'Project is Draft — click to set Live'}
-          >
-            <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-green-300' : 'bg-gray-400'}`}></span>
-            <span>{isLive ? 'Live' : 'Draft'}</span>
-          </button>
-
-          {/* Showcase — only when public */}
-          {isPublic && (
-            <button
-              disabled={savingVisibility}
-              onClick={() => saveVisibilityField({ showOnOrganizationOverview: !project.showOnOrganizationOverview })}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
-                project.showOnOrganizationOverview
-                  ? 'bg-orange-500 text-white border-orange-400 hover:bg-orange-600'
-                  : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
-              }`}
-              title={project.showOnOrganizationOverview ? 'Showing on org Overview — click to remove' : 'Add to org Overview showcase'}
-            >
-              <StarIcon className="w-3.5 h-3.5" />
-              <span>Showcase</span>
-            </button>
-          )}
-
-          {/* Download PDF button */}
-          <button
-            onClick={() => {
-              generateProjectPDF({
-                name: project.name,
-                projectId: project.projectId || resolvedDocId || undefined,
-                description: project.description,
-                coverPhotoUrl: project.coverPhotoUrl,
-                locationName: project.locationName,
-                locationIntroduction: project.locationIntroduction,
-                vision: project.vision,
-                projectSummary: project.projectSummary,
-                projectImpact: project.projectImpact,
-                targetCompletionDate: project.targetCompletionDate,
-                totalBudget: project.totalBudget,
-                currency: project.currency,
-                goals: project.goals,
-                beneficiaries: project.beneficiaries,
-                organizationName: project.organizationName,
-                organizationLogoUrl: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined
-              });
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
-            title="Download profile as PDF"
-          >
-            <ArrowDownTrayIcon className="w-4 h-4" />
-            <span>Download PDF</span>
-          </button>
-
-          {/* AI Review button */}
-          <button
-            onClick={() => setAiReviewModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
-            title="Use AI to review and improve project content"
-          >
-            <SparklesIcon className="w-4 h-4" />
-            <span>AI Review</span>
-          </button>
-
-          {/* Preview toggle */}
-          <button
-            onClick={() => setPreviewMode(p => !p)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
-              previewMode
-                ? 'bg-orange-500 text-white border-orange-400 hover:bg-orange-600'
-                : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
-            }`}
-            title={previewMode ? 'Return to edit mode' : 'Preview as public visitor'}
-          >
-            {previewMode ? (
-              <><PencilIcon className="w-4 h-4" /><span>Edit Mode</span></>
-            ) : (
-              <><EyeIcon className="w-4 h-4" /><span>Preview</span></>
-            )}
-          </button>
-          </>
-          )}
         </div>
       )}
     >
       <div className="space-y-0">
-        
+
+        {/* Pending review / moderation banner */}
+        {(isPendingReview || pendingReviewMsg) && (
+          <div className="mx-6 md:mx-8 mt-4 bg-yellow-50 border border-yellow-300 rounded-2xl px-5 py-4 flex items-start gap-3">
+            <svg className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <p className="text-sm text-yellow-800">
+              {pendingReviewMsg || getPendingReviewMessage('project')}
+            </p>
+          </div>
+        )}
+
         {/* Hero Header */}
         <div className="relative w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8" style={{ marginTop: '-2rem' }}>
           {/* Background Image with Overlay */}
@@ -725,8 +652,135 @@ export default function ProjectProposal() {
           </div>
         </div>
         
-        {/* Black Border Line */}
-        <div className="w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8 h-[2px] bg-black"></div>
+        {/* Creator Action Bar / Black Border Line */}
+        <div className="w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8 bg-black">
+          {isActualCreator ? (
+            <div className="flex items-center gap-2 px-6 py-2.5 min-h-[42px]">
+              {isCreator && (
+              <div className="flex flex-wrap items-center gap-2 flex-1">
+              {/* Visibility: Public / Private */}
+              <button
+                disabled={savingVisibility}
+                onClick={() => {
+                  const next = isPublic ? 'private' : 'public';
+                  const patch: any = { visibility: next };
+                  if (next === 'private') patch.showOnOrganizationOverview = false;
+                  saveVisibilityField(patch);
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
+                  isPublic
+                    ? 'bg-white/15 text-white border-white/25 hover:bg-white/25'
+                    : 'bg-amber-500/90 text-white border-amber-400 hover:bg-amber-600'
+                }`}
+                title={isPublic ? 'Project is Public — click to make Private' : 'Project is Private — click to make Public'}
+              >
+                {isPublic ? <GlobeAltIcon className="w-3.5 h-3.5" /> : <LockClosedIcon className="w-3.5 h-3.5" />}
+                <span>{isPublic ? 'Public' : 'Private'}</span>
+              </button>
+
+              {/* Status: Draft / Live / Pending Review */}
+              {isPendingReview ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border bg-yellow-500/90 text-white border-yellow-400 cursor-default">
+                  <span className="w-2 h-2 rounded-full bg-yellow-200"></span>
+                  <span>Under Review</span>
+                </span>
+              ) : (
+                <button
+                  disabled={savingVisibility}
+                  onClick={() => saveVisibilityField({ status: isLive ? 'draft' : 'live' })}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
+                    isLive
+                      ? 'bg-green-600/80 text-white border-green-500 hover:bg-green-700'
+                      : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
+                  }`}
+                  title={isLive ? 'Project is Live — click to set to Draft' : 'Project is Draft — click to set Live'}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-green-300' : 'bg-gray-400'}`}></span>
+                  <span>{isLive ? 'Live' : 'Draft'}</span>
+                </button>
+              )}
+
+              {/* Showcase — only when public */}
+              {isPublic && (
+                <button
+                  disabled={savingVisibility}
+                  onClick={() => saveVisibilityField({ showOnOrganizationOverview: !project.showOnOrganizationOverview })}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${
+                    project.showOnOrganizationOverview
+                      ? 'bg-orange-500 text-white border-orange-400 hover:bg-orange-600'
+                      : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
+                  }`}
+                  title={project.showOnOrganizationOverview ? 'Showing on org Overview — click to remove' : 'Add to org Overview showcase'}
+                >
+                  <StarIcon className="w-3.5 h-3.5" />
+                  <span>Showcase</span>
+                </button>
+              )}
+
+              {/* Download PDF */}
+              <button
+                onClick={() => {
+                  generateProjectPDF({
+                    name: project.name,
+                    projectId: project.projectId || resolvedDocId || undefined,
+                    description: project.description,
+                    coverPhotoUrl: project.coverPhotoUrl,
+                    locationName: project.locationName,
+                    locationIntroduction: project.locationIntroduction,
+                    vision: project.vision,
+                    projectSummary: project.projectSummary,
+                    projectImpact: project.projectImpact,
+                    targetCompletionDate: project.targetCompletionDate,
+                    totalBudget: project.totalBudget,
+                    currency: project.currency,
+                    goals: project.goals,
+                    beneficiaries: project.beneficiaries,
+                    organizationName: project.organizationName,
+                    organizationLogoUrl: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined
+                  });
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
+                title="Download profile as PDF"
+              >
+                <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </button>
+
+              {/* AI Review */}
+              <button
+                onClick={() => setAiReviewModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
+                title="Use AI to review and improve project content"
+              >
+                <SparklesIcon className="w-3.5 h-3.5" />
+                <span>AI Review</span>
+              </button>
+              </div>
+              )}
+              {!isCreator && <div className="flex-1" />}
+              {/* Preview/Edit toggle — always visible, right-aligned */}
+              <div className="ml-auto pl-2">
+                <button
+                  onClick={() => setPreviewMode(p => !p)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                    previewMode
+                      ? 'bg-orange-500 text-white border-orange-400 hover:bg-orange-600'
+                      : 'bg-white/15 text-white border-white/25 hover:bg-white/25'
+                  }`}
+                  title={previewMode ? 'Return to edit mode' : 'Preview as public visitor'}
+                >
+                  {previewMode ? (
+                    <><PencilIcon className="w-4 h-4" /><span>Edit Mode</span></>
+                  ) : (
+                    <><EyeIcon className="w-4 h-4" /><span>Preview</span></>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-[2px]" />
+          )}
+        </div>
 
         {/* Content Container */}
         <div className="space-y-8 pt-8">
@@ -1613,7 +1667,7 @@ export default function ProjectProposal() {
                               await uploadBytes(sRef, file, { contentType: file.type });
                               urls.push(await getDownloadURL(sRef));
                             }
-                            await updateDoc(doc(db, 'projects', resolvedDocId), { galleryImages: arrayUnion(...urls) });
+                            await updateProject(resolvedDocId, { galleryImages: fieldArrayUnion(...urls) } as any);
                             setProject(prev => prev ? { ...prev, galleryImages: [...(prev.galleryImages || []), ...urls] } : null);
                           } catch (err: any) {
                             alert('Failed to upload: ' + err.message);
@@ -1646,7 +1700,7 @@ export default function ProjectProposal() {
                             onClick={async (ev) => {
                               ev.stopPropagation();
                               if (!resolvedDocId || !confirm('Remove this photo?')) return;
-                              await updateDoc(doc(db, 'projects', resolvedDocId), { galleryImages: arrayRemove(url) });
+                              await updateProject(resolvedDocId, { galleryImages: fieldArrayRemove(url) } as any);
                               setProject(prev => prev ? { ...prev, galleryImages: prev.galleryImages?.filter((_, j) => j !== i) } : null);
                             }}
                             className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
@@ -1713,7 +1767,7 @@ export default function ProjectProposal() {
                           const sRef = storageRef(storage, `projects/${resolvedDocId}/coverPhoto.${ext}`);
                           await uploadBytes(sRef, file, { contentType: file.type });
                           const url = await getDownloadURL(sRef);
-                          await updateDoc(doc(db, 'projects', resolvedDocId), { coverPhotoUrl: url });
+                          await updateProject(resolvedDocId, { coverPhotoUrl: url } as any);
                           setProject(prev => prev ? { ...prev, coverPhotoUrl: url } : null);
                         } catch (err: any) {
                           alert('Failed to upload photo: ' + err.message);
@@ -1991,7 +2045,7 @@ export default function ProjectProposal() {
                             if (!id) { alert('Please enter a valid YouTube URL'); return; }
                             if (!resolvedDocId) return;
                             const newDoc: ProjectDocument = { name: `YouTube: ${ytInput.trim()}`, url: `https://www.youtube.com/embed/${id}`, type: 'youtube' };
-                            await updateDoc(doc(db, 'projects', resolvedDocId), { keyDocuments: arrayUnion(newDoc) });
+                            await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
                             setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
                             setYtInput('');
                           }}
@@ -2021,7 +2075,7 @@ export default function ProjectProposal() {
                               await uploadBytes(sRef, file, { contentType: file.type });
                               const url = await getDownloadURL(sRef);
                               const newDoc: ProjectDocument = { name: file.name, url, type: file.type, size: file.size };
-                              await updateDoc(doc(db, 'projects', resolvedDocId), { keyDocuments: arrayUnion(newDoc) });
+                              await updateProject(resolvedDocId, { keyDocuments: fieldArrayUnion(newDoc) } as any);
                               setProject(prev => prev ? { ...prev, keyDocuments: [...(prev.keyDocuments || []), newDoc] } : null);
                             } catch (err: any) {
                               alert('Failed to upload: ' + err.message);
@@ -2049,7 +2103,7 @@ export default function ProjectProposal() {
                       const isAudio = d.type.startsWith('audio/');
                       const removeDoc = async () => {
                         if (!resolvedDocId || !confirm(`Remove "${d.name}"?`)) return;
-                        await updateDoc(doc(db, 'projects', resolvedDocId), { keyDocuments: arrayRemove(d) });
+                        await updateProject(resolvedDocId, { keyDocuments: fieldArrayRemove(d) } as any);
                         setProject(prev => prev ? { ...prev, keyDocuments: prev.keyDocuments?.filter((_, j) => j !== i) } : null);
                       };
                       return (
@@ -2198,14 +2252,13 @@ export default function ProjectProposal() {
             if (!resolvedDocId) return;
             setSaving(true);
             try {
-              const refDoc = doc(db, 'projects', resolvedDocId);
               const updates: any = {
-                locationId: vals.locationId ?? deleteField(),
-                locationName: vals.locationName ?? deleteField(),
-                locationDescription: vals.locationDescription ?? deleteField(),
-                location: vals.location ?? deleteField(),
+                locationId: vals.locationId ?? fieldDelete(),
+                locationName: vals.locationName ?? fieldDelete(),
+                locationDescription: vals.locationDescription ?? fieldDelete(),
+                location: vals.location ?? fieldDelete(),
               };
-              await updateDoc(refDoc, updates);
+              await updateProject(resolvedDocId, updates as any);
               setProject(prev => prev ? { ...prev, ...vals } : prev);
               setLocationModalOpen(false);
             } catch (err: any) {

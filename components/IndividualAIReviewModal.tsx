@@ -1,10 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon, SparklesIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import { updateDoc, doc } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
+import { updateIndividual } from '@/lib/dal';
 
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -144,12 +142,9 @@ ${currentData.focusAreas && currentData.focusAreas.length > 0 ? `Focus Areas: ${
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('/api/ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: updatedMessages,
@@ -225,8 +220,7 @@ ${currentData.focusAreas && currentData.focusAreas.length > 0 ? `Focus Areas: ${
 
     setIsApplying(true);
     try {
-      const individualRef = doc(db, 'individuals', individualId);
-      await updateDoc(individualRef, currentProfile as any);
+      await updateIndividual(individualId, currentProfile as any);
       
       // Update parent component
       onUpdate(currentProfile);

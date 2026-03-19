@@ -1,33 +1,43 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '../../src/lib/firebase';
+import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
+import { app } from '../../src/lib/firebase';
+import { subscribeUserOrgs } from '@/lib/dal';
 import PageShell from '../../components/PageShell';
 import Link from 'next/link';
 
 export default function OrganizationsListPage(){
+  const [user, setUser] = useState<User | null>(null);
   const [orgs, setOrgs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  useEffect(()=>{
-    let mounted = true;
-    (async()=>{
-      try {
-        const qy = query(collection(db,'organizations'), orderBy('createdAt','desc'));
-        const snap = await getDocs(qy);
-        if(!mounted) return;
-        setOrgs(snap.docs.map(d=> ({ id: d.id, ...d.data() }))); 
-      } catch(e:any){ setError(e.message || 'Failed to load organizations'); }
-      finally { if(mounted) setLoading(false); }
-    })();
-    return ()=> { mounted = false; };
-  },[]);
+
+  useEffect(() => {
+    const auth = getAuth(app);
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) { setOrgs([]); setLoading(false); return; }
+    setLoading(true);
+    const unsub = subscribeUserOrgs(user.uid, (rows) => {
+      // Sort by createdAt descending
+      const sorted = [...rows].sort((a: any, b: any) => {
+        const ta = a.createdAt?.seconds ?? 0;
+        const tb = b.createdAt?.seconds ?? 0;
+        return tb - ta;
+      });
+      setOrgs(sorted);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [user]);
 
   return (
-    <PageShell title={<span>Organizations</span>} contentClassName="p-6">
+    <PageShell title={<span>My Organizations</span>} contentClassName="p-6">
       {loading && <div className="text-sm text-gray-500">Loading...</div>}
-      {error && <div className="text-sm text-red-600 mb-4">{error}</div>}
-      {!loading && !orgs.length && <div className="text-sm text-gray-600">No organizations yet.</div>}
+      {!loading && !user && <div className="text-sm text-gray-600">Sign in to see your organizations.</div>}
+      {!loading && user && !orgs.length && <div className="text-sm text-gray-600">You don&apos;t have any organizations yet.</div>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-4">
         {orgs.map(o=> (
           <Link key={o.id} href={`/org/${o.orgId}`} className="block bg-white border border-brand-main/10 rounded-lg p-4 hover:shadow transition">

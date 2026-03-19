@@ -1,11 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { storage } from '../src/lib/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { improveTextWithAI } from '../src/lib/ai';
 import { logCreditTransaction } from '../src/lib/credits';
+import { updateProject, getUser, updateUser, getUserOrgs } from '@/lib/dal';
 import MapPreview from './MapPreview';
 
 interface ProjectOverviewTabProps {
@@ -45,9 +44,9 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
       if(!currentUser) return;
       setOrgSelectLoading(true);
       try {
-        const qy = query(collection(db,'organizations'), where('ownerUid','==', currentUser.uid));
-        const snap = await getDocs(qy);
-        setOrgsOwned(snap.docs.map(d=> ({ id: d.id, ...d.data() })));
+        setOrgSelectLoading(true);
+        const orgs = await getUserOrgs(currentUser.uid);
+        setOrgsOwned(orgs.map((d: any) => ({ id: d.id, ...d })));
       } catch { /* ignore */ }
       finally { setOrgSelectLoading(false); }
     }
@@ -131,7 +130,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                           {orgsOwned.map(o=> <option key={o.orgId} value={o.orgId}>{o.name} ({o.orgId})</option>)}
                         </select>
                         <button type="button" onClick={async()=>{
-                          try { await updateDoc(doc(db,'projects', projectId), { organizationId: orgLinkId || null }); setProject((p:any)=> ({ ...p, organizationId: orgLinkId || null })); }
+                          try { await updateProject(projectId, { organizationId: orgLinkId || null } as any); setProject((p:any)=> ({ ...p, organizationId: orgLinkId || null })); }
                           catch(e:any){ alert(e.message || 'Failed'); }
                         }} className="px-3 py-2 rounded bg-brand-main text-white text-xs font-semibold hover:bg-brand-dark">Save</button>
                       </div>
@@ -154,7 +153,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                         onClick={async()=>{
                           setOrgSaving(true);
                           try {
-                            await updateDoc(doc(db,'projects', projectId), { organizationName: orgName.trim() || null });
+                            await updateProject(projectId, { organizationName: orgName.trim() || null } as any);
                             setProject((p:any)=> ({ ...p, organizationName: orgName.trim() || null }));
                           } catch(e:any){ alert(e.message || 'Failed to save'); }
                           finally { setOrgSaving(false); }
@@ -183,7 +182,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                                 const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
                                 await uploadBytes(storageRef, file, { contentType: file.type });
                                 const url = await getDownloadURL(storageRef);
-                                await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: url });
+                                await updateProject(projectId, { organizationLogoUrl: url } as any);
                                 setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));
                               } catch(err:any){ setOrgLogoError(err.message || 'Upload failed'); }
                               finally { setOrgLogoUploading(false); e.target.value=''; }
@@ -196,7 +195,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                             setOrgLogoUploading(true);
                             try {
                               try { const url = project.organizationLogoUrl; if(url){ const pathMatch = url.match(/\/o\/([^?]+)/); if(pathMatch){ const decoded = decodeURIComponent(pathMatch[1]); const delRef = ref(storage, decoded.replace(/^.*?projects%2F/,'projects/')); await deleteObject(delRef); } } } catch {}
-                              await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: null });
+                              await updateProject(projectId, { organizationLogoUrl: null } as any);
                               setProject((p:any)=> ({ ...p, organizationLogoUrl: null }));
                             } catch(err:any){ setOrgLogoError(err.message || 'Remove failed'); }
                             finally { setOrgLogoUploading(false); }
@@ -219,7 +218,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                               const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
                               await uploadBytes(storageRef, file, { contentType: file.type });
                               const url = await getDownloadURL(storageRef);
-                              await updateDoc(doc(db,'projects', projectId), { organizationLogoUrl: url });
+                              await updateProject(projectId, { organizationLogoUrl: url } as any);
                               setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));
                             } catch(err:any){ setOrgLogoError(err.message || 'Upload failed'); }
                             finally { setOrgLogoUploading(false); e.target.value=''; }
@@ -255,15 +254,14 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                     try {
                       const improved = await improveTextWithAI(desc);
                       setDesc(improved);
-                      await updateDoc(doc(db,'projects', projectId), { description: improved });
+                      await updateProject(projectId, { description: improved } as any);
                       setProject((prev:any)=> ({ ...prev, description: improved }));
                       if(currentUser){
                         const userId = currentUser.uid;
-                        const userRef = doc(db,'users', userId);
-                        const userSnap = await getDoc(userRef);
-                        const currentCredits = userSnap.exists()? userSnap.data().credits ?? 0 : 0;
+                        const userSnap = await getUser(userId);
+                        const currentCredits = userSnap? (userSnap as any).credits ?? 0 : 0;
                         if(currentCredits < 2) throw new Error('Not enough credits');
-                        await updateDoc(userRef,{ credits: currentCredits - 2 });
+                        await updateUser(userId, { credits: currentCredits - 2 } as any);
                         await logCreditTransaction(userId,'spend',2,`AI improved project description for ${projectId}`);
                       }
                     } catch(e:any){ alert(e.message || 'Failed to improve description'); }
@@ -337,7 +335,7 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                           if (isNaN(v2) || v2 < -180 || v2 > 180) throw new Error('Longitude must be between -180 and 180');
                           newLoc.longitude = v2;
                         }
-                        await updateDoc(doc(db, 'projects', projectId), { location: newLoc });
+                        await updateProject(projectId, { location: newLoc } as any);
                         setProject((prev: any) => ({ ...prev, location: newLoc }));
                         setShowLocationEditor(false);
                       } catch (err: any) {
