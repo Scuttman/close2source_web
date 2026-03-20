@@ -1,13 +1,15 @@
 "use client";
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { getOrgByCode, updateOrg, subscribeOrg, getUsersByEmails, subscribeOrgProjects, subscribeOrgShowcases, createShowcase, deleteShowcase } from '@/lib/dal';
 import { generateCode } from '../../../src/lib/codes';
 import { storage } from '../../../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import PageShell from '../../../components/PageShell';
+import Image from 'next/image';
 import { InformationCircleIcon, UserGroupIcon, ArrowPathIcon, Cog6ToothIcon, CurrencyDollarIcon, ArrowLeftOnRectangleIcon, Squares2X2Icon, PencilIcon, EyeIcon, PhotoIcon, ArrowUpTrayIcon, ShieldCheckIcon, MapPinIcon, LinkIcon, DocumentTextIcon, TrashIcon, PlusCircleIcon, PresentationChartBarIcon } from '@heroicons/react/24/outline';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { resizeImageFile, IMAGE_MAX_BANNER } from '../../../src/lib/imageResize';
 import OrgEnhancedOverviewTab from 'components/OrgEnhancedOverviewTab';
 import OrgSettingsTab from 'components/OrgSettingsTab';
 import OrgProjectsTab from 'components/OrgProjectsTab';
@@ -16,7 +18,7 @@ import OrgPartnersTab from 'components/OrgPartnersTab';
 import OrgLocationsTab from 'components/OrgLocationsTab';
 import ProfileLoadingShell from 'components/ProfileLoadingShell';
 
-export default function OrganizationDetailPage(){
+function OrganizationDetailPage(){
   const params = useParams();
   const orgIdParam = params.id as string;
   const [orgDoc, setOrgDoc] = useState<any>(null);
@@ -132,9 +134,10 @@ export default function OrganizationDetailPage(){
     if (!orgDoc?.id) return;
     setUploadingCover(true);
     try {
+      const resized = await resizeImageFile(file, IMAGE_MAX_BANNER);
       const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
       const sRef = storageRef(storage, `organizations/${orgDoc.id}/coverPhoto.${ext}`);
-      await uploadBytes(sRef, file);
+      await uploadBytes(sRef, resized, { cacheControl: 'public, max-age=31536000' });
       const url = await getDownloadURL(sRef);
       await updateOrg(orgDoc.id, { coverPhotoUrl: url } as any);
     } catch (e: any) {
@@ -221,11 +224,14 @@ export default function OrganizationDetailPage(){
       )}
       {orgDoc.backgroundUrl && (
         <div className="fixed inset-0 z-0 pointer-events-none">
-          <img
+          <Image
+            fill
+            priority
             src={orgDoc.backgroundUrl}
             alt={`${orgDoc.name} background`}
-            style={{ filter: `brightness(${typeof orgDoc.backgroundBrightness === 'number' ? orgDoc.backgroundBrightness : 1}) blur(${typeof orgDoc.backgroundBlur === 'number' ? orgDoc.backgroundBlur : 0}px)` }}
-            className="w-full h-full object-cover object-center transition-[filter] duration-300" />
+            sizes="100vw"
+            style={{ filter: `brightness(${typeof orgDoc.backgroundBrightness === 'number' ? orgDoc.backgroundBrightness : 1}) blur(${typeof orgDoc.backgroundBlur === 'number' ? orgDoc.backgroundBlur : 0}px)`, objectFit: 'cover', objectPosition: 'center' }}
+            className="transition-[filter] duration-300" />
           {/* Existing gradient plus adjustable fade overlay for readability */}
           <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-white/5" />
           <div className="absolute inset-0" style={{ background: `rgba(255,255,255,${typeof orgDoc.backgroundFade === 'number' ? orgDoc.backgroundFade : 0.4})` }} />
@@ -285,7 +291,14 @@ export default function OrganizationDetailPage(){
           <div className='absolute inset-0 bg-gray-900 overflow-hidden'>
             {orgDoc.coverPhotoUrl && (
               <>
-                <img src={orgDoc.coverPhotoUrl} alt={orgDoc.name} className='absolute inset-0 w-full h-full object-cover' />
+                <Image
+                  src={orgDoc.coverPhotoUrl}
+                  alt={orgDoc.name}
+                  fill
+                  priority
+                  sizes="100vw"
+                  style={{ objectFit: 'cover' }}
+                />
                 <div className='absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/20'></div>
               </>
             )}
@@ -294,7 +307,14 @@ export default function OrganizationDetailPage(){
           {/* Org Logo - Top Right */}
           {orgDoc.logoUrl && (
             <div className='absolute top-10 right-[2.7rem] z-20'>
-              <img src={orgDoc.logoUrl} alt={orgDoc.name} className='h-24 w-auto object-contain bg-white rounded-lg p-3 shadow-2xl border-2 border-gray-200' />
+              <Image
+                src={orgDoc.logoUrl}
+                alt={orgDoc.name}
+                width={160}
+                height={96}
+                style={{ height: '6rem', width: 'auto', objectFit: 'contain' }}
+                className='bg-white rounded-lg p-3 shadow-2xl border-2 border-gray-200'
+              />
             </div>
           )}
 
@@ -598,7 +618,7 @@ export default function OrganizationDetailPage(){
                             <div className='text-xs text-gray-400 font-mono'>{p.projectId}</div>
                           </div>
                           {p.coverPhotoUrl && (
-                            <img src={p.coverPhotoUrl} alt='' className='w-10 h-8 object-cover rounded shrink-0' />
+                            <Image src={p.coverPhotoUrl} alt='' width={40} height={32} style={{ objectFit: 'cover' }} className='w-10 h-8 rounded shrink-0' />
                           )}
                         </label>
                       );
@@ -1049,3 +1069,10 @@ function OrgTypeEditor({ current, orgDbId }: { current?: string; orgDbId: string
   );
 }
 
+export default function OrganizationDetailPageWrapper() {
+  return (
+    <Suspense>
+      <OrganizationDetailPage />
+    </Suspense>
+  );
+}

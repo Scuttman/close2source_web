@@ -13,6 +13,7 @@ import { inferKindFromCode } from "../src/lib/codes";
 import Link from "next/link";
 import dynamic from 'next/dynamic';
 import PageShell from "../components/PageShell";
+import C2SStampSVG from "../components/C2SStampSVG";
 import { SparklesIcon, DevicePhoneMobileIcon, ChartBarIcon, CheckCircleIcon, ArrowRightIcon, UserGroupIcon, GlobeAltIcon, MegaphoneIcon, ShieldCheckIcon, QrCodeIcon } from '@heroicons/react/24/outline';
 
 function Home() {
@@ -88,20 +89,33 @@ function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(251,146,60,0.08),transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,rgba(251,146,60,0.05),transparent_50%)]" />
         
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 lg:pt-32 lg:pb-32">
-          <div className="text-center max-w-4xl mx-auto">
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-              <span className="block text-gray-900">Connect Partners with</span>
-              <span className="block bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400 bg-clip-text text-transparent">
-                Impact on the Ground
-              </span>
-            </h1>
-            
-            <p className="text-xl sm:text-2xl text-gray-600 mb-8 leading-relaxed max-w-3xl mx-auto">
-              Real-time transparency, AI-assisted reporting, and powerful marketing tools that turn field updates into compelling stories.
-            </p>
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-10 lg:pt-[51px] lg:pb-[51px]">
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+          {/* Row 1 — full-width headline */}
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-gray-900 text-center lg:text-left mb-2">
+            Connect Partners with
+          </h1>
+
+          {/* Row 2 — 80 / 20 split: gradient tagline + description | stamp */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:gap-8 mb-10">
+            <div className="flex-1">
+              <h2 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400 bg-clip-text text-transparent text-center lg:text-left mb-6">
+                Impact on the Ground
+              </h2>
+              <p className="text-xl sm:text-2xl text-gray-600 leading-relaxed max-w-3xl mx-auto lg:mx-0 text-center lg:text-left">
+                Real-time transparency, AI-assisted reporting, and powerful marketing tools that turn field updates into compelling stories.
+              </p>
+            </div>
+
+            {/* Stamp — visible only on lg+, takes 30% of the row */}
+            <div className="hidden lg:flex lg:w-[30%] flex-shrink-0 items-center justify-center select-none">
+              <C2SStampSVG message="Welcome to our community!" size={300} />
+            </div>
+          </div>
+
+          {/* Row 3 — full-width centred CTAs + search */}
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Link href={user ? "/profile" : "/login"} className="group inline-flex items-center gap-2 px-8 py-4 bg-orange-500 text-white rounded-full font-semibold text-lg shadow-lg shadow-orange-500/25 hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/30 transition-all">
                 Get Started
                 <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -112,7 +126,7 @@ function Home() {
             </div>
 
             {/* Quick Code Search */}
-            <div className="max-w-md mx-auto">
+            <div className="w-full max-w-md">
               <form onSubmit={handleCodeSearch} className="relative">
                 <input
                   value={codeInput}
@@ -120,17 +134,18 @@ function Home() {
                   placeholder="Quick access: Enter project or profile code"
                   className="w-full px-6 py-3 rounded-full border-2 border-gray-200 focus:border-orange-500 focus:outline-none text-center text-sm font-medium placeholder:text-gray-400"
                 />
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={codeSearching}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-orange-500 text-white rounded-full text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 transition"
                 >
                   {codeSearching ? '...' : 'Go'}
                 </button>
               </form>
-              {codeError && <p className="text-red-500 text-sm mt-2">{codeError}</p>}
+              {codeError && <p className="text-red-500 text-sm mt-2 text-center">{codeError}</p>}
             </div>
           </div>
+
         </div>
       </section>
 

@@ -64,9 +64,14 @@ export default function UserHero() {
             {user.email?.charAt(0).toUpperCase()}
           </span>
         )}
-        <span className="font-semibold text-brand-dark text-sm truncate max-w-[120px] group-hover:underline">
-          {user.email}
-        </span>
+        <div className="flex flex-col leading-tight max-w-[140px] group-hover:underline">
+          <span className="font-bold text-brand-dark text-sm truncate">
+            {user.displayName || user.email?.split("@")[0]}
+          </span>
+          <span className="text-xs text-gray-400 font-normal truncate">
+            {user.email}
+          </span>
+        </div>
       </Link>
       {credits !== null && (
         <Link href="/credits" className="ml-2 px-3 py-1 rounded-full bg-brand-main/10 text-brand-main text-xs font-semibold hover:bg-brand-main/20 transition cursor-pointer" title="Buy credits or view balance">

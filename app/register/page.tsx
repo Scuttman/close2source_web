@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PageShell from "../../components/PageShell";
 import ConsentStage from "../../components/ConsentStage";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { resizeImageFile, IMAGE_MAX_THUMB } from "../../src/lib/imageResize";
 import { getAuth, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import { app } from "../../src/lib/firebase";
 import { getUser, createUserDoc, mergeUserDoc, getOrgInvite, acceptOrgInvite } from "@/lib/dal";
@@ -258,20 +259,22 @@ function RegisterPage() {
     if (!file || !currentUid) return;
     setUploading(true);
     setError("");
-  // Use same path as profile settings page for consistent security rules
-  const storageRef = ref(storage, `profile-pics/${currentUid}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
-    uploadTask.on("state_changed", snapshot => {
-      const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-      setUploadProgress(progress);
-    }, err => {
-      setError(err.message || "Upload failed");
-      setUploading(false);
-    }, async () => {
-      const url = await getDownloadURL(uploadTask.snapshot.ref);
-      setPhotoURL(url);
-      await mergeUserDoc(currentUid, { photoURL: url });
-      setUploading(false);
+    // Resize before upload, then use same path as profile settings page
+    resizeImageFile(file, IMAGE_MAX_THUMB).then(resized => {
+      const storageRef = ref(storage, `profile-pics/${currentUid}`);
+      const uploadTask = uploadBytesResumable(storageRef, resized);
+      uploadTask.on("state_changed", snapshot => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      }, err => {
+        setError(err.message || "Upload failed");
+        setUploading(false);
+      }, async () => {
+        const url = await getDownloadURL(uploadTask.snapshot.ref);
+        setPhotoURL(url);
+        await mergeUserDoc(currentUid, { photoURL: url });
+        setUploading(false);
+      });
     });
   }
 

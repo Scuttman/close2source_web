@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from "firebase/storage";
+import { resizeImageFile, IMAGE_MAX_THUMB } from "../src/lib/imageResize";
 import { getAuth } from "firebase/auth";
 // Correct relative path to firebase utilities (components and src are siblings)
 import { storage } from "../src/lib/firebase";
@@ -67,7 +68,7 @@ export default function CreatePostModal({ open, onClose, individualId, individua
               let authorPhotoUrl = user.photoURL || null;
               if (postImages.length > 0) {
                 // Only upload the first image for now
-                const file = postImages[0];
+                const file = await resizeImageFile(postImages[0], IMAGE_MAX_THUMB);
                 const storageRef = ref(storage, `individuals/updates/${user.uid}_${Date.now()}_0`);
                 await uploadBytes(storageRef, file);
                 const url = await getDownloadURL(storageRef);

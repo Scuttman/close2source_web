@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { createPortal } from 'react-dom';
-import { useParams } from "next/navigation";
+import NextImage from 'next/image';
+import { useParams, useSearchParams } from "next/navigation";
 import { storage } from "../../../../src/lib/firebase";
 import { getProject, getProjectByCode, updateProject, getOrgByCode, updateOrg, fieldDelete, fieldArrayUnion, fieldArrayRemove } from '@/lib/dal';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { resizeImageBlob, resizeImageFile, IMAGE_MAX_BANNER, IMAGE_MAX_THUMB } from "../../../../src/lib/imageResize";
 import { getAuth } from "firebase/auth";
 import PageShell from "../../../../components/PageShell";
 import ProfileLoadingShell from "../../../../components/ProfileLoadingShell";
@@ -45,6 +47,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { generateProjectPDF } from '../../../../src/lib/pdfGenerator';
 import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../../src/lib/moderation';
+import { generateListWithAI } from '../../../../src/lib/ai';
 
 const auth = typeof window !== "undefined" ? getAuth() : null;
 
@@ -73,6 +76,7 @@ interface Project {
   locationDescription?: string;
   locationIntroduction?: string;
   projectHeading?: string;
+  strapline?: string;
   projectSummary?: string;
   projectImpact?: string;
   impactItems?: string[];
@@ -85,6 +89,8 @@ interface Project {
   amountPledged?: number;
   amountRaised?: number;
   currency?: string;
+  matchedFundingNote?: string;
+  seekingMultiplePartners?: boolean;
   organizationId?: string;
   organizationName?: string;
   organizationLogoUrl?: string;
@@ -112,9 +118,12 @@ interface Project {
   locationId?: string;
 }
 
-export default function ProjectProposal() {
+function ProjectProposalInner() {
   const params = useParams();
   const routeParam = params.id as string;
+  const searchParams = useSearchParams();
+  const fromShowcase = searchParams.get('from') === 'showcase';
+  const showcaseReturnCode = searchParams.get('code') || '';
   const [resolvedDocId, setResolvedDocId] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,7 +142,7 @@ export default function ProjectProposal() {
   const [orgLocSaving, setOrgLocSaving] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState(false);
+  const [previewMode, setPreviewMode] = useState(fromShowcase);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
@@ -143,10 +152,18 @@ export default function ProjectProposal() {
   const [ytInput, setYtInput] = useState('');
   const [keyDocsEditOpen, setKeyDocsEditOpen] = useState(false);
   const [newImpactItem, setNewImpactItem] = useState('');
+  const [newGoalItem, setNewGoalItem] = useState('');
+  const [generatingGoals, setGeneratingGoals] = useState(false);
+  const [generatingImpactItems, setGeneratingImpactItems] = useState(false);
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [aiReviewModalOpen, setAiReviewModalOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [orgTeamMembers, setOrgTeamMembers] = useState<any[]>([]);
+  const [uploadingPersonPhoto, setUploadingPersonPhoto] = useState<number | null>(null);
+  const [showOrgMemberPicker, setShowOrgMemberPicker] = useState(false);
+  const personPhotoInputRef = useRef<HTMLInputElement>(null);
+  const [personPhotoTargetIndex, setPersonPhotoTargetIndex] = useState<number | null>(null);
 
   const getYouTubeId = (url: string): string | null => {
     try {
@@ -161,6 +178,30 @@ export default function ProjectProposal() {
       }
     } catch {}
     return null;
+  };
+
+  // Resize image to max 200x200 and return as Blob — delegates to shared utility
+  const resizeImage = (file: File, maxSize = IMAGE_MAX_THUMB): Promise<Blob> => {
+    return resizeImageBlob(file, maxSize);
+  };
+
+  // Upload person photo: resize then upload to Firebase Storage
+  const handlePersonPhotoUpload = async (file: File, index: number) => {
+    if (!resolvedDocId) return;
+    setUploadingPersonPhoto(index);
+    try {
+      const resized = await resizeImage(file, 200);
+      const sRef = storageRef(storage, `projects/${resolvedDocId}/people/${Date.now()}_${index}.webp`);
+      await uploadBytes(sRef, resized, { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' });
+      const url = await getDownloadURL(sRef);
+      const newPeople = [...(editValues.peopleInvolved || [])];
+      newPeople[index] = { ...newPeople[index], photoURL: url };
+      setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+    } catch (err) {
+      console.error('Error uploading person photo:', err);
+    } finally {
+      setUploadingPersonPhoto(null);
+    }
   };
 
   // Track current user
@@ -185,6 +226,10 @@ export default function ProjectProposal() {
       // Initialize impactItems as empty array if not exists
       if (section === 'projectImpact' && !values.impactItems) {
         values.impactItems = [];
+      }
+      // Initialize goals as empty array if not exists
+      if (section === 'goals' && !values.goals) {
+        values.goals = [];
       }
       // Initialize peopleInvolved as empty array if not exists
       if (section === 'people' && !values.peopleInvolved) {
@@ -260,17 +305,23 @@ export default function ProjectProposal() {
     
     setSaving(true);
     try {
-      const refDoc = resolvedDocId;
-      const updates: any = {};
+      const updates: any = {};       // sent to Firestore (may contain fieldDelete())
+      const localUpdates: any = {};  // applied to React state (uses undefined instead)
       fields.forEach(field => {
         const val = editValues[field as keyof Project];
         if (val === undefined) return; // skip unset fields
-        updates[field] = (val === '' || val === null) ? fieldDelete() : val;
+        if (val === '' || val === null) {
+          updates[field] = fieldDelete();
+          localUpdates[field] = undefined;
+        } else {
+          updates[field] = val;
+          localUpdates[field] = val;
+        }
       });
       
       await updateProject(resolvedDocId, updates as any);
       
-      setProject(prev => prev ? { ...prev, ...updates } : null);
+      setProject(prev => prev ? { ...prev, ...localUpdates } : null);
       setEditMode(prev => ({ ...prev, [section]: false }));
     } catch (err: any) {
       console.error('Error saving:', err);
@@ -357,6 +408,7 @@ export default function ProjectProposal() {
               setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
               setOrgDocId((orgData as any).id || null);
               setOrgSafeguardingUrl((orgData as any).safeguardingPolicyUrl || null);
+              setOrgTeamMembers(Array.isArray((orgData as any).team) ? (orgData as any).team : []);
             }
           } catch (err) {
             console.error('Error fetching org logo:', err);
@@ -371,6 +423,7 @@ export default function ProjectProposal() {
                 setOrgLocations(Array.isArray((orgData as any).locations) ? (orgData as any).locations : []);
                 setOrgDocId((orgData as any).id || null);
                 setOrgSafeguardingUrl((orgData as any).safeguardingPolicyUrl || null);
+                setOrgTeamMembers(Array.isArray((orgData as any).team) ? (orgData as any).team : []);
                 const reports2 = Array.isArray((orgData as any).auditorReports) ? (orgData as any).auditorReports : [];
                 if (reports2.length > 0) setOrgLatestAuditReport(reports2[0]);
               }
@@ -563,10 +616,13 @@ export default function ProjectProposal() {
           <div className="absolute inset-0 bg-gray-900 overflow-hidden">
             {project.coverPhotoUrl && (
               <>
-                <img 
-                  src={project.coverPhotoUrl} 
+                <NextImage
+                  src={project.coverPhotoUrl}
                   alt={project.name}
-                  className="absolute inset-0 w-full h-full object-cover"
+                  fill
+                  priority
+                  sizes="100vw"
+                  style={{ objectFit: 'cover' }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/20"></div>
               </>
@@ -576,10 +632,13 @@ export default function ProjectProposal() {
           {/* Organization Logo - Top Right */}
           {orgLogo && (
             <div className="absolute top-10 right-[2.7rem] z-20">
-              <img 
-                src={orgLogo} 
-                alt="Organization" 
-                className="h-24 w-auto object-contain bg-white rounded-lg p-3 shadow-2xl border-2 border-gray-200"
+              <NextImage
+                src={orgLogo}
+                alt="Organization"
+                width={160}
+                height={96}
+                style={{ height: '6rem', width: 'auto', objectFit: 'contain' }}
+                className="bg-white rounded-lg p-3 shadow-2xl border-2 border-gray-200"
               />
             </div>
           )}
@@ -595,6 +654,37 @@ export default function ProjectProposal() {
                 Become a Partner
               </button>
             )}
+            {/* Download PDF — visible to all visitors */}
+            <button
+              onClick={() => {
+                generateProjectPDF({
+                  name: project.name,
+                  projectId: project.projectId || resolvedDocId || undefined,
+                  strapline: project.strapline,
+                  description: project.description,
+                  coverPhotoUrl: project.coverPhotoUrl,
+                  locationName: project.locationName,
+                  locationIntroduction: project.locationIntroduction,
+                  locationVision: activeLoc?.vision,
+                  locationWhatWeDo: activeLoc?.whatWeDo,
+                  vision: project.vision,
+                  projectSummary: project.projectSummary,
+                  projectImpact: project.projectImpact,
+                  targetCompletionDate: project.targetCompletionDate,
+                  totalBudget: project.totalBudget,
+                  currency: project.currency,
+                  goals: project.goals,
+                  beneficiaries: project.beneficiaries,
+                  organizationName: project.organizationName,
+                  organizationLogoUrl: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined
+                });
+              }}
+              className="h-full px-4 py-3 bg-white/20 backdrop-blur-sm rounded-lg border border-white/30 text-white hover:bg-white/30 transition flex items-center gap-2 text-sm font-medium"
+              title="Download profile as PDF"
+            >
+              <ArrowDownTrayIcon className="w-5 h-5" />
+              <span className="hidden md:inline">Download PDF</span>
+            </button>
             {project.projectId && (
               <div className="relative">
                 <button
@@ -658,14 +748,21 @@ export default function ProjectProposal() {
               </div>
               
               {/* Project Title */}
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-3 leading-tight">
                 {project.name}
               </h1>
+
+              {/* Strapline */}
+              {project.strapline && (
+                <p className="text-lg md:text-xl text-white/90 font-medium mb-4 leading-snug">
+                  {project.strapline}
+                </p>
+              )}
               
               {/* Organization and Actions */}
               <div className="flex flex-wrap items-center gap-4 text-white/90">
                 {project.organizationName && (
-                  project.organizationId ? (
+                  (project.organizationId && !fromShowcase) ? (
                     <a
                       href={`/org/${project.organizationId}`}
                       className="flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 hover:border-white/40 transition-colors"
@@ -752,34 +849,7 @@ export default function ProjectProposal() {
                 </button>
               )}
 
-              {/* Download PDF */}
-              <button
-                onClick={() => {
-                  generateProjectPDF({
-                    name: project.name,
-                    projectId: project.projectId || resolvedDocId || undefined,
-                    description: project.description,
-                    coverPhotoUrl: project.coverPhotoUrl,
-                    locationName: project.locationName,
-                    locationIntroduction: project.locationIntroduction,
-                    vision: project.vision,
-                    projectSummary: project.projectSummary,
-                    projectImpact: project.projectImpact,
-                    targetCompletionDate: project.targetCompletionDate,
-                    totalBudget: project.totalBudget,
-                    currency: project.currency,
-                    goals: project.goals,
-                    beneficiaries: project.beneficiaries,
-                    organizationName: project.organizationName,
-                    organizationLogoUrl: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined
-                  });
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
-                title="Download profile as PDF"
-              >
-                <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                <span>Download PDF</span>
-              </button>
+
 
               {/* AI Review */}
               <button
@@ -793,6 +863,16 @@ export default function ProjectProposal() {
               </div>
               )}
               {!isCreator && <div className="flex-1" />}
+              {/* Return to Showcase — visible to all when accessed from a showcase */}
+              {fromShowcase && showcaseReturnCode && (
+                <a
+                  href={`/showcase/${showcaseReturnCode}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-orange-500 text-white border-orange-400 hover:bg-orange-600"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  Return to Showcase
+                </a>
+              )}
               {/* Preview/Edit toggle — always visible, right-aligned */}
               <div className="ml-auto pl-2">
                 <button
@@ -813,7 +893,19 @@ export default function ProjectProposal() {
               </div>
             </div>
           ) : (
-            <div className="h-[2px]" />
+            fromShowcase && showcaseReturnCode ? (
+              <div className="flex items-center justify-end px-6 py-2 min-h-[42px]">
+                <a
+                  href={`/showcase/${showcaseReturnCode}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-semibold rounded-md hover:bg-orange-600 transition"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  Return to Showcase
+                </a>
+              </div>
+            ) : (
+              <div className="h-[2px]" />
+            )
           )}
         </div>
 
@@ -1287,16 +1379,16 @@ export default function ProjectProposal() {
           {/* Left Column - Project Name, Summary, Impact, Other Details (67%) */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Project Name Card */}
+            {/* Project Overview Card */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <DocumentTextIcon className="w-6 h-6 text-orange-600" />
-                  Project Name
+                  Project Overview
                 </h2>
                 {isCreator && (
                   <button
-                    onClick={() => editMode.projectName ? saveSection('projectName', ['name']) : toggleEditMode('projectName')}
+                    onClick={() => editMode.projectName ? saveSection('projectName', ['name', 'strapline', 'description']) : toggleEditMode('projectName')}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                     title={editMode.projectName ? 'Save' : 'Edit'}
@@ -1310,15 +1402,39 @@ export default function ProjectProposal() {
                 )}
               </div>
               {editMode.projectName ? (
-                <input
-                  type="text"
-                  value={editValues.name || ''}
-                  onChange={(e) => setEditValues(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 text-2xl font-semibold"
-                  placeholder="Project name..."
-                />
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={editValues.name || ''}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 text-2xl font-semibold"
+                    placeholder="Project name..."
+                  />
+                  <input
+                    type="text"
+                    value={editValues.strapline || ''}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, strapline: e.target.value }))}
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 text-base font-semibold"
+                    placeholder="One-line summary of what will be funded, e.g. Building a 3 Bedroom House for Staff & Visitors"
+                  />
+                  <textarea
+                    value={editValues.description || ''}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                    placeholder="Short project description..."
+                    rows={3}
+                  />
+                </div>
               ) : (
-                <div className="text-2xl font-semibold text-gray-900">{project.name}</div>
+                <div>
+                  <div className="text-2xl font-semibold text-gray-900">{project.name}</div>
+                  {project.strapline && (
+                    <p className="mt-2 text-base font-semibold text-gray-800">{project.strapline}</p>
+                  )}
+                  {project.description && (
+                    <p className="mt-2 text-gray-600 leading-relaxed">{project.description}</p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -1458,6 +1574,42 @@ export default function ProjectProposal() {
                           + Add
                         </button>
                       </div>
+                      {/* AI Generate Impact Points */}
+                      <button
+                        type="button"
+                        disabled={generatingImpactItems}
+                        onClick={async () => {
+                          setGeneratingImpactItems(true);
+                          try {
+                            const context = [
+                              project.name ? `Project: ${project.name}` : '',
+                              project.description ? `Description: ${project.description}` : '',
+                              project.projectImpact ? `Impact overview: ${project.projectImpact}` : '',
+                              project.projectSummary ? `Summary: ${project.projectSummary}` : '',
+                            ].filter(Boolean).join('. ');
+                            const existing = editValues.impactItems || [];
+                            const count = Math.max(3, 5 - existing.length);
+                            const generated = await generateListWithAI(
+                              `specific impact points describing how this project benefits the community: ${context}`,
+                              existing,
+                              count
+                            );
+                            setEditValues(prev => ({ ...prev, impactItems: [...(prev.impactItems || []), ...generated] }));
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to generate impact points');
+                          } finally {
+                            setGeneratingImpactItems(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50"
+                      >
+                        {generatingImpactItems ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <SparklesIcon className="w-4 h-4" />
+                        )}
+                        {generatingImpactItems ? 'Generating…' : 'Generate Impact Points with AI'}
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -1485,6 +1637,142 @@ export default function ProjectProposal() {
               </div>
             )}
 
+            {/* Project Goals */}
+            {(project.goals && project.goals.length > 0 || isCreator) && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <CheckCircleIcon className="w-6 h-6 text-orange-600" />
+                    Project Goals
+                  </h2>
+                  {isCreator && (
+                    <button
+                      onClick={() => editMode.goals ? saveSection('goals', ['goals']) : toggleEditMode('goals')}
+                      disabled={saving}
+                      className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
+                      title={editMode.goals ? 'Save' : 'Edit'}
+                    >
+                      {editMode.goals ? (
+                        <CheckIcon className="w-5 h-5 text-green-600" />
+                      ) : (
+                        <PencilIcon className="w-5 h-5 text-orange-600" />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {editMode.goals ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2 mb-3">
+                      {(editValues.goals || []).map((goal: string, i: number) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                          <input
+                            type="text"
+                            value={goal}
+                            onChange={(e) => {
+                              const updated = [...(editValues.goals || [])];
+                              updated[i] = e.target.value;
+                              setEditValues(prev => ({ ...prev, goals: updated }));
+                            }}
+                            className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          />
+                          <button
+                            onClick={() => {
+                              const updated = (editValues.goals || []).filter((_: string, j: number) => j !== i);
+                              setEditValues(prev => ({ ...prev, goals: updated }));
+                            }}
+                            className="p-1 text-red-400 hover:text-red-600 flex-shrink-0"
+                            title="Remove"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Add new goal */}
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold flex-shrink-0">{(editValues.goals || []).length + 1}</span>
+                      <input
+                        type="text"
+                        value={newGoalItem}
+                        onChange={(e) => setNewGoalItem(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newGoalItem.trim()) {
+                            setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), newGoalItem.trim()] }));
+                            setNewGoalItem('');
+                          }
+                        }}
+                        placeholder="Add a goal and press Enter…"
+                        className="flex-1 px-3 py-1.5 text-sm border border-dashed border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!newGoalItem.trim()) return;
+                          setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), newGoalItem.trim()] }));
+                          setNewGoalItem('');
+                        }}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-orange-50 border border-orange-200 text-orange-700 font-medium hover:bg-orange-100 transition"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    {/* AI Generate Goals */}
+                    <button
+                      type="button"
+                      disabled={generatingGoals}
+                      onClick={async () => {
+                        setGeneratingGoals(true);
+                        try {
+                          const context = [
+                            project.name ? `Project: ${project.name}` : '',
+                            project.description ? `Description: ${project.description}` : '',
+                            project.projectSummary ? `Summary: ${project.projectSummary}` : '',
+                            project.projectImpact ? `Impact: ${project.projectImpact}` : '',
+                          ].filter(Boolean).join('. ');
+                          const existing = editValues.goals || [];
+                          const count = Math.max(3, 5 - existing.length);
+                          const generated = await generateListWithAI(
+                            `project goals/key objectives based on this project: ${context}`,
+                            existing,
+                            count
+                          );
+                          setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), ...generated] }));
+                        } catch (err: any) {
+                          alert(err.message || 'Failed to generate goals');
+                        } finally {
+                          setGeneratingGoals(false);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50"
+                    >
+                      {generatingGoals ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <SparklesIcon className="w-4 h-4" />
+                      )}
+                      {generatingGoals ? 'Generating…' : 'Generate Goals with AI'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {project.goals && project.goals.length > 0 ? (
+                      <ol className="space-y-2">
+                        {project.goals.map((goal, i) => (
+                          <li key={i} className="flex items-start gap-3">
+                            <span className="mt-0.5 w-5 h-5 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                            <span className="text-gray-700">{goal}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : isCreator ? (
+                      <p className="text-gray-400 text-sm">Click Edit to add project goals</p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* People Involved */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1507,73 +1795,206 @@ export default function ProjectProposal() {
                   </button>
                 )}
               </div>
+
+              {/* Hidden file input for person photo upload */}
+              <input
+                ref={personPhotoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file && personPhotoTargetIndex !== null) {
+                    handlePersonPhotoUpload(file, personPhotoTargetIndex);
+                  }
+                  e.target.value = '';
+                }}
+              />
+
               {editMode.people ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {(editValues.peopleInvolved || []).map((person: any, index: number) => (
-                    <div key={index} className="relative flex flex-col items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <button
-                        onClick={() => {
-                          const newPeople = (editValues.peopleInvolved || []).filter((_: any, i: number) => i !== index);
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                        title="Remove person"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
-                        <span className="text-2xl font-semibold text-orange-600">
-                          {person.name?.charAt(0)?.toUpperCase() || '?'}
-                        </span>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(editValues.peopleInvolved || []).map((person: any, index: number) => (
+                      <div key={index} className="relative flex flex-col items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => {
+                            const newPeople = (editValues.peopleInvolved || []).filter((_: any, i: number) => i !== index);
+                            setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                          }}
+                          className="absolute top-2 right-2 p-1 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                          title="Remove person"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        {/* Clickable avatar for photo upload */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPersonPhotoTargetIndex(index);
+                            personPhotoInputRef.current?.click();
+                          }}
+                          className="relative w-20 h-20 rounded-full overflow-hidden mb-3 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          title="Click to upload photo"
+                        >
+                          {uploadingPersonPhoto === index ? (
+                            <div className="w-full h-full bg-orange-100 flex items-center justify-center">
+                              <svg className="w-6 h-6 text-orange-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            </div>
+                          ) : person.photoURL ? (
+                            <>
+                              <img src={person.photoURL} alt={person.name || ''} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <PhotoIcon className="w-6 h-6 text-white" />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="w-full h-full bg-orange-100 flex items-center justify-center relative">
+                              <span className="text-2xl font-semibold text-orange-600">
+                                {person.name?.charAt(0)?.toUpperCase() || '?'}
+                              </span>
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <PhotoIcon className="w-6 h-6 text-white" />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                        {person.uid && (
+                          <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full mb-1.5">Linked User</span>
+                        )}
+                        <input
+                          type="text"
+                          value={person.name || ''}
+                          onChange={(e) => {
+                            const newPeople = [...(editValues.peopleInvolved || [])];
+                            newPeople[index] = { ...newPeople[index], name: e.target.value };
+                            setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                          }}
+                          className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center mb-2"
+                          placeholder="Name"
+                        />
+                        <input
+                          type="text"
+                          value={person.role || ''}
+                          onChange={(e) => {
+                            const newPeople = [...(editValues.peopleInvolved || [])];
+                            newPeople[index] = { ...newPeople[index], role: e.target.value };
+                            setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                          }}
+                          className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-sm"
+                          placeholder="Role"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        value={person.name || ''}
-                        onChange={(e) => {
-                          const newPeople = [...(editValues.peopleInvolved || [])];
-                          newPeople[index] = { ...newPeople[index], name: e.target.value };
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center mb-2"
-                        placeholder="Name"
-                      />
-                      <input
-                        type="text"
-                        value={person.role || ''}
-                        onChange={(e) => {
-                          const newPeople = [...(editValues.peopleInvolved || [])];
-                          newPeople[index] = { ...newPeople[index], role: e.target.value };
-                          setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                        }}
-                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-sm"
-                        placeholder="Role"
-                      />
+                    ))}
+                    {/* Add Person manually */}
+                    <button
+                      onClick={() => {
+                        const newPeople = [...(editValues.peopleInvolved || []), { name: '', role: '', type: 'manual' }];
+                        setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                      }}
+                      className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50 transition-colors min-h-[200px]"
+                    >
+                      <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span className="text-sm font-medium">Add Person</span>
+                    </button>
+                  </div>
+
+                  {/* Add from Organization */}
+                  {orgTeamMembers.length > 0 && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() => setShowOrgMemberPicker(prev => !prev)}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                      >
+                        <BuildingOfficeIcon className="w-4 h-4" />
+                        {showOrgMemberPicker ? 'Hide Organisation Members' : 'Add from Organisation'}
+                      </button>
+                      {showOrgMemberPicker && (
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {orgTeamMembers
+                            .filter(member => {
+                              // Hide members already added
+                              const existing = editValues.peopleInvolved || [];
+                              return !existing.some((p: any) =>
+                                (member.uid && p.uid === member.uid) ||
+                                (member.email && p.email === member.email)
+                              );
+                            })
+                            .map((member, idx) => {
+                              const displayName = [member.name, member.surname].filter(Boolean).join(' ') || member.email || 'Unknown';
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => {
+                                    const newPerson: any = {
+                                      name: displayName,
+                                      role: member.role || '',
+                                      type: 'user',
+                                      uid: member.uid || undefined,
+                                      email: member.email || undefined,
+                                      photoURL: member.photoURL || undefined,
+                                    };
+                                    const newPeople = [...(editValues.peopleInvolved || []), newPerson];
+                                    setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                                  }}
+                                  className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-colors text-left"
+                                >
+                                  <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                                    {member.photoURL ? (
+                                      <img src={member.photoURL} alt={displayName} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full bg-orange-100 flex items-center justify-center">
+                                        <span className="text-sm font-semibold text-orange-600">
+                                          {displayName.charAt(0).toUpperCase()}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-medium text-gray-900 text-sm truncate">{displayName}</div>
+                                    {member.role && <div className="text-xs text-gray-500 truncate">{member.role}</div>}
+                                  </div>
+                                  <svg className="w-5 h-5 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                </button>
+                              );
+                            })}
+                          {orgTeamMembers.filter(member => {
+                            const existing = editValues.peopleInvolved || [];
+                            return !existing.some((p: any) =>
+                              (member.uid && p.uid === member.uid) ||
+                              (member.email && p.email === member.email)
+                            );
+                          }).length === 0 && (
+                            <p className="col-span-full text-sm text-gray-500 italic py-2">All organisation members have been added</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  <button
-                    onClick={() => {
-                      const newPeople = [...(editValues.peopleInvolved || []), { name: '', role: '' }];
-                      setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
-                    }}
-                    className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50 transition-colors min-h-[200px]"
-                  >
-                    <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span className="text-sm font-medium">Add Person</span>
-                  </button>
-                </div>
+                  )}
+                </>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {project.peopleInvolved && project.peopleInvolved.length > 0 ? (
                     project.peopleInvolved.map((person: any, index: number) => (
                       <div key={index} className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
-                        <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mb-3">
-                          <span className="text-2xl font-semibold text-orange-600">
-                            {person.name?.charAt(0)?.toUpperCase() || '?'}
-                          </span>
+                        <div className="w-20 h-20 rounded-full overflow-hidden mb-3">
+                          {person.photoURL ? (
+                            <img src={person.photoURL} alt={person.name || ''} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-orange-100 flex items-center justify-center">
+                              <span className="text-2xl font-semibold text-orange-600">
+                                {person.name?.charAt(0)?.toUpperCase() || '?'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="text-center">
                           <div className="font-semibold text-gray-900 mb-1">{person.name || 'Unknown'}</div>
@@ -1657,9 +2078,10 @@ export default function ProjectProposal() {
                           try {
                             const urls: string[] = [];
                             for (const file of files) {
+                              const resized = await resizeImageFile(file, IMAGE_MAX_BANNER);
                               const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
                               const sRef = storageRef(storage, `projects/${resolvedDocId}/gallery/${Date.now()}_${safeName}`);
-                              await uploadBytes(sRef, file, { contentType: file.type });
+                              await uploadBytes(sRef, resized, { contentType: resized.type, cacheControl: 'public, max-age=31536000' });
                               urls.push(await getDownloadURL(sRef));
                             }
                             await updateProject(resolvedDocId, { galleryImages: fieldArrayUnion(...urls) } as any);
@@ -1684,10 +2106,13 @@ export default function ProjectProposal() {
                   <div className="grid grid-cols-3 gap-2">
                     {project.galleryImages.map((url, i) => (
                       <div key={i} className="relative group aspect-square">
-                        <img
+                        <NextImage
+                          fill
                           src={url}
                           alt={`Gallery ${i + 1}`}
-                          className="w-full h-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                          sizes="(max-width: 768px) 33vw, 20vw"
+                          style={{ objectFit: 'cover' }}
+                          className="rounded-lg cursor-pointer hover:opacity-90 transition"
                           onClick={() => setLightboxIndex(i)}
                         />
                         {isCreator && (
@@ -1728,11 +2153,14 @@ export default function ProjectProposal() {
                     </h2>
                   </div>
                   {project.coverPhotoUrl ? (
-                    <div className="relative group mb-3">
-                      <img
+                    <div className="relative group mb-3 h-40">
+                      <NextImage
+                        fill
                         src={project.coverPhotoUrl}
                         alt="Cover"
-                        className="w-full h-40 object-cover rounded-lg"
+                        sizes="(max-width: 1024px) 100vw, 33vw"
+                        style={{ objectFit: 'cover' }}
+                        className="rounded-lg"
                       />
                     </div>
                   ) : (
@@ -1758,9 +2186,10 @@ export default function ProjectProposal() {
                         if (!file || !resolvedDocId) return;
                         setUploadingCover(true);
                         try {
+                          const resized = await resizeImageFile(file, IMAGE_MAX_BANNER);
                           const ext = file.name.split('.').pop();
                           const sRef = storageRef(storage, `projects/${resolvedDocId}/coverPhoto.${ext}`);
-                          await uploadBytes(sRef, file, { contentType: file.type });
+                          await uploadBytes(sRef, resized, { contentType: resized.type, cacheControl: 'public, max-age=31536000' });
                           const url = await getDownloadURL(sRef);
                           await updateProject(resolvedDocId, { coverPhotoUrl: url } as any);
                           setProject(prev => prev ? { ...prev, coverPhotoUrl: url } : null);
@@ -1778,10 +2207,13 @@ export default function ProjectProposal() {
                 /* View mode: image fills card with 5px padding, no title */
                 project.coverPhotoUrl ? (
                   <div className="bg-white rounded-lg shadow-md" style={{ padding: 5 }}>
-                    <img
+                    <NextImage
                       src={project.coverPhotoUrl}
                       alt="Cover"
-                      className="w-full object-cover rounded-md"
+                      width={400}
+                      height={267}
+                      sizes="(max-width: 1024px) 100vw, 33vw"
+                      className="w-full h-auto rounded-md"
                     />
                   </div>
                 ) : null
@@ -1793,11 +2225,11 @@ export default function ProjectProposal() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <CurrencyDollarIcon className="w-6 h-6 text-orange-600" />
-                  Budget
+                  Fundraising Target
                 </h2>
                 {isCreator && (
                   <button
-                    onClick={() => editMode.budget ? saveSection('budget', ['totalBudget', 'amountPledged', 'amountRaised', 'currency', 'beneficiaries']) : toggleEditMode('budget')}
+                    onClick={() => editMode.budget ? saveSection('budget', ['totalBudget', 'amountPledged', 'amountRaised', 'currency', 'beneficiaries', 'matchedFundingNote', 'seekingMultiplePartners']) : toggleEditMode('budget')}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                     title={editMode.budget ? 'Save' : 'Edit'}
@@ -1866,6 +2298,31 @@ export default function ProjectProposal() {
                       placeholder="Who will benefit?"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Matched Funding Note <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <textarea
+                      value={editValues.matchedFundingNote || ''}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, matchedFundingNote: e.target.value }))}
+                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                      placeholder="e.g. We have the possibility of 2:1 matched funding from the Gates Foundation if we can secure the initial £10,000…"
+                      rows={3}
+                    />
+                    <p className="mt-1 text-xs text-gray-400">Mention any matched funding opportunities from other donors or funding bodies.</p>
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!editValues.seekingMultiplePartners}
+                        onChange={(e) => setEditValues(prev => ({ ...prev, seekingMultiplePartners: e.target.checked }))}
+                        className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Seeking Multiple Partners</span>
+                        <p className="text-xs text-gray-400">Show that this project is open to funding from multiple donors or partners.</p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1874,6 +2331,12 @@ export default function ProjectProposal() {
                       ? formatCurrency(project.totalBudget, project.currency || 'USD')
                       : 'Budget not set'}
                   </div>
+                  {project.seekingMultiplePartners && (
+                    <div className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium">
+                      <UsersIcon className="w-4 h-4" />
+                      Seeking Multiple Partners
+                    </div>
+                  )}
                   {/* Pledged & Raised rows */}
                   {(project.amountPledged || project.amountRaised) && (
                     <div className="space-y-3 pt-2 border-t">
@@ -1915,6 +2378,14 @@ export default function ProjectProposal() {
                     <div className="mt-4 pt-4 border-t">
                       <div className="text-sm text-gray-500">Beneficiaries</div>
                       <div className="text-gray-700">{project.beneficiaries}</div>
+                    </div>
+                  )}
+                  {project.matchedFundingNote && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="text-sm text-gray-500 flex items-center gap-1.5 mb-1">
+                        <span>💰</span> Matched Funding
+                      </div>
+                      <div className="text-gray-700 whitespace-pre-wrap text-sm bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">{project.matchedFundingNote}</div>
                     </div>
                   )}
                 </>
@@ -2342,6 +2813,7 @@ export default function ProjectProposal() {
             </button>
           )}
           <img
+            key={lightboxIndex}
             src={project.galleryImages[lightboxIndex]}
             alt={`Gallery ${lightboxIndex + 1}`}
             className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
@@ -2547,5 +3019,13 @@ export default function ProjectProposal() {
       )}
 
     </PageShell>
+  );
+}
+
+export default function ProjectProposal() {
+  return (
+    <Suspense>
+      <ProjectProposalInner />
+    </Suspense>
   );
 }

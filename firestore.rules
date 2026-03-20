@@ -362,5 +362,16 @@ service cloud.firestore {
       // No deletion — retain audit trail
       allow delete: if false;
     }
+
+    /* ---------- Showcases ---------- */
+    match /showcases/{showcaseId} {
+      // Public read — showcase pages are viewable without signing in
+      allow read: if true;
+      // Any signed-in user can create a showcase
+      allow create: if isSignedIn();
+      // Only the owner or SuperAdmin can update or delete
+      allow update, delete: if isSignedIn()
+        && (request.auth.uid == resource.data.ownerUid || isSuperAdmin());
+    }
   }
 }

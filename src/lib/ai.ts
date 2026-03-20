@@ -105,6 +105,54 @@ export async function makeTextShorter(text: string, paragraphs?: number): Promis
   }
 }
 
+export async function generateListWithAI(
+  context: string,
+  existingItems: string[] = [],
+  count: number = 5
+): Promise<string[]> {
+  if (!context.trim()) throw new Error('Context cannot be empty');
+
+  const existingNote = existingItems.length > 0
+    ? `\n\nExisting items (do NOT repeat these):\n${existingItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`
+    : '';
+
+  try {
+    const response = await fetch(AI_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful assistant for a community project platform. Generate exactly ${count} concise, actionable bullet points. Return ONLY a JSON array of strings, nothing else. Example: ["Point one", "Point two"]`,
+          },
+          { role: 'user', content: `Generate ${count} bullet points for ${context}.${existingNote}` },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
+    if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
+    const data = await response.json();
+    const raw = data.choices[0].message.content.trim();
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((s: any) => String(s).trim()).filter(Boolean);
+    } catch {
+      // Fallback: split by newlines and strip numbering
+      return raw.split('\n')
+        .map((line: string) => line.replace(/^\d+[\.\)]\s*/, '').replace(/^[-•]\s*/, '').trim())
+        .filter(Boolean)
+        .slice(0, count);
+    }
+    return [];
+  } catch (error) {
+    console.error('AI List Generation Error:', error);
+    throw error;
+  }
+}
+
 export async function makeTextLonger(text: string, paragraphs?: number): Promise<string> {
   if (!text.trim()) {
     throw new Error('Text cannot be empty');

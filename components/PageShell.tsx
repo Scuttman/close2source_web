@@ -35,7 +35,7 @@ export default function PageShell({
   useEffect(()=> { setLocalSearch(searchValue); }, [searchValue]);
   return (
     <div className={`relative mx-auto max-w-[1200px] w-full px-4 md:px-6 flex flex-col flex-1 min-h-full ${className}`}>
-      <div className="rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-white/70 backdrop-blur-sm flex flex-col flex-1 min-h-0">
+      <div className="rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-white/90 flex flex-col flex-1 min-h-0">
   <div className="bg-black text-white px-4 md:px-6 py-4 flex items-center gap-4" style={headerStyle}>
           <h1 className="flex-1 text-xl md:text-2xl font-semibold leading-none truncate">{title}</h1>
           {searchEnabled && (

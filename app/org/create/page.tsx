@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { resizeImageFile, IMAGE_MAX_THUMB } from '../../../src/lib/imageResize';
 import { getUser, updateUser, createOrg } from '@/lib/dal';
 import { generateCode } from '../../../src/lib/codes';
 import { storage } from '../../../src/lib/firebase';
@@ -91,9 +92,10 @@ export default function CreateOrganizationPage(){
       let logoUrl: string | null = null;
       if (logoFile) {
         setUploadingLogo(true);
+        const resized = await resizeImageFile(logoFile, IMAGE_MAX_THUMB);
         const { uploadBytesResumable } = await import('firebase/storage');
         const logoRef = ref(storage, `organizations/logos/${user.uid}_${Date.now()}_${logoFile.name}`);
-        const uploadTask = uploadBytesResumable(logoRef, logoFile);
+        const uploadTask = uploadBytesResumable(logoRef, resized);
         
         await new Promise<void>((resolve, reject) => {
           uploadTask.on('state_changed',

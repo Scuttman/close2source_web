@@ -16,8 +16,10 @@ export interface AIProjectProfile {
   whoIsInvolved?: string;
   name?: string;
   description?: string;
+  visionAlignment?: string;
   projectSummary?: string;
   projectImpact?: string;
+  impactedPeople?: string;
   totalBudget?: number;
   currency?: string;
   timeline?: string;
@@ -30,11 +32,23 @@ interface Message {
 }
 
 
-const SYSTEM_PROMPT = (orgName: string) => `You are a project registration assistant for Close2Source — a platform connecting organisations with community projects. You are helping someone from "${orgName}" create a compelling, well-written project profile.
+const SYSTEM_PROMPT = (orgName: string | null, existingLocations: {id: string; name: string; vision?: string; whatWeDo?: string}[] = []) => `You are a project registration assistant for Close2Source — a platform connecting organisations with community projects. You are helping${orgName ? ` someone from "${orgName}"` : ' a user'} create a compelling, well-written project profile.
 
 Your job is to gather the following information through a friendly conversation, ONE or TWO topics at a time, in this order:
 
-FIRST - Location & Activities:
+FIRST - Location & Activities:${existingLocations.length > 0 ? `
+
+IMPORTANT — This organisation already has the following locations on record:
+${existingLocations.map((l, i) => `  ${i + 1}. ${l.name}${l.vision ? ` — "${l.vision}"` : ''}`).join('\n')}
+
+At the very start of the conversation, present this numbered list clearly to the user and ask them to either:
+  a) Choose one of the existing locations (by number or name), OR
+  b) Type a new location name
+
+If they pick an existing location, pre-fill the Location Name, Vision, and What We Do fields with the saved data, confirm what you have loaded, and skip straight to asking Who Is Involved.
+
+If the user types any location name during the conversation that closely matches an existing one (case-insensitive, partial match is fine), ALWAYS ask: "Did you mean [existing location name]?" before proceeding. Only use the typed name if the user explicitly says it is different.
+` : ''}
 1. Location name (city/country where this takes place)
 2. Vision (the overarching vision for this location)
 3. What We Do (description of location activities)
@@ -43,11 +57,14 @@ FIRST - Location & Activities:
 THEN - Project Details:
 5. Project Name
 6. Project Description (a compelling 2-4 sentence overview)
-7. Project Summary (a detailed paragraph about the project)
-8. Project Impact (how it benefits the community)
-9. Total Budget and Currency
-10. Timeline (when the project will take place)
-11. Goals (3-5 key objectives as a list)
+7. Vision Alignment — ask: "How does this project's vision align with the overall vision of the location and${orgName ? ` ${orgName}` : ' the organisation'}?" Encourage a thoughtful answer that connects the project purpose to the broader location/org mission. Clean up and improve the answer as with other descriptive fields.
+8. Project Summary (a detailed paragraph about the project)
+9. Project Impact — ask two things together:
+   a) How does this project benefit the community?
+   b) Approximately how many people might be impacted (e.g. "~500 adults", "2,000 families", "an estimated 10,000 beneficiaries")? Encourage a realistic estimate with a brief description of who they are.
+10. Total Budget and Currency
+11. Timeline (when the project will take place)
+12. Goals (3-5 key objectives as a list)
 
 Rules:
 - Be encouraging and conversational.
@@ -55,6 +72,14 @@ Rules:
 - When the user provides any descriptive text, automatically clean it up for spelling, grammar and fluidity, show them the improved version inline, and ask if they are happy with it before moving on.
 - Ask clarifying questions if answers are vague.
 - Do NOT ask for all fields at once.
+- When asking about vision alignment, reference the location vision already collected so the user can see the connection.
+
+LOCATION SAVING — IMPORTANT:
+After you have confirmed the locationName, vision, and whatWeDo with the user (and they are happy with the cleaned-up text), output EXACTLY this on its own line BEFORE moving on to Who Is Involved:
+LOCATION_SAVE:{"locationName":"the location name","vision":"the confirmed vision","whatWeDo":"the confirmed what we do"}
+Then say: "Please press the **Save Location** button that has appeared to save your location details before we continue."
+Do NOT ask the next question (Who Is Involved) until the user confirms the location has been saved.
+NOTE: If the user selects an existing location (their message will say "(existing location selected)"), do NOT output LOCATION_SAVE — the location is already saved. Proceed directly to asking about Who Is Involved.
 
 When you have gathered all the fields, say:
 "Great! I have everything I need. Here is your project profile:" 
@@ -69,8 +94,10 @@ Then output a JSON block in this EXACT format (no extra text after the block):
   "whoIsInvolved": "...",
   "name": "...",
   "description": "...",
+  "visionAlignment": "...",
   "projectSummary": "...",
   "projectImpact": "...",
+  "impactedPeople": "...",
   "totalBudget": 0,
   "currency": "GBP",
   "timeline": "...",
@@ -78,20 +105,108 @@ Then output a JSON block in this EXACT format (no extra text after the block):
 }
 \`\`\`
 
-Then ask: "Are you happy with this profile? I can refine any section if you'd like. When you're ready, click the **Create Project** button below to register."
+Then ask: "Are you happy with this profile? I can refine any section if you'd like. When you're ready, click the **Create Project** button that has appeared in the page header and below this message to register."
 
 Once the user says they are happy or confirms, output EXACTLY this line on its own:
 PROFILE_COMPLETE
 followed immediately by the JSON block again (same format as above).`;
 
 function extractJson(text: string): AIProjectProfile | null {
-  const match = text.match(/```json\s*([\s\S]*?)```/);
+  // 1. Try strict parse from code-fenced block
+  const fenced = text.match(/```json\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch { /* fall through */ }
+  }
+
+  // 2. Try to find a bare JSON object (no code fence)
+  const braceMatch = text.match(/\{[\s\S]*"(?:name|locationName|location)"\s*:/);
+  if (braceMatch) {
+    // Find the opening { and try to find a balanced closing }
+    const start = text.indexOf('{', braceMatch.index);
+    if (start >= 0) {
+      // Try progressively shorter substrings from last } back
+      for (let end = text.lastIndexOf('}'); end > start; end = text.lastIndexOf('}', end - 1)) {
+        try { return JSON.parse(text.slice(start, end + 1)); } catch { /* keep trying */ }
+      }
+    }
+  }
+
+  // 3. Fallback: extract individual fields with regex
+  const raw = fenced ? fenced[1] : text;
+  const profile: AIProjectProfile = {};
+  const fieldMap: [keyof AIProjectProfile, string[]][] = [
+    ['locationName', ['locationName', 'location']],
+    ['vision', ['vision']],
+    ['whatWeDo', ['whatWeDo']],
+    ['whoIsInvolved', ['whoIsInvolved']],
+    ['name', ['name']],
+    ['description', ['description']],
+    ['visionAlignment', ['visionAlignment', 'Alignment']],
+    ['projectSummary', ['projectSummary']],
+    ['projectImpact', ['projectImpact', 'Impact']],
+    ['impactedPeople', ['impactedPeople']],
+    ['currency', ['currency']],
+    ['timeline', ['timeline']],
+  ];
+
+  let found = false;
+  for (const [key, aliases] of fieldMap) {
+    for (const alias of aliases) {
+      // Match "key": "value" or "key": value
+      const re = new RegExp(`"${alias}"\\s*:\\s*"([^"]*(?:"[^"]*)*?)(?:"|$)`, 'i');
+      const m = raw.match(re);
+      if (m && m[1]) {
+        (profile as any)[key] = m[1].trim();
+        found = true;
+        break;
+      }
+    }
+  }
+
+  // Extract totalBudget as number
+  const budgetMatch = raw.match(/"totalBudget"\s*:\s*(\d+)/i);
+  if (budgetMatch) { profile.totalBudget = parseInt(budgetMatch[1]); found = true; }
+
+  // Extract goals array
+  const goalsMatch = raw.match(/"goals"\s*:\s*\[([\s\S]*?)\]/i);
+  if (goalsMatch) {
+    const goalStrings = goalsMatch[1].match(/"([^"]+)"/g);
+    if (goalStrings) {
+      profile.goals = goalStrings.map(g => g.replace(/^"|"$/g, ''));
+      found = true;
+    }
+  }
+
+  return found ? profile : null;
+}
+
+/** Does this assistant message contain JSON-like data (even malformed)? */
+function hasJsonContent(text: string): boolean {
+  if (!text) return false;
+  if (/```json/i.test(text)) return true;
+  if (/\{\s*"(?:name|locationName|location|vision)"\s*:/.test(text)) return true;
+  return false;
+}
+
+/** Extract location data from LOCATION_SAVE marker in AI message */
+function extractLocationSave(text: string): {locationName: string; vision?: string; whatWeDo?: string} | null {
+  const match = text.match(/LOCATION_SAVE:\s*(\{[\s\S]*?\})/);
   if (!match) return null;
   try {
-    return JSON.parse(match[1].trim());
+    const parsed = JSON.parse(match[1]);
+    if (parsed.locationName) return parsed;
   } catch {
-    return null;
+    // Try regex extraction as fallback
+    const name = match[1].match(/"locationName"\s*:\s*"([^"]+)"/);
+    const vision = match[1].match(/"vision"\s*:\s*"([^"]+)"/);
+    const whatWeDo = match[1].match(/"whatWeDo"\s*:\s*"([^"]+)"/);
+    if (name) return {
+      locationName: name[1],
+      vision: vision?.[1],
+      whatWeDo: whatWeDo?.[1],
+    };
   }
+  return null;
 }
 
 function ProfilePreview({ profile }: { profile: AIProjectProfile }) {
@@ -102,8 +217,10 @@ function ProfilePreview({ profile }: { profile: AIProjectProfile }) {
     ['Who Is Involved', profile.whoIsInvolved],
     ['Name', profile.name],
     ['Description', profile.description],
+    ['Vision Alignment', profile.visionAlignment],
     ['Summary', profile.projectSummary],
     ['Impact', profile.projectImpact],
+    ['People Impacted', profile.impactedPeople],
     ['Budget', profile.totalBudget !== undefined ? `${profile.currency ?? ''} ${profile.totalBudget}`.trim() : undefined],
     ['Timeline', profile.timeline],
     ['Goals', profile.goals],
@@ -158,43 +275,80 @@ function AIRegisterProjectPageInner() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [pendingReviewMsg, setPendingReviewMsg] = useState('');
+  const [orgLocations, setOrgLocations] = useState<{id: string; name: string; vision?: string; whatWeDo?: string}[]>([]);
+  // locationsLoaded is true immediately when there is no org (nothing to load)
+  const [locationsLoaded, setLocationsLoaded] = useState(!orgId);
+  const [selectedLocation, setSelectedLocation] = useState<{id?: string; name: string; vision?: string; whatWeDo?: string} | null>(null);
+  const [locationPendingSave, setLocationPendingSave] = useState(false);
+  const [locationPickerStep, setLocationPickerStep] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const storageKey = orgId ? `ai_project_registration_${orgId}` : 'ai_project_registration_temp';
+  const storageKey = orgId ? `ai_project_registration_${orgId}` : 'ai_project_registration_personal';
+  const locationStorageKey = `ai_project_location_${orgId || 'personal'}`;
 
-  // Load saved state from localStorage on mount
+  // Load org locations so the AI can present them as choices at the start
   useEffect(() => {
-    if (!orgId) {
-      router.push('/org');
-      return;
-    }
-    
+    if (!orgId) return;
+    (async () => {
+      try {
+        const org = await getOrgByCode(orgId);
+        if (org && Array.isArray((org as any).locations)) {
+          setOrgLocations(
+            (org as any).locations
+              .filter((l: any) => l.name)
+              .map((l: any) => ({ id: l.id, name: l.name, vision: l.vision, whatWeDo: l.whatWeDo }))
+          );
+        }
+      } catch { /* ignore */ } finally {
+        setLocationsLoaded(true);
+      }
+    })();
+  }, [orgId]);
+
+  // Load saved state from localStorage — wait until locations are fetched so the
+  // system prompt can include them in the very first AI message.
+  useEffect(() => {
+    if (!locationsLoaded) return; // wait for org locations to be fetched first
+
+    // Restore saved location selection
+    let savedLoc: {id?: string; name: string; vision?: string; whatWeDo?: string} | null = null;
+    try {
+      const raw = localStorage.getItem(locationStorageKey);
+      if (raw) { savedLoc = JSON.parse(raw); setSelectedLocation(savedLoc); }
+    } catch { /* ignore */ }
+
+    // Check for saved conversation
     const saved = localStorage.getItem(storageKey);
+    let hasSavedMessages = false;
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setMessages(parsed.messages || []);
-        setCurrentProfile(parsed.profile || null);
-        setProfileReady(parsed.profileReady || false);
-        setInitialized(true);
-        if (!parsed.messages || parsed.messages.length === 0) {
-          // If no messages, start fresh conversation
-          sendToAI([], true);
+        if (parsed.messages && parsed.messages.length > 0) {
+          hasSavedMessages = true;
+          setMessages(parsed.messages);
+          setCurrentProfile(parsed.profile || null);
+          setProfileReady(parsed.profileReady || false);
+          setInitialized(true);
+          return;
         }
-      } catch {
-        // If parse fails, start fresh
-        sendToAI([], true);
+      } catch { /* fall through to fresh start */ }
+    }
+
+    if (!hasSavedMessages) {
+      // Fresh start — show location picker if org has locations and none already selected
+      if (orgId && orgLocations.length > 0 && !savedLoc) {
+        setLocationPickerStep(true);
         setInitialized(true);
+        return;
       }
-    } else {
-      // No saved state, start fresh
+      // No locations to pick, or location already saved — start AI directly
       sendToAI([], true);
       setInitialized(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [locationsLoaded, orgId]);
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
@@ -213,11 +367,12 @@ function AIRegisterProjectPageInner() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, streaming]);
 
-  async function sendToAI(history: Message[], isInit = false) {
+  async function sendToAI(history: Message[], isInit = false): Promise<AIProjectProfile | null> {
     setStreaming(true);
     abortRef.current = new AbortController();
 
     const userHistory = isInit ? [] : history;
+    let extractedProfile: AIProjectProfile | null = null;
 
     try {
       const resp = await fetch('/api/ai', {
@@ -228,7 +383,7 @@ function AIRegisterProjectPageInner() {
           model: 'gpt-4o-mini',
           stream: true,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT(orgName) },
+            { role: 'system', content: SYSTEM_PROMPT(orgId ? orgName : null, orgLocations) },
             ...userHistory,
           ],
           temperature: 0.7,
@@ -269,13 +424,23 @@ function AIRegisterProjectPageInner() {
 
       // Post-processing: extract JSON preview + detect PROFILE_COMPLETE
       const profile = extractJson(assistantText);
-      if (profile) setCurrentProfile(profile);
+      if (profile) {
+        extractedProfile = profile;
+        setCurrentProfile(profile);
+      }
 
       if (assistantText.includes('PROFILE_COMPLETE')) {
         setProfileReady(true);
-        // Extract the final confirmed JSON
         const finalProfile = extractJson(assistantText) ?? currentProfile;
-        if (finalProfile) setCurrentProfile(finalProfile);
+        if (finalProfile) {
+          extractedProfile = finalProfile;
+          setCurrentProfile(finalProfile);
+        }
+      }
+
+      // Detect LOCATION_SAVE marker for new locations
+      if (!selectedLocation && assistantText.includes('LOCATION_SAVE:')) {
+        setLocationPendingSave(true);
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -284,6 +449,8 @@ function AIRegisterProjectPageInner() {
     } finally {
       setStreaming(false);
     }
+
+    return extractedProfile;
   }
 
   async function handleSend() {
@@ -307,71 +474,82 @@ function AIRegisterProjectPageInner() {
     }
   }
 
-  async function handleApply() {
-    if (!currentProfile || creating) return;
+  async function handleApply(profileOverride?: AIProjectProfile) {
+    const rawProfile = profileOverride ?? currentProfile;
+    if (!rawProfile || creating) return;
     setCreateError('');
     setCreating(true);
+
+    // Override location data with reliably saved selection (AI can lose content)
+    const savedLoc = selectedLocation || (() => {
+      try {
+        const raw = localStorage.getItem(locationStorageKey);
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    })();
+    const profile = { ...rawProfile };
+    if (savedLoc) {
+      profile.locationName = savedLoc.name;
+      if (savedLoc.vision) profile.vision = savedLoc.vision;
+      if (savedLoc.whatWeDo) profile.whatWeDo = savedLoc.whatWeDo;
+    }
 
     try {
       const auth = getAuth();
       const user = auth.currentUser;
       if (!user) throw new Error('You must be logged in.');
 
-      // Fetch organization data
-      const orgResult = await getOrgByCode(orgId);
-      if (!orgResult) throw new Error('Organization not found.');
-      const org = orgResult;
-
-      // ── Location matching & auto-add ─────────────────────────────────────
+      // Fetch org data only when linked to an organisation
+      let org: any = null;
       let locationId: string | null = null;
-      const existingLocations: any[] = Array.isArray((org as any).locations) ? (org as any).locations : [];
 
-      if (currentProfile.locationName?.trim()) {
-        const nameLower = currentProfile.locationName.trim().toLowerCase();
-        const matched = existingLocations.find(
-          (l: any) => (l.name || '').toLowerCase() === nameLower
-        );
+      if (orgId) {
+        const orgResult = await getOrgByCode(orgId);
+        if (!orgResult) throw new Error('Organization not found.');
+        org = orgResult;
 
-        if (matched) {
-          // Use existing location, but fill in vision/whatWeDo if missing
-          locationId = matched.id;
-          const needsUpdate =
-            (!matched.vision && currentProfile.vision) ||
-            (!matched.whatWeDo && currentProfile.whatWeDo);
-          if (needsUpdate) {
-            const updated = {
-              ...matched,
-              vision: matched.vision || currentProfile.vision || undefined,
-              whatWeDo: matched.whatWeDo || currentProfile.whatWeDo || undefined,
-            };
-            const cleanUpdated: any = Object.fromEntries(
-              Object.entries(updated).filter(([, v]) => v !== undefined)
-            );
-            await updateOrg(org.id, {
-              locations: fieldArrayRemove(matched),
-            } as any);
-            await updateOrg(org.id, {
-              locations: fieldArrayUnion(cleanUpdated),
-            } as any);
-          }
-        } else {
-          // Create new org location from AI-gathered data
-          const newId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          const newLoc: any = Object.fromEntries(
-            Object.entries({
-              id: newId,
-              name: currentProfile.locationName.trim(),
-              vision: currentProfile.vision?.trim() || undefined,
-              whatWeDo: currentProfile.whatWeDo?.trim() || undefined,
-            }).filter(([, v]) => v !== undefined)
+        // ── Location matching & auto-add ─────────────────────────────────────
+        const existingLocations: any[] = Array.isArray((org as any).locations) ? (org as any).locations : [];
+
+        if (profile.locationName?.trim()) {
+          const nameLower = profile.locationName.trim().toLowerCase();
+          const matched = existingLocations.find(
+            (l: any) => (l.name || '').toLowerCase() === nameLower
           );
-          await updateOrg(org.id, {
-            locations: fieldArrayUnion(newLoc),
-          } as any);
-          locationId = newId;
+
+          if (matched) {
+            locationId = matched.id;
+            const needsUpdate =
+              (!matched.vision && profile.vision) ||
+              (!matched.whatWeDo && profile.whatWeDo);
+            if (needsUpdate) {
+              const updated = {
+                ...matched,
+                vision: matched.vision || profile.vision || undefined,
+                whatWeDo: matched.whatWeDo || profile.whatWeDo || undefined,
+              };
+              const cleanUpdated: any = Object.fromEntries(
+                Object.entries(updated).filter(([, v]) => v !== undefined)
+              );
+              await updateOrg(org.id, { locations: fieldArrayRemove(matched) } as any);
+              await updateOrg(org.id, { locations: fieldArrayUnion(cleanUpdated) } as any);
+            }
+          } else {
+            const newId = Math.random().toString(36).slice(2, 10).toUpperCase();
+            const newLoc: any = Object.fromEntries(
+              Object.entries({
+                id: newId,
+                name: profile.locationName.trim(),
+                vision: profile.vision?.trim() || undefined,
+                whatWeDo: profile.whatWeDo?.trim() || undefined,
+              }).filter(([, v]) => v !== undefined)
+            );
+            await updateOrg(org.id, { locations: fieldArrayUnion(newLoc) } as any);
+            locationId = newId;
+          }
         }
+        // ─────────────────────────────────────────────────────────────────────
       }
-      // ─────────────────────────────────────────────────────────────────────
 
       // Generate unique projectId
       let projectId = '';
@@ -385,70 +563,76 @@ function AIRegisterProjectPageInner() {
 
       // ── Mandatory content moderation BEFORE creating ───────────────────
       const contentToScan: Record<string, string> = {};
-      (['name', 'description', 'vision', 'whatWeDo', 'whoIsInvolved', 'projectSummary', 'projectImpact'] as const).forEach(f => {
-        const v = (currentProfile as any)[f];
+      (['name', 'description', 'vision', 'whatWeDo', 'whoIsInvolved', 'visionAlignment', 'projectSummary', 'projectImpact'] as const).forEach(f => {
+        const v = (profile as any)[f];
         if (v && typeof v === 'string') contentToScan[f] = v;
       });
       const modResult = await moderateProfileContent(contentToScan, 'project');
       const initialStatus = modResult.flagged ? 'pending_review' : 'live';
       // ──────────────────────────────────────────────────────────────────────
 
-      // Inherit org theme
+      // Inherit org theme (only when an org is linked)
       const THEME_KEYS = [
         'themeHeaderBg', 'themeHeaderText', 'themeAccent', 'themeAccentText', 'themeAccentHover',
         'themeTabActiveBg', 'themeTabActiveText', 'themeTabInactiveText', 'themeWidgetTitleColor'
       ] as const;
       const inheritedTheme: Record<string, any> = {};
-      THEME_KEYS.forEach(k => {
-        if (org && typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k];
-      });
-      if (!inheritedTheme.themeAccent && (org as any)?.themeHeaderBg) inheritedTheme.themeAccent = (org as any).themeHeaderBg;
-      if (!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
+      if (org) {
+        THEME_KEYS.forEach(k => {
+          if (typeof (org as any)[k] === 'string' && (org as any)[k]) inheritedTheme[k] = (org as any)[k];
+        });
+        if (!inheritedTheme.themeAccent && (org as any)?.themeHeaderBg) inheritedTheme.themeAccent = (org as any).themeHeaderBg;
+        if (!inheritedTheme.themeTabActiveBg && inheritedTheme.themeAccent) inheritedTheme.themeTabActiveBg = inheritedTheme.themeAccent;
+      }
 
       // Create project via DAL (deducts credits atomically)
       const { docId: newProjectDocId } = await createProjectWithCredits({
         uid: user.uid,
         projectData: {
-          name: currentProfile.name || 'Untitled Project',
-          description: currentProfile.description || '',
+          name: profile.name || 'Untitled Project',
+          description: profile.description || '',
           projectId,
           users: [{ uid: user.uid, role: 'Admin' }],
           createdBy: user.uid,
           
-          // Organization linkage
-          organizationId: (org as any).orgId,
-          organizationName: (org as any).name || null,
-          organizationLogoUrl: (org as any).logoUrl || null,
-          originatingOrganizationId: (org as any).orgId,
-          originatingOrganizationDbId: org.id,
+          // Organization linkage (only when org is present)
+          ...(org ? {
+            organizationId: (org as any).orgId,
+            organizationName: (org as any).name || null,
+            organizationLogoUrl: (org as any).logoUrl || null,
+            originatingOrganizationId: (org as any).orgId,
+            originatingOrganizationDbId: org.id,
+          } : {}),
 
           // AI-gathered project details
-          vision: currentProfile.vision || null,
-          whatWeDo: currentProfile.whatWeDo || null,
-          whoIsInvolved: currentProfile.whoIsInvolved || null,
-          projectSummary: currentProfile.projectSummary || null,
-          projectImpact: currentProfile.projectImpact || null,
-          totalBudget: currentProfile.totalBudget || null,
-          currency: currentProfile.currency || 'GBP',
-          timeline: currentProfile.timeline || null,
-          goals: currentProfile.goals || [],
+          vision: profile.vision || null,
+          whatWeDo: profile.whatWeDo || null,
+          whoIsInvolved: profile.whoIsInvolved || null,
+          visionAlignment: profile.visionAlignment || null,
+          projectSummary: profile.projectSummary || null,
+          projectImpact: profile.projectImpact || null,
+          impactedPeople: profile.impactedPeople || null,
+          totalBudget: profile.totalBudget || null,
+          currency: profile.currency || 'GBP',
+          timeline: profile.timeline || null,
+          goals: profile.goals || [],
           
           // Location
-          location: currentProfile.locationName ? {
-            search: currentProfile.locationName.toLowerCase(),
+          location: profile.locationName ? {
+            search: profile.locationName.toLowerCase(),
             country: null,
             town: null,
             latitude: null,
             longitude: null,
           } : null,
-          locationName: currentProfile.locationName || null,
+          locationName: profile.locationName || null,
           locationId: locationId || null,
 
           // Cover photo placeholder
           coverPhotoUrl: null,
           
           // Visibility defaults
-          showOnOrganizationOverview: true,
+          showOnOrganizationOverview: !!org,
           publicVisible: true,
           status: initialStatus,
           visibility: 'public',
@@ -465,7 +649,7 @@ function AIRegisterProjectPageInner() {
           type: 'project',
           docId: newProjectDocId,
           docCollection: 'projects',
-          profileName: currentProfile.name || 'Untitled Project',
+          profileName: profile.name || 'Untitled Project',
           profileCode: projectId,
           ownerUid: _auth.currentUser?.uid || '',
           result: modResult,
@@ -477,8 +661,9 @@ function AIRegisterProjectPageInner() {
       }
       // ─────────────────────────────────────────────────────────────────────
 
-      // Clear saved conversation
+      // Clear saved conversation and location
       localStorage.removeItem(storageKey);
+      localStorage.removeItem(locationStorageKey);
 
       // Navigate to the new project profile
       router.push(`/projects/${projectId}/proposal`);
@@ -491,13 +676,84 @@ function AIRegisterProjectPageInner() {
 
   function handleBack() {
     // Don't clear storage, so user can come back
-    router.push(`/org/${orgId}`);
+    router.push(orgId ? `/org/${orgId}` : '/profile?tab=projects');
   }
 
-  // Strip PROFILE_COMPLETE + duplicate json from visible message text
+  // "Create Now" — extract whatever data has been collected and save immediately.
+  // Never sends another message to the AI.
+  async function handleCreateNow() {
+    if (creating || streaming) return;
+
+    // 1. Use already-parsed profile if available
+    if (currentProfile) {
+      await handleApply(currentProfile);
+      return;
+    }
+
+    // 2. Scan all assistant messages for the most recent JSON block
+    let extracted: AIProjectProfile | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        const p = extractJson(messages[i].content);
+        if (p) { extracted = p; break; }
+      }
+    }
+
+    // 3. If still nothing, create a bare-minimum profile so the record is at least saved
+    const profile: AIProjectProfile = extracted ?? { name: 'Untitled Project' };
+
+    // Update state so UI reflects it, then apply
+    setCurrentProfile(profile);
+    await handleApply(profile);
+  }
+
+  // Handle selecting an existing organization location
+  function handleSelectLocation(loc: {id: string; name: string; vision?: string; whatWeDo?: string}) {
+    const locationData = { id: loc.id, name: loc.name, vision: loc.vision, whatWeDo: loc.whatWeDo };
+    setSelectedLocation(locationData);
+    localStorage.setItem(locationStorageKey, JSON.stringify(locationData));
+    setLocationPendingSave(false);
+    setLocationPickerStep(false);
+    // Send a user message so the AI knows the location is already chosen and skips location questions
+    const msg = `I'll use the existing location: ${loc.name} (existing location selected)`;
+    const initHistory: Message[] = [{ role: 'user', content: msg }];
+    setMessages(initHistory);
+    sendToAI(initHistory);
+  }
+
+  // Start AI without pre-selecting a location (user wants to create a new one)
+  function handleStartNewLocation() {
+    setLocationPickerStep(false);
+    sendToAI([], true);
+  }
+
+  // Handle saving a new location collected via chat
+  function handleSaveNewLocation() {
+    // Extract location data from the latest assistant messages
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        const locData = extractLocationSave(messages[i].content);
+        if (locData) {
+          const locationData = { name: locData.locationName, vision: locData.vision, whatWeDo: locData.whatWeDo };
+          setSelectedLocation(locationData);
+          localStorage.setItem(locationStorageKey, JSON.stringify(locationData));
+          setLocationPendingSave(false);
+          // Send confirmation so AI continues
+          const msg = '[Location saved successfully — please continue]';
+          const newHistory: Message[] = [...messages, { role: 'user', content: msg }];
+          setMessages(newHistory);
+          sendToAI(newHistory);
+          return;
+        }
+      }
+    }
+  }
+
+  // Strip PROFILE_COMPLETE + LOCATION_SAVE markers from visible message text
   function cleanMessage(text: string) {
     return text
       .replace(/PROFILE_COMPLETE\s*/g, '')
+      .replace(/LOCATION_SAVE:\s*\{[\s\S]*?\}\s*/g, '')
       .trim();
   }
 
@@ -513,14 +769,16 @@ function AIRegisterProjectPageInner() {
         try { parsed = JSON.parse(json); } catch {}
         if (parsed) {
           return (
-            <div key={i} className="mt-2 bg-white border border-gray-200 rounded-lg p-3 text-[11px] font-mono text-gray-700 space-y-1 max-h-56 overflow-y-auto">
-              {Object.entries(parsed).map(([k, v]) => (
-                <div key={k}><span className="font-semibold text-orange-600">{k}:</span> {Array.isArray(v) ? (v as string[]).join(', ') : String(v)}</div>
-              ))}
+            <div key={i} className="mt-2 w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="px-3 py-2 text-[11px] font-mono text-gray-700 space-y-1 max-h-48 overflow-y-auto break-all">
+                {Object.entries(parsed).map(([k, v]) => (
+                  <div key={k} className="flex gap-1 flex-wrap"><span className="font-semibold text-orange-600 flex-shrink-0">{k}:</span><span>{Array.isArray(v) ? (v as string[]).join(', ') : String(v)}</span></div>
+                ))}
+              </div>
             </div>
           );
         }
-        return <pre key={i} className="mt-2 bg-gray-100 rounded p-2 text-[11px] overflow-x-auto">{json}</pre>;
+        return <pre key={i} className="mt-2 bg-gray-100 rounded p-2 text-[11px] overflow-x-auto max-w-full whitespace-pre-wrap break-all">{json}</pre>;
       }
       // Bold **text**
       const segments = part.split(/(\*\*[^*]+\*\*)/g);
@@ -534,8 +792,6 @@ function AIRegisterProjectPageInner() {
     });
   }
 
-  if (!orgId) return null;
-
   return (
     <PageShell
       title={
@@ -543,7 +799,7 @@ function AIRegisterProjectPageInner() {
           <button
             onClick={handleBack}
             className="p-2 rounded-lg hover:bg-white/10 text-white transition-colors"
-            title="Back to organization"
+            title={orgId ? 'Back to organization' : 'Back to profile'}
           >
             <ArrowLeftIcon className="w-5 h-5" />
           </button>
@@ -554,15 +810,25 @@ function AIRegisterProjectPageInner() {
       }
       headerRight={
         <div className="flex items-center gap-3">
-          {messages.length > 0 && !currentProfile && (
+          {(messages.length > 0 || (locationPickerStep && selectedLocation)) && (
             <button
               onClick={() => {
                 if (confirm('Start fresh? Your current conversation will be cleared.')) {
                   localStorage.removeItem(storageKey);
+                  localStorage.removeItem(locationStorageKey);
                   setMessages([]);
                   setCurrentProfile(null);
                   setProfileReady(false);
-                  sendToAI([], true);
+                  setCreateError('');
+                  setPendingReviewMsg('');
+                  setSelectedLocation(null);
+                  setLocationPendingSave(false);
+                  if (orgId && orgLocations.length > 0) {
+                    setLocationPickerStep(true);
+                  } else {
+                    setLocationPickerStep(false);
+                    sendToAI([], true);
+                  }
                 }
               }}
               className="px-3 py-1.5 rounded-lg border border-white/30 text-white text-xs font-semibold hover:bg-white/10 transition-colors"
@@ -570,10 +836,10 @@ function AIRegisterProjectPageInner() {
               Start Fresh
             </button>
           )}
-          {currentProfile && (
+          {messages.length > 0 && (
             <button
-              onClick={handleApply}
-              disabled={creating}
+              onClick={handleCreateNow}
+              disabled={creating || streaming}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? (
@@ -584,7 +850,7 @@ function AIRegisterProjectPageInner() {
               ) : (
                 <>
                   <CheckIcon className="w-4 h-4" />
-                  Create Project (50 Credits)
+                  {currentProfile ? 'Create Project (50 Credits)' : 'Create Now'}
                 </>
               )}
             </button>
@@ -594,19 +860,72 @@ function AIRegisterProjectPageInner() {
       contentClassName="p-0"
     >
       <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Location picker step — shown before AI chat when org has existing locations */}
+        {locationPickerStep && (
+          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6 overflow-y-auto">
+            <div className="w-full max-w-2xl">
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-orange-100 mb-4">
+                  <SparklesIcon className="w-6 h-6 text-orange-500" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Choose a Location</h2>
+                <p className="text-sm text-gray-500">
+                  Select an existing location for this project, or create a new one.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                {orgLocations.map(loc => (
+                  <button
+                    key={loc.id}
+                    onClick={() => handleSelectLocation(loc)}
+                    className="flex flex-col items-start text-left p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-orange-400 hover:shadow-md transition-all group"
+                  >
+                    <div className="flex items-center gap-2 mb-1 w-full">
+                      <span className="text-lg">📍</span>
+                      <span className="font-semibold text-gray-900 group-hover:text-orange-700 text-sm flex-1 truncate">{loc.name}</span>
+                    </div>
+                    {loc.vision && (
+                      <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{loc.vision}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="text-center">
+                <button
+                  onClick={handleStartNewLocation}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 text-sm font-medium hover:border-orange-400 hover:text-orange-700 hover:bg-orange-50 transition-all"
+                >
+                  <span className="text-lg">+</span>
+                  Create a new location
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Chat panel */}
-        <div className="flex-1 min-h-0 flex flex-col bg-gray-50">
+        {!locationPickerStep && <div className="flex-1 min-h-0 flex flex-col bg-gray-50">
+          {/* Saved location indicator */}
+          {selectedLocation && (
+            <div className="mx-4 mt-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 flex-shrink-0">
+              <CheckIcon className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <span>Location saved: <strong>{selectedLocation.name}</strong></span>
+            </div>
+          )}
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {messages.map((m, i) => {
+              // Check if this assistant message contains JSON-like data
+              const hasJson = m.role === 'assistant' && hasJsonContent(m.content);
+              return (
+              <div key={i}>
+              <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {m.role === 'assistant' && (
                   <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center mr-2 flex-shrink-0 mt-1">
                     <SparklesIcon className="w-4 h-4 text-orange-500" />
                   </div>
                 )}
                 <div
-                  className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                  className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden ${
                     m.role === 'user'
                       ? 'bg-orange-600 text-white rounded-br-sm'
                       : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm shadow-sm'
@@ -618,7 +937,42 @@ function AIRegisterProjectPageInner() {
                   )}
                 </div>
               </div>
-            ))}
+              {/* "Use This Data" button — shown for any message with JSON-like content */}
+              {hasJson && !streaming && (
+                <div className="flex justify-start ml-9 mt-2">
+                  <button
+                    onClick={() => {
+                      const profile = extractJson(m.content);
+                      if (profile) {
+                        handleApply(profile);
+                      } else {
+                        setCreateError('Could not parse profile data from this message. Try asking the AI to output the JSON again.');
+                      }
+                    }}
+                    disabled={creating}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-600 text-white text-xs font-semibold hover:bg-orange-700 disabled:opacity-50 transition-colors shadow"
+                  >
+                    <CheckIcon className="w-4 h-4" />
+                    Use This Data
+                  </button>
+                </div>
+              )}
+
+              {/* Save Location button — shown when AI has collected new location data */}
+              {m.role === 'assistant' && m.content.includes('LOCATION_SAVE:') && locationPendingSave && !selectedLocation && !streaming && (
+                <div className="flex justify-start ml-9 mt-3">
+                  <button
+                    onClick={handleSaveNewLocation}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 transition-colors shadow"
+                  >
+                    <CheckIcon className="w-4 h-4" />
+                    Save Location
+                  </button>
+                </div>
+              )}
+              </div>
+              );
+            })}
             {messages.length === 0 && streaming && (
               <div className="flex justify-start">
                 <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center mr-2 flex-shrink-0">
@@ -634,9 +988,9 @@ function AIRegisterProjectPageInner() {
             {currentProfile && !streaming && (
               <div className="flex justify-center my-4">
                 <button
-                  onClick={handleApply}
+                  onClick={() => handleApply(currentProfile)}
                   disabled={creating}
-                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-orange-600 text-white font-semibold hover:bg-orange-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-8 py-3 rounded-xl bg-orange-600 text-white font-semibold hover:bg-orange-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {creating ? (
                     <>
@@ -669,11 +1023,24 @@ function AIRegisterProjectPageInner() {
                 {pendingReviewMsg}
               </div>
             )}
-            {currentProfile && !creating && (
-              <div className="mb-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                <CheckIcon className="w-4 h-4 flex-shrink-0" />
-                Profile ready! Click <strong>Create Project</strong> above to register (costs 50 credits), or keep chatting to refine.
-              </div>
+            {currentProfile && (
+              <button
+                onClick={() => handleApply(currentProfile)}
+                disabled={creating}
+                className="mb-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-600 text-white text-sm font-semibold hover:bg-orange-700 transition-colors shadow disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Creating Project...
+                  </>
+                ) : (
+                  <>
+                    <CheckIcon className="w-4 h-4" />
+                    Create Project (50 Credits)
+                  </>
+                )}
+              </button>
             )}
             <div className="flex gap-2 items-end">
               <textarea
@@ -681,15 +1048,15 @@ function AIRegisterProjectPageInner() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={streaming}
-                placeholder={streaming ? 'Waiting for response…' : 'Type your answer… (Enter to send, Shift+Enter for new line)'}
+                disabled={streaming || locationPendingSave}
+                placeholder={locationPendingSave ? 'Please save the location above to continue…' : streaming ? 'Waiting for response…' : 'Type your answer… (Enter to send, Shift+Enter for new line)'}
                 rows={2}
                 maxLength={MAX_USER_MESSAGE_LENGTH}
                 className="flex-1 resize-none border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:bg-gray-50 disabled:text-gray-400"
               />
               <button
                 onClick={handleSend}
-                disabled={streaming || !input.trim()}
+                disabled={streaming || locationPendingSave || !input.trim()}
                 className="p-2.5 rounded-xl bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 transition-colors flex-shrink-0"
                 title="Send"
               >
@@ -698,6 +1065,7 @@ function AIRegisterProjectPageInner() {
             </div>
           </div>
         </div>
+        }
 
         {/* Right panel — live profile preview */}
         {currentProfile && (
@@ -714,7 +1082,7 @@ function AIRegisterProjectPageInner() {
             </div>
             <div className="px-4 py-3 border-t flex-shrink-0">
               <button
-                onClick={handleApply}
+                onClick={() => handleApply(currentProfile)}
                 disabled={creating}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-600 text-white text-sm font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

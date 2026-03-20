@@ -5,9 +5,12 @@ interface ProjectPDFData {
   name: string;
   projectId?: string;
   description?: string;
+  strapline?: string;
   coverPhotoUrl?: string;
   locationName?: string;
   locationIntroduction?: string;
+  locationVision?: string;
+  locationWhatWeDo?: string;
   vision?: string;
   projectSummary?: string;
   projectImpact?: string;
@@ -181,7 +184,27 @@ export async function generateProjectPDF(project: ProjectPDFData): Promise<void>
   doc.setFontSize(22);
   doc.setTextColor(220, 38, 38);
   doc.text(project.name, margin + logoWidth, yPos);
-  yPos += 15;
+  yPos += 12;
+
+  // Strapline — bold sentence summarising what will be funded
+  if (project.strapline) {
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    const strapLines = doc.splitTextToSize(project.strapline, maxWidth);
+    doc.text(strapLines, margin, yPos);
+    doc.setFont('helvetica', 'normal');
+    yPos += (strapLines.length * 6) + 4;
+  }
+
+  // Description — shown inline below the strapline
+  if (project.description) {
+    doc.setFontSize(11);
+    doc.setTextColor(60, 60, 60);
+    const descLines = doc.splitTextToSize(project.description, maxWidth);
+    doc.text(descLines, margin, yPos);
+    yPos += (descLines.length * 5) + 8;
+  }
 
   // Organization
   if (project.organizationName) {
@@ -189,11 +212,6 @@ export async function generateProjectPDF(project: ProjectPDFData): Promise<void>
     doc.setTextColor(100, 100, 100);
     doc.text(`By ${project.organizationName}`, margin, yPos);
     yPos += 10;
-  }
-
-  // Description
-  if (project.description) {
-    addSection('Description', project.description);
   }
 
   // Location
@@ -215,9 +233,16 @@ export async function generateProjectPDF(project: ProjectPDFData): Promise<void>
     }
   }
 
-  // Vision
-  if (project.vision) {
+  // Location Vision (from org location, takes precedence) or Project Vision
+  if (project.locationVision) {
+    addSection('Vision', project.locationVision);
+  } else if (project.vision) {
     addSection('Vision', project.vision);
+  }
+
+  // What We Do (from org location)
+  if (project.locationWhatWeDo) {
+    addSection('What We Do', project.locationWhatWeDo);
   }
 
   // Project Summary

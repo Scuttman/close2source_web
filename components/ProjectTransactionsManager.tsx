@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { getFinanceTransactions, addFinanceTransaction } from '@/lib/dal';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { resizeImageFile, IMAGE_MAX_THUMB } from '../src/lib/imageResize';
 import { getAuth } from 'firebase/auth';
 
 interface ProjectTransactionsManagerProps {
@@ -85,9 +86,11 @@ export default function ProjectTransactionsManager({ projectId, transactions, se
         const uploaded: any[] = [];
         for(let i=0;i<newTxReceipts.length;i++){
           const f = newTxReceipts[i];
+          // Resize if it's an image (non-images pass through unchanged)
+          const resized = await resizeImageFile(f, IMAGE_MAX_THUMB);
           const path = `projects/${projectId}/receipts/${Date.now()}_${i}_${f.name}`;
           const r = storageRef(storage, path);
-          await uploadBytes(r, f);
+          await uploadBytes(r, resized);
           const url = await getDownloadURL(r);
           uploaded.push({ name: f.name, url, size: f.size, type: f.type });
         }

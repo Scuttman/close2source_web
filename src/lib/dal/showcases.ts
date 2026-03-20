@@ -148,10 +148,11 @@ export function subscribeShowcase(
 export async function createShowcase(
   data: Omit<ShowcaseDoc, 'createdAt'>,
 ): Promise<string> {
-  const ref = await addDoc(collection(db(), 'showcases'), {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
+  // Strip undefined values — Firestore rejects them
+  const clean = Object.fromEntries(
+    Object.entries({ ...data, createdAt: serverTimestamp() }).filter(([, v]) => v !== undefined),
+  );
+  const ref = await addDoc(collection(db(), 'showcases'), clean);
   return ref.id;
 }
 

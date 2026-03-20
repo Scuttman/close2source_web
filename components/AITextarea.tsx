@@ -1,6 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { improveTextWithAI, makeTextShorter, makeTextLonger, refineTextWithAI } from '../src/lib/ai';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { useAIConsent } from '../src/lib/aiContext';
@@ -32,8 +31,6 @@ export default function AITextarea({
   const [paragraphPicker, setParagraphPicker] = useState<'longer' | 'shorter' | null>(null);
   const [extraPrompt, setExtraPrompt] = useState('');
   const [isRegenerating, setIsRegenerating] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
 
   const handleAIAction = async (action: 'improve' | 'shorter' | 'longer', paragraphs?: number) => {
     if (!value.trim()) {
@@ -61,12 +58,17 @@ export default function AITextarea({
           result = await makeTextLonger(value, paragraphs);
           break;
       }
-      
+
+      if (!result?.trim()) {
+        setError('AI returned an empty response. Please try again.');
+        return;
+      }
+
       setImprovedText(result);
       setShowPreview(true);
-    } catch (err) {
-      setError('Failed to improve text. Please try again.');
-      setTimeout(() => setError(''), 3000);
+    } catch (err: any) {
+      console.error('[AITextarea] AI request failed:', err);
+      setError('Failed to improve text: ' + (err?.message || 'Unknown error'));
     } finally {
       setIsProcessing(false);
     }
@@ -93,8 +95,8 @@ export default function AITextarea({
       const refined = await refineTextWithAI(improvedText, extraPrompt);
       setImprovedText(refined);
       setExtraPrompt('');
-    } catch {
-      // keep existing text on error
+    } catch (err: any) {
+      console.error('[AITextarea] Regenerate failed:', err);
     } finally {
       setIsRegenerating(false);
     }
@@ -133,8 +135,9 @@ export default function AITextarea({
 
       {/* Error Message */}
       {error && (
-        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-          {error}
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-start justify-between gap-2">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError('')} className="shrink-0 text-red-400 hover:text-red-600 font-bold leading-none">&times;</button>
         </div>
       )}
 
@@ -225,8 +228,10 @@ export default function AITextarea({
         </>
       )}
 
-      {/* Preview Modal — portalled to body so it always centres in the viewport */}
-      {mounted && showPreview && createPortal(
+      {/* Preview Modal — fixed position so it covers the viewport regardless of
+          any overflow:hidden ancestor (only transforms/filters would trap it,
+          and none exist in this app's layout) */}
+      {showPreview && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b border-gray-200">
@@ -305,7 +310,7 @@ export default function AITextarea({
             </div>
           </div>
         </div>
-      , document.body)}
+      )}
     </div>
   );
 }

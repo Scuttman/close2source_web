@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../src/lib/firebase';
+import { resizeImageFile, IMAGE_MAX_THUMB } from '../src/lib/imageResize';
 
 export interface ImageUploadEntry {
   id: string;
@@ -27,7 +28,7 @@ interface Props {
 export default function ImageUploadGrid({
   disabled=false,
   maxFiles=12,
-  maxWidth=200,
+  maxWidth=IMAGE_MAX_THUMB,
   onChange,
   pathBuilder,
   resetKey,
@@ -45,35 +46,6 @@ export default function ImageUploadGrid({
 
   function uuid(){ return crypto.randomUUID? crypto.randomUUID(): Math.random().toString(36).slice(2); }
 
-  async function resizeImage(file: File, maxW: number): Promise<File> {
-    return new Promise<File>((resolve) => {
-      if(!/^image\//.test(file.type)) return resolve(file);
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        try {
-          const scale = img.width > maxW ? (maxW / img.width) : 1;
-          if(scale >= 1){ URL.revokeObjectURL(url); return resolve(file); }
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          if(!ctx){ URL.revokeObjectURL(url); return resolve(file); }
-          ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          const type = file.type==='image/png'? 'image/png':'image/jpeg';
-          canvas.toBlob(blob=> {
-            URL.revokeObjectURL(url);
-            if(blob){
-              resolve(new File([blob], file.name, { type }));
-            } else resolve(file);
-          }, type, 0.85);
-        } catch { URL.revokeObjectURL(url); resolve(file); }
-      };
-      img.onerror = ()=> { URL.revokeObjectURL(url); resolve(file); };
-      img.src = url;
-    });
-  }
-
   const handleSelect = useCallback(async (files: FileList | null) => {
     if(disabled || !files) return;
     const existing = entries.length;
@@ -83,7 +55,7 @@ export default function ImageUploadGrid({
       const entry: ImageUploadEntry = { id, fileName: file.name, progress:0, status:'uploading' };
       setEntries(prev=>[...prev, entry]);
       let resized: File = file;
-      try { resized = await resizeImage(file, maxWidth); } catch { /* ignore */ }
+      try { resized = await resizeImageFile(file, maxWidth); } catch { /* ignore */ }
       const path = pathBuilder(resized, id);
       const storageRef = ref(storage, path);
       const task = uploadBytesResumable(storageRef, resized);

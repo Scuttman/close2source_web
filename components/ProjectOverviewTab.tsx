@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { storage } from '../src/lib/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { resizeImageFile, IMAGE_MAX_THUMB } from '../src/lib/imageResize';
 import { improveTextWithAI } from '../src/lib/ai';
 import { logCreditTransaction } from '../src/lib/credits';
 import { updateProject, getUser, updateUser, getUserOrgs } from '@/lib/dal';
@@ -178,9 +179,10 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                               if(file.size > 250*1024){ setOrgLogoError('File too large (max 250KB)'); return; }
                               setOrgLogoUploading(true);
                               try {
+                                const resized = await resizeImageFile(file, IMAGE_MAX_THUMB);
                                 const ext = file.name.split('.').pop() || 'png';
                                 const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
-                                await uploadBytes(storageRef, file, { contentType: file.type });
+                                await uploadBytes(storageRef, resized, { contentType: resized.type });
                                 const url = await getDownloadURL(storageRef);
                                 await updateProject(projectId, { organizationLogoUrl: url } as any);
                                 setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));
@@ -214,9 +216,10 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
                             if(file.size > 250*1024){ setOrgLogoError('File too large (max 250KB)'); return; }
                             setOrgLogoUploading(true);
                             try {
+                              const resized = await resizeImageFile(file, IMAGE_MAX_THUMB);
                               const ext = file.name.split('.').pop() || 'png';
                               const storageRef = ref(storage, `projects/${projectId}/orgLogo.${ext}`);
-                              await uploadBytes(storageRef, file, { contentType: file.type });
+                              await uploadBytes(storageRef, resized, { contentType: resized.type });
                               const url = await getDownloadURL(storageRef);
                               await updateProject(projectId, { organizationLogoUrl: url } as any);
                               setProject((p:any)=> ({ ...p, organizationLogoUrl: url }));

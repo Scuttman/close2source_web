@@ -26,6 +26,7 @@ import { updateAIConsent } from "../../src/lib/userConsent";
 import AIConsentModal from "../../components/AIConsentModal";
 import PageShell from "../../components/PageShell";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { resizeImageFile, IMAGE_MAX_BANNER, IMAGE_MAX_THUMB } from "../../src/lib/imageResize";
 
 function ProfilePageInner() {
   const [user, setUser] = useState<User | null>(null);
@@ -56,6 +57,13 @@ function ProfilePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get('return');
+
+  // Honour ?tab= query param on initial load (e.g. back from AI registration)
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam) setActiveTab(tabParam);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Profile update state
   const [profileUpdating, setProfileUpdating] = useState(false);
@@ -133,7 +141,10 @@ function ProfilePageInner() {
 
     // Showcases owned by user
     const unsubShowcases = subscribeUserShowcases(user.uid, (sc) => {
+      console.log('[showcases] snapshot received', sc.length, 'docs', sc);
       setShowcases(sc);
+    }, (err) => {
+      console.error('[showcases] subscription error', err);
     });
 
     return () => {
@@ -216,9 +227,10 @@ function ProfilePageInner() {
     setUploading(true);
     setUploadProgress(0);
     try {
+      const resized = await resizeImageFile(file, IMAGE_MAX_THUMB);
       const { ref: storageRefFn, uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
       const fileRef = storageRefFn(storage, `profile-pics/${user.uid}/${Date.now()}_${file.name}`);
-      const task = uploadBytesResumable(fileRef, file);
+      const task = uploadBytesResumable(fileRef, resized);
       await new Promise<void>((resolve, reject) => {
         task.on('state_changed',
           snap => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
@@ -259,8 +271,9 @@ function ProfilePageInner() {
     if (!user) return;
     setUploadingCover(true);
     try {
+      const resized = await resizeImageFile(file, IMAGE_MAX_BANNER);
       const fileRef = storageRef(storage, `users/${user.uid}/cover_${Date.now()}.jpg`);
-      await uploadBytes(fileRef, file);
+      await uploadBytes(fileRef, resized);
       const url = await getDownloadURL(fileRef);
       await updateUser(user.uid, { coverPhotoUrl: url } as any);
       setProfile(prev => ({ ...prev, coverPhotoUrl: url }));
@@ -986,7 +999,8 @@ function ProfilePageInner() {
                 setShowcaseCreateError('');
                 try {
                   const code = generateCode('showcase');
-                  await createShowcase({
+                  console.log('[showcases] creating with ownerUid', user.uid, 'code', code);
+                  const newId = await createShowcase({
                     showcaseId: code,
                     title: showcaseTitle.trim(),
                     description: showcaseDesc.trim() || undefined,
@@ -994,6 +1008,7 @@ function ProfilePageInner() {
                     orgId: showcaseOrgScope,
                     projectDocIds: selectedProjectIds,
                   });
+                  console.log('[showcases] created doc id', newId);
                   setShowCreateShowcase(false);
                   setActiveTab('showcases');
                 } catch (err: any) {

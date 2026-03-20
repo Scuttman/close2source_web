@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getPublicProjectsPage, getUser } from '@/lib/dal';
 import PageShell from "../../components/PageShell";
 import Link from "next/link";
+import Image from 'next/image';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -109,13 +110,14 @@ export default function ProjectsPage() {
                 className="group rounded-md border border-brand-main/10 overflow-hidden bg-white hover:shadow transition relative flex flex-col"
               >
                 {p.coverPhotoUrl && (
-                  <div className="h-32 w-full overflow-hidden">
-                    <img
+                  <div className="h-32 w-full overflow-hidden relative">
+                    <Image
+                      fill
                       src={p.coverPhotoUrl}
                       alt={p.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition"
-                      loading="lazy"
-                      decoding="async"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                      style={{ objectFit: 'cover' }}
+                      className="group-hover:scale-105 transition"
                     />
                   </div>
                 )}

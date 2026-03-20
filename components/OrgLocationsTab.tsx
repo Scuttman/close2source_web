@@ -372,7 +372,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
                 value={form.vision || ''}
                 onChange={value => setForm(prev => ({ ...prev, vision: value }))}
                 placeholder="What does this location's work ultimately aim to achieve?"
-                rows={2}
+                rows={5}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white resize-none"
                 aiContext="a location vision statement for a project proposal"
               />
@@ -384,7 +384,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
                 value={form.whatWeDo || ''}
                 onChange={value => setForm(prev => ({ ...prev, whatWeDo: value }))}
                 placeholder="Describe the activities and work carried out at this location…"
-                rows={3}
+                rows={6}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white resize-none"
                 aiContext="a description of activities and work carried out at an organisation location"
               />

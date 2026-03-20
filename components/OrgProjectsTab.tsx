@@ -5,6 +5,8 @@ import OrgProjectsMap from './OrgProjectsMap';
 import { storage } from '../src/lib/firebase';
 import { getAuth } from 'firebase/auth';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { resizeImageFile, IMAGE_MAX_BANNER } from '../src/lib/imageResize';
+import { SparklesIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import { generateCode } from '../src/lib/codes';
 import { subscribeOrgProjects, getProjectByCode, createProjectWithCredits } from '@/lib/dal';
 
@@ -122,11 +124,12 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 		setCoverPhotoUploading(true);
 		setCoverPhotoProgress(0);
 		try {
+			const resized = await resizeImageFile(file, IMAGE_MAX_BANNER);
 			const ext = file.name.split('.').pop() || 'jpg';
 			// Use timestamp path (no project id yet). We keep even if user cancels (could add garbage collection later).
 			const storagePath = `projects/covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 			const storageRef = ref(storage, storagePath);
-			const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+			const task = uploadBytesResumable(storageRef, resized, { contentType: resized.type });
 			task.on('state_changed', snap=> {
 				setCoverPhotoProgress(Math.round((snap.bytesTransferred / snap.totalBytes)*100));
 			}, err=> {
@@ -159,61 +162,33 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 					<p className='text-xs text-gray-500 mt-1'>Projects linked to this organization. Creating here will auto-link & store originating ownership.</p>
 				</div>
 				{isOwner && (
+				<div className='flex gap-2'>
 					<button
 						onClick={() => {
-							if (showCreate || showModePicker) {
-								setShowCreate(false); setShowModePicker(false);
-							} else {
-								setShowModePicker(true);
-							}
+							setShowModePicker(false);
+							router.push(`/projects/register-ai?orgId=${org?.orgId || org?.id}&orgName=${encodeURIComponent(org?.name || '')}`);
 						}}
-						className='px-3 py-2 rounded text-white text-xs font-semibold'
+						className='inline-flex items-center gap-1.5 px-3 py-2 rounded text-white text-xs font-semibold'
 						style={{ background:'var(--org-accent, #FF6A1A)', color:'var(--org-accent-text,#fff)' }}
 					>
-						{(showCreate || showModePicker) ? 'Cancel' : 'Register Project'}
+						<SparklesIcon className='w-3.5 h-3.5' />
+						Register with AI
 					</button>
+					<button
+						onClick={() => {
+							setShowModePicker(false);
+							setShowCreate(prev => !prev);
+						}}
+						className='inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-semibold border'
+						style={{ background:'transparent', color:'var(--org-accent, #FF6A1A)', borderColor:'var(--org-accent, #FF6A1A)' }}
+					>
+						<PlusCircleIcon className='w-3.5 h-3.5' />
+						{showCreate ? 'Cancel' : 'Register Manually'}
+					</button>
+				</div>
 				)}
 			</div>
 
-			{/* Mode picker */}
-			{showModePicker && isOwner && (
-				<div className='bg-white border border-brand-main/10 rounded-xl p-5 shadow-sm'>
-					<p className='text-sm font-semibold mb-4' style={{ color:'var(--org-widget-title-color, var(--org-accent,#FF6A1A))' }}>How would you like to register your project?</p>
-					<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
-						{/* AI Chat */}
-						<button
-							type='button'
-							onClick={() => {
-								// Close mode picker
-								setShowModePicker(false);
-								// Navigate to AI registration page
-								router.push(`/projects/register-ai?orgId=${org?.orgId || org?.id}&orgName=${encodeURIComponent(org?.name || 'your organization')}`);
-							}}
-							className='group text-left border-2 border-orange-200 hover:border-orange-500 rounded-xl p-5 transition-colors bg-orange-50 hover:bg-orange-100'
-						>
-							<div className='flex items-center gap-2 mb-2'>
-								<svg xmlns='http://www.w3.org/2000/svg' className='w-5 h-5 text-orange-500' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='1.8'><path strokeLinecap='round' strokeLinejoin='round' d='M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z'/></svg>
-								<span className='text-sm font-bold text-orange-700'>AI-Guided Chat</span>
-							</div>
-							<p className='text-xs text-orange-700/80'>Let ChatGPT guide you through each section. It will ask questions, improve your writing for grammar &amp; fluency, and generate a polished profile ready to publish.</p>
-							<div className='mt-3 text-[11px] font-semibold text-orange-600 group-hover:underline'>Start AI chat →</div>
-						</button>
-						{/* Manual form */}
-						<button
-							type='button'
-							onClick={() => { setShowModePicker(false); setShowCreate(true); }}
-							className='group text-left border-2 border-gray-200 hover:border-brand-main/50 rounded-xl p-5 transition-colors bg-white hover:bg-brand-main/5'
-						>
-							<div className='flex items-center gap-2 mb-2'>
-								<svg xmlns='http://www.w3.org/2000/svg' className='w-5 h-5 text-gray-500' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='1.8'><path strokeLinecap='round' strokeLinejoin='round' d='M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z'/><path strokeLinecap='round' strokeLinejoin='round' d='M19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10'/></svg>
-								<span className='text-sm font-bold text-gray-700'>Manual Form</span>
-							</div>
-							<p className='text-xs text-gray-500'>Fill in the form fields yourself. Faster if you already have everything prepared.</p>
-							<div className='mt-3 text-[11px] font-semibold text-gray-500 group-hover:underline'>Open form →</div>
-						</button>
-					</div>
-				</div>
-			)}
 			{showCreate && isOwner && (
 				<div className='bg-white border border-brand-main/10 rounded-xl p-5 shadow-sm'>
 					<h3 className='text-sm font-semibold mb-3' style={{ color:'var(--org-widget-title-color, var(--org-accent,#FF6A1A))' }}>New Project</h3>

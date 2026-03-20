@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { resizeImageFile, IMAGE_MAX_THUMB } from "../src/lib/imageResize";
 import { getAuth } from "firebase/auth";
 import { storage } from "../src/lib/firebase";
 import { getProject, updateProject } from '@/lib/dal';
@@ -38,7 +39,7 @@ export default function CreateProjectUpdateModal({ open, onClose, projectDocId, 
   const documentEntries: any[] = [];
       if (postImages.length > 0) {
         for(let i=0;i<postImages.length;i++){
-          const f = postImages[i];
+          const f = await resizeImageFile(postImages[i], IMAGE_MAX_THUMB);
           const storageRef = ref(storage, `projects/updates/${projectDocId}/${user.uid}_${Date.now()}_${i}`);
           await uploadBytes(storageRef, f);
           const url = await getDownloadURL(storageRef);

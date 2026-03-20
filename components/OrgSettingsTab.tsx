@@ -359,7 +359,7 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 												async function processBg(f:File): Promise<Blob>{
 													const dataUrl: string = await new Promise((resolve, reject)=> { const fr = new FileReader(); fr.onerror=()=> reject(new Error('Read error')); fr.onload=()=> resolve(fr.result as string); fr.readAsDataURL(f); });
 													const img: HTMLImageElement = await new Promise((resolve, reject)=> { const im = new Image(); im.onload=()=> resolve(im); im.onerror=()=> reject(new Error('Image load failed')); im.src = dataUrl; });
-													const maxWidth = 2000; let { naturalWidth: w, naturalHeight: h } = img; if(w > maxWidth){ const scale = maxWidth / w; w = maxWidth; h = Math.round(h * scale); }
+													const maxWidth = 1200; let { naturalWidth: w, naturalHeight: h } = img; if(w > maxWidth){ const scale = maxWidth / w; w = maxWidth; h = Math.round(h * scale); }
 													const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); if(!ctx) return f;
 													ctx.drawImage(img,0,0,w,h);
 													const qualities = [0.85,0.75,0.65];

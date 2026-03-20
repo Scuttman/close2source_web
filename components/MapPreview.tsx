@@ -31,7 +31,7 @@ export const MapPreview: React.FC<MapPreviewProps> = ({ lat, lng, className = ""
   if (!apiKey) {
     console.warn('Google Maps API key not configured');
     return (
-      <div className={`rounded overflow-hidden border border-gray-300 bg-gray-50 flex items-center justify-center ${className}`} style={{ height: 220 }}>
+      <div className={`rounded overflow-hidden border border-gray-300 bg-gray-50 flex items-center justify-center min-h-[320px] ${className}`}>
         <p className="text-sm text-gray-500">Map unavailable</p>
       </div>
     );
@@ -121,7 +121,7 @@ export const MapPreview: React.FC<MapPreviewProps> = ({ lat, lng, className = ""
 
   if (!isLoaded) {
     return (
-      <div className={`bg-gray-100 flex items-center justify-center ${className}`} style={{ height: 220 }}>
+      <div className={`bg-gray-100 flex items-center justify-center min-h-[320px] ${className}`}>
         <div className="text-gray-600 text-sm">Loading map...</div>
       </div>
     );
@@ -130,35 +130,36 @@ export const MapPreview: React.FC<MapPreviewProps> = ({ lat, lng, className = ""
   const link = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   
   return (
-    <div className={`rounded overflow-hidden border border-brand-main/40 bg-white ${className}`}>      
-      <div className="relative">
-        <div ref={mapRef} style={{ height: 220, width: '100%' }} />
-        
-        {/* Map Type Toggle */}
-        <div className="absolute top-2 right-2 bg-white rounded-lg shadow-md overflow-hidden">
-          <button
-            onClick={() => setMapType('roadmap')}
-            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-              mapType === 'roadmap'
-                ? 'bg-orange-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Map
-          </button>
-          <button
-            onClick={() => setMapType('satellite')}
-            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-              mapType === 'satellite'
-                ? 'bg-orange-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Satellite
-          </button>
-        </div>
+    <div className={`relative rounded overflow-hidden border border-brand-main/40 bg-white min-h-[320px] ${className}`}>
+      {/* Map fills entire container */}
+      <div ref={mapRef} className="absolute inset-0" />
+
+      {/* Map Type Toggle — overlaid */}
+      <div className="absolute top-2 right-2 bg-white rounded-lg shadow-md overflow-hidden z-10">
+        <button
+          onClick={() => setMapType('roadmap')}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+            mapType === 'roadmap'
+              ? 'bg-orange-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          Map
+        </button>
+        <button
+          onClick={() => setMapType('satellite')}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+            mapType === 'satellite'
+              ? 'bg-orange-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          Satellite
+        </button>
       </div>
-      <div className="text-xs px-2 py-1 bg-brand-main/5 text-brand-dark text-right">
+
+      {/* Google Maps link — overlaid at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 text-xs px-2 py-1 bg-white/80 backdrop-blur-sm text-brand-dark text-right z-10">
         <a href={link} target="_blank" rel="noopener noreferrer" className="underline">Open in Google Maps</a>
       </div>
     </div>
