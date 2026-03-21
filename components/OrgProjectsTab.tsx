@@ -277,7 +277,7 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 									const isPublic = (p.visibility ?? 'public') === 'public';
 									const budget = p.totalBudget ? `${p.currency || '$'}${p.totalBudget.toLocaleString()}` : null;
 									return (
-										<a key={p.id} href={`/projects/${p.projectId || p.id}/proposal`} className='group relative rounded-lg overflow-hidden border border-brand-main/10 bg-white hover:shadow-md transition flex flex-col'>
+										<a key={p.id} href={`/projects/${p.projectId || p.id}`} className='group relative rounded-lg overflow-hidden border border-brand-main/10 bg-white hover:shadow-md transition flex flex-col'>
 											{p.coverPhotoUrl && <img src={p.coverPhotoUrl} alt={p.name} className='w-full h-40 object-cover' />}
 											<div className='p-3 flex-1 flex flex-col'>
 												<div className='text-sm font-semibold text-brand-dark mb-1 line-clamp-1'>{p.name}</div>

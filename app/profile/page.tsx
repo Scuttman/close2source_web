@@ -553,7 +553,7 @@ function ProfilePageInner() {
                   {projects.map((project) => (
                     <a
                       key={project.id}
-                      href={`/projects/${project.projectId || project.id}/proposal`}
+                      href={`/projects/${project.projectId || project.id}`}
                       className="group relative rounded-xl overflow-hidden border border-gray-200 bg-white hover:shadow-md transition flex flex-col"
                     >
                       {project.coverPhotoUrl && (

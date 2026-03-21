@@ -94,7 +94,7 @@ export async function generateProjectPDF(project: ProjectPDFData): Promise<void>
   // Generate QR code for project URL
   if (project.projectId) {
     try {
-      const profileUrl = `https://close2source.com/projects/${project.projectId}/proposal`;
+      const profileUrl = `https://close2source.com/projects/${project.projectId}/profile`;
       const qrDataUrl = await QRCode.toDataURL(profileUrl, { width: 200, margin: 1 });
       
       // Add QR code to top right corner

@@ -102,7 +102,7 @@ export default function OrgProjectsMap({ projects, className = "" }: OrgProjects
 			});
 
 			marker.addListener("click", () => {
-				const href = `/projects/${p.projectId || p.id}/proposal`;
+				const href = `/projects/${p.projectId || p.id}`;
 				infoWindow.setContent(
 					`<div style="font-size:12px;max-width:180px">
 						<div style="font-weight:600;margin-bottom:2px">${p.name}</div>

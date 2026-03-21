@@ -142,7 +142,7 @@ function RegisterProject() {
       });
 
       // Navigate to the new project profile
-      router.push(`/projects/${projectId}/proposal`);
+      router.push(`/projects/${projectId}/profile`);
     } catch (e: any) {
       setError(e.message || "Something went wrong.");
     } finally {

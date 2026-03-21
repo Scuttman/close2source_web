@@ -305,7 +305,7 @@ function PartnerCard({ partner, isOwner }: { partner: Partner; isOwner: boolean 
             )}
             <div>
               <span className="text-xs text-gray-400 block">Project</span>
-              <a href={`/projects/${partner.projectId}/proposal`} className="text-orange-600 hover:underline text-sm">
+              <a href={`/projects/${partner.projectId}`} className="text-orange-600 hover:underline text-sm">
                 {partner.projectName}
               </a>
             </div>

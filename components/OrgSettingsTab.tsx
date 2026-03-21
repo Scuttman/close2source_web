@@ -227,6 +227,10 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 	const [publicVisible, setPublicVisible] = useState<boolean>(org.publicVisible !== false);
 	const [visibilitySaving, setVisibilitySaving] = useState(false);
 	const [visibilitySavedAt, setVisibilitySavedAt] = useState<number>(0);
+	// Hide from search state (for sensitive organizations)
+	const [hideFromSearch, setHideFromSearch] = useState<boolean>(org.hideFromSearch === true);
+	const [hideSearchSaving, setHideSearchSaving] = useState(false);
+	const [hideSearchSavedAt, setHideSearchSavedAt] = useState<number>(0);
 	useEffect(()=> { setAccessSettings(normalizeAccess(org.accessSettings)); }, [org.accessSettings]);
 	function toggleView(tab:string, role:AccessLevel){ setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], view: s[tab].view.includes(role)? s[tab].view.filter(r=> r!==role): [...s[tab].view, role].sort((a,b)=> ROLE_ORDER.indexOf(a)-ROLE_ORDER.indexOf(b)) }})); }
 	function toggleEdit(tab:string, role:AccessLevel){ if(role==='public') return; setAccessSettings(s=> ({ ...s, [tab]: { ...s[tab], edit: s[tab].edit.includes(role)? s[tab].edit.filter(r=> r!==role): [...s[tab].edit, role].sort((a,b)=> ROLE_ORDER.indexOf(a)-ROLE_ORDER.indexOf(b)) }})); }
@@ -318,6 +322,19 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		}, 400);
 		return ()=> clearTimeout(h);
 	}, [publicVisible, isOwner, editMode]);
+
+	useEffect(()=> {
+		if(!isOwner || !editMode) return;
+		const h = setTimeout(async ()=> {
+			try {
+				setHideSearchSaving(true);
+				await updateOrg(org.id, { hideFromSearch });
+				onOrgUpdate({ hideFromSearch });
+				setHideSearchSavedAt(Date.now());
+			} catch {/* ignore */} finally { setHideSearchSaving(false); }
+		}, 400);
+		return ()=> clearTimeout(h);
+	}, [hideFromSearch, isOwner, editMode]);
 
 	if(!isOwner){
 		return <div className='bg-white border border-brand-main/10 rounded-xl p-6 text-sm text-gray-600'>You don't have permission to view these settings.</div>;
@@ -548,14 +565,44 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 			</div>
 			{/* Visibility (separate card) */}
 			<div className='bg-white border border-brand-main/10 rounded-xl p-6 text-sm text-brand-dark'>
-				<h3 className='text-lg font-semibold text-brand-main mb-3'>Visibility</h3>
-				<p className='text-xs text-gray-600 mb-4'>Control whether your organization appears in public organization listings and searches. You can still share the direct link when hidden.</p>
-				<label className='flex items-center gap-3 text-sm font-medium'>
-					<input type='checkbox' disabled={!isOwner || !editMode} checked={publicVisible} onChange={e=> setPublicVisible(e.target.checked)} />
-					<span>{publicVisible ? 'Publicly Listed' : 'Hidden (Unlisted)'}</span>
-				</label>
-				<div className='mt-2 text-[10px] text-gray-500 h-4'>{visibilitySaving? 'Saving…' : (visibilitySavedAt? 'Saved' : '')}</div>
-				{!publicVisible && <div className='mt-2 text-[11px] text-amber-600'>Hidden: only people with the direct link can view (subject to tab permissions).</div>}
+				<h3 className='text-lg font-semibold text-brand-main mb-3'>Visibility & Privacy</h3>
+				<p className='text-xs text-gray-600 mb-4'>Control whether your organization appears in public listings and searches.</p>
+				
+				<div className='space-y-4'>
+					{/* Public Visibility Toggle */}
+					<div>
+						<label className='flex items-center gap-3 text-sm font-medium'>
+							<input type='checkbox' disabled={!isOwner || !editMode} checked={publicVisible} onChange={e=> setPublicVisible(e.target.checked)} />
+							<span>{publicVisible ? 'Publicly Listed' : 'Hidden (Unlisted)'}</span>
+						</label>
+						<div className='mt-2 text-[10px] text-gray-500 h-4'>{visibilitySaving? 'Saving…' : (visibilitySavedAt? 'Saved' : '')}</div>
+						{!publicVisible && <div className='mt-2 text-[11px] text-amber-600'>Hidden: only people with the direct link can view (subject to tab permissions).</div>}
+					</div>
+
+					{/* Hide from Search Toggle - for sensitive organizations */}
+					<div className='border-t border-gray-100 pt-4'>
+						<label className='flex items-center gap-3 text-sm font-medium'>
+							<input type='checkbox' disabled={!isOwner || !editMode} checked={hideFromSearch} onChange={e=> setHideFromSearch(e.target.checked)} className='text-red-600' />
+							<span className='flex items-center gap-2'>
+								<svg className='w-4 h-4 text-red-600' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+									<path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' />
+								</svg>
+								{hideFromSearch ? 'Protected - Direct Link Only' : 'Searchable'}
+							</span>
+						</label>
+						<div className='mt-2 text-[10px] text-gray-500 h-4'>{hideSearchSaving? 'Saving…' : (hideSearchSavedAt? 'Saved' : '')}</div>
+						{hideFromSearch && (
+							<div className='mt-2 p-3 bg-red-50 border border-red-200 rounded text-[11px] text-red-800'>
+								<strong>🔒 Protected Organization:</strong> This organization will NEVER appear in public searches or listings. Only accessible via direct link. Use this for sensitive locations or security concerns.
+							</div>
+						)}
+						{!hideFromSearch && (
+							<div className='mt-2 text-[11px] text-gray-500'>
+								When checked, your organization will be completely hidden from all search and discovery features for safety/security reasons.
+							</div>
+						)}
+					</div>
+				</div>
 			</div>
 		</div>
 	);

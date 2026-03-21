@@ -4,7 +4,7 @@ import { storage } from '../src/lib/firebase';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
-import { updateProject, deleteProject } from '@/lib/dal';
+import { updateProject, deleteProject, fieldDelete } from '@/lib/dal';
 
 interface ProjectSettingsTabProps {
   projectId: string; // display / code id
@@ -70,6 +70,10 @@ export default function ProjectSettingsTab({
   const [savingPerms, setSavingPerms] = useState(false);
   const [savedAt, setSavedAt] = useState<number|undefined>(undefined);
   const [allowRepSettings, setAllowRepSettings] = useState<boolean>(!!project?.settingsAllowRepresentative);
+
+  // PIN Protection
+  const [accessPin, setAccessPin] = useState<string>(project?.accessPin || '');
+  const [showPinInput, setShowPinInput] = useState<boolean>(!!project?.accessPin);
 
   // Theme customization (mirrors OrgSettingsTab)
   const THEME_DEFAULTS = {
@@ -243,8 +247,25 @@ export default function ProjectSettingsTab({
     setSavingPerms(true);
     try {
       const clean = sanitizeAccess(accessSettings);
-  await updateProject(docId || projectId, { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings } as any);
-      setProject((p:any)=> ({ ...p, accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings }));
+      const pinValue = showPinInput && accessPin.trim() ? accessPin.trim() : null;
+      
+      const updateData: any = { 
+        accessSettings: clean, 
+        representatives, 
+        supporters, 
+        settingsAllowRepresentative: allowRepSettings
+      };
+      
+      if (pinValue) {
+        updateData.accessPin = pinValue;
+        updateData.authorizedViewers = project?.authorizedViewers || [];
+      } else {
+        updateData.accessPin = fieldDelete();
+        updateData.authorizedViewers = fieldDelete();
+      }
+      
+  await updateProject(docId || projectId, updateData as any);
+      setProject((p:any)=> ({ ...p, ...updateData }));
       setSavedAt(Date.now());
     } catch(e){ /* ignore */ }
     finally { setSavingPerms(false); }
@@ -529,6 +550,70 @@ export default function ProjectSettingsTab({
         </div>
         <p className="text-[11px] text-gray-400 leading-relaxed">Roles cascade upward. Public edits are never allowed. Representatives/supporters lists are raw identifiers (UID or email) that your auth rules can interpret.</p>
       </div>
+
+      {/* PIN Protection */}
+      <div className="border-t border-gray-100 pt-6">
+        <h3 className="font-semibold text-brand-main mb-3 flex items-center gap-2">
+          <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          PIN Protection
+        </h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 text-sm">
+            <input 
+              type="checkbox" 
+              checked={showPinInput} 
+              onChange={e => {
+                setShowPinInput(e.target.checked);
+                if (!e.target.checked) setAccessPin('');
+              }}
+              disabled={!allowEdit}
+              className="text-red-600 focus:ring-red-500"
+            />
+            <span className="font-medium">Require PIN to view this project</span>
+          </label>
+          
+          {showPinInput && (
+            <div className="ml-6 space-y-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Access PIN (4-6 digits)</label>
+                <input
+                  type="text"
+                  value={accessPin}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\\D/g, '').slice(0, 6);
+                    setAccessPin(val);
+                  }}
+                  placeholder="e.g., 1234"
+                  maxLength={6}
+                  disabled={!allowEdit}
+                  className="w-40 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-red-500 focus:outline-none disabled:opacity-50"
+                />
+              </div>
+              {accessPin && accessPin.length >= 4 && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-xs text-red-800">
+                    <strong className="flex items-center gap-1 mb-1">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                      Secure Project
+                    </strong>
+                    Visitors will need to enter this PIN to view the project. Logged-in users who enter the correct PIN will be granted permanent access.
+                  </p>
+                </div>
+              )}
+              {project?.authorizedViewers && project.authorizedViewers.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  {project.authorizedViewers.length} authorized viewer{project.authorizedViewers.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="pt-2">
         <h2 className="text-lg font-semibold text-brand-main mb-1">Danger Zone</h2>
         <p className="text-sm text-gray-600">Deleting a project is permanent. All updates and data stored directly on this project document will be removed. This action cannot be undone.</p>

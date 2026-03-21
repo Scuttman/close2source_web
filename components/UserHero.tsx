@@ -9,6 +9,7 @@ import { subscribeUser } from "@/lib/dal";
 
 export default function UserHero() {
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [credits, setCredits] = useState<number | null>(null);
   const auth = getAuth(app);
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function UserHero() {
     let unsubscribeSnap: (() => void) | null = null;
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
+      setAuthReady(true);
       if (unsubscribeSnap) {
         unsubscribeSnap();
         unsubscribeSnap = null;
@@ -36,6 +38,12 @@ export default function UserHero() {
       if (unsubscribeSnap) unsubscribeSnap();
     };
   }, [auth]);
+
+  // While Firebase is still resolving auth state, render a neutral placeholder
+  // to prevent the Login button flashing on every page load for logged-in users.
+  if (!authReady) {
+    return <span className="inline-block px-5 py-2 rounded-full bg-white/20 text-transparent select-none" aria-hidden>Login</span>;
+  }
 
   if (!user) {
     return (

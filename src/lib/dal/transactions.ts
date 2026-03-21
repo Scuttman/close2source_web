@@ -169,6 +169,7 @@ export async function acceptOrgInvite(
     const orgData: any = orgSnap.data();
 
     const team: any[] = Array.isArray(orgData.team) ? orgData.team : [];
+    const memberUids: string[] = Array.isArray(orgData.memberUids) ? orgData.memberUids : [];
     const already = team.some(
       (m: any) =>
         (m.uid && m.uid === user.uid) ||
@@ -183,8 +184,14 @@ export async function acceptOrgInvite(
       role: memberRole,
     };
     const newTeam = already ? team : [...team, member];
+    const newMemberUids = (already || memberUids.includes(user.uid)) 
+      ? memberUids 
+      : [...memberUids, user.uid];
 
-    tx.update(orgRef, { team: newTeam });
+    tx.update(orgRef, { 
+      team: newTeam,
+      memberUids: newMemberUids 
+    });
     tx.update(inviteRef, {
       status: 'accepted',
       acceptedAt: new Date().toISOString(),
@@ -210,6 +217,7 @@ export interface JoinOrgByPinInput {
 
 /**
  * Atomically adds a user to an org's team array (join-by-PIN flow).
+ * Also maintains the memberUids array for efficient querying.
  * The caller is expected to validate the PIN before calling this.
  */
 export async function joinOrgByPin(input: JoinOrgByPinInput): Promise<void> {
@@ -218,7 +226,10 @@ export async function joinOrgByPin(input: JoinOrgByPinInput): Promise<void> {
   await runTransaction(db(), async (tx) => {
     const orgRef = doc(db(), 'organizations', orgDocId);
     const latest = await tx.get(orgRef);
-    const latestTeam: any[] = Array.isArray(latest.data()?.team) ? latest.data()!.team : [];
+    const orgData = latest.data();
+    const latestTeam: any[] = Array.isArray(orgData?.team) ? orgData.team : [];
+    const latestMemberUids: string[] = Array.isArray(orgData?.memberUids) ? orgData.memberUids : [];
+    
     const stillMember = latestTeam.some((m: any) => m.uid === user.uid);
     if (stillMember) return; // idempotent
 
@@ -229,7 +240,17 @@ export async function joinOrgByPin(input: JoinOrgByPinInput): Promise<void> {
       type: 'user',
       role: 'Member',
     };
-    tx.update(orgRef, { team: [...latestTeam, member] });
+    
+    // Update both team array and memberUids array
+    const updatedTeam = [...latestTeam, member];
+    const updatedMemberUids = latestMemberUids.includes(user.uid) 
+      ? latestMemberUids 
+      : [...latestMemberUids, user.uid];
+    
+    tx.update(orgRef, { 
+      team: updatedTeam,
+      memberUids: updatedMemberUids 
+    });
   });
 }
 
@@ -269,18 +290,30 @@ export async function deleteUserAccount(input: DeleteAccountInput): Promise<void
     batch.delete(doc(db(), 'organizations', org.docId));
   }
 
-  // 3. Remove user from team of member orgs
+  // 3. Remove user from team and memberUids of member orgs
   for (const org of memberOrgs) {
     const orgRef = doc(db(), 'organizations', org.docId);
     const orgSnap = await getDoc(orgRef);
     if (orgSnap.exists()) {
-      const currentTeam: any[] = Array.isArray(orgSnap.data().team)
-        ? orgSnap.data().team
+      const orgData = orgSnap.data();
+      const currentTeam: any[] = Array.isArray(orgData.team)
+        ? orgData.team
         : [];
+      const currentMemberUids: string[] = Array.isArray(orgData.memberUids)
+        ? orgData.memberUids
+        : [];
+      
       const updatedTeam = currentTeam.filter(
         (m: any) => m.uid !== uid && m.email !== email,
       );
-      batch.update(orgRef, { team: updatedTeam });
+      const updatedMemberUids = currentMemberUids.filter(
+        (memberUid: string) => memberUid !== uid,
+      );
+      
+      batch.update(orgRef, { 
+        team: updatedTeam,
+        memberUids: updatedMemberUids 
+      });
     }
   }
 

@@ -70,12 +70,8 @@ service cloud.firestore {
 
     /* ---------- Projects ---------- */
     match /projects/{projectId} {
-      // Public non-draft projects are browsable by anyone (supports public directory)
-      allow read: if resource.data.visibility == 'public'
-                     && resource.data.status != 'draft';
-      // Creator or SuperAdmin: full access including private and draft
-      allow read: if isSignedIn()
-                     && (request.auth.uid == resource.data.createdBy || isSuperAdmin());
+      // All projects are publicly readable so profiles are viewable without authentication
+      allow read: if true;
       // Any authenticated user may create a new project (they become createdBy)
       allow create: if isSignedIn();
       // Only creator or SuperAdmin may modify or remove
@@ -86,9 +82,10 @@ service cloud.firestore {
                                && (request.auth.uid == resource.data.createdBy
                                    || isSuperAdmin());
     }
-    // Project sub-collections (e.g. partners, comments): authenticated users only
+    // Project sub-collections: public read so profile pages work without authentication
     match /projects/{projectId}/{rest=**} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
     /* ---------- Organizations ---------- */

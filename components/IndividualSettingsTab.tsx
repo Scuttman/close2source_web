@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { updateIndividual } from '@/lib/dal';
+import { updateIndividual, fieldDelete } from '@/lib/dal';
 
 export type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
 const ROLES: AccessLevel[] = ['public','supporter','representative','owner'];
@@ -52,6 +52,8 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number|undefined>(undefined);
   const [allowRepSettings, setAllowRepSettings] = useState<boolean>(!!individual?.settingsAllowRepresentative);
+  const [accessPin, setAccessPin] = useState<string>(individual?.accessPin || '');
+  const [showPinInput, setShowPinInput] = useState<boolean>(!!individual?.accessPin);
 
   useEffect(()=>{ setSettings(normalize(individual?.accessSettings)); },[individual?.accessSettings]);
 
@@ -89,8 +91,42 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
     setSaving(true);
     try {
       const clean = sanitizeForSave(settings);
-      await updateIndividual(individual.id, { accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings } as any);
-      onUpdate({ accessSettings: clean, representatives, supporters, settingsAllowRepresentative: allowRepSettings });
+      const pinValue = showPinInput && accessPin.trim() ? accessPin.trim() : null;
+      
+      const updateData: any = { 
+        accessSettings: clean, 
+        representatives, 
+        supporters, 
+        settingsAllowRepresentative: allowRepSettings,
+      };
+      
+      // Only include PIN fields when there's a PIN, or explicitly delete them
+      if (pinValue) {
+        updateData.accessPin = pinValue;
+        updateData.authorizedViewers = individual?.authorizedViewers || [];
+      } else {
+        updateData.accessPin = fieldDelete();
+        updateData.authorizedViewers = fieldDelete();
+      }
+      
+      await updateIndividual(individual.id, updateData as any);
+      
+      const localUpdate: any = { 
+        accessSettings: clean, 
+        representatives, 
+        supporters, 
+        settingsAllowRepresentative: allowRepSettings,
+      };
+      
+      if (pinValue) {
+        localUpdate.accessPin = pinValue;
+        localUpdate.authorizedViewers = individual?.authorizedViewers || [];
+      } else {
+        localUpdate.accessPin = undefined;
+        localUpdate.authorizedViewers = undefined;
+      }
+      
+      onUpdate(localUpdate);
       setSavedAt(Date.now());
     } catch(e){ /* ignore */ }
     finally { setSaving(false); }
@@ -183,6 +219,61 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
           ) : <div className="text-xs text-gray-400">No supporters.</div>}
         </div>
       </div>
+      
+      {/* PIN Protection */}
+      <div className="border-t border-gray-100 pt-6">
+        <h3 className="font-semibold text-brand-main mb-3 flex items-center gap-2">
+          <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          PIN Protection
+        </h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 text-sm">
+            <input 
+              type="checkbox" 
+              checked={showPinInput} 
+              onChange={e => {
+                setShowPinInput(e.target.checked);
+                if (!e.target.checked) setAccessPin('');
+              }}
+              className="text-red-600 focus:ring-red-500"
+            />
+            <span className="font-medium">Require PIN to view this profile</span>
+          </label>
+          
+          {showPinInput && (
+            <div className="ml-6 space-y-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Access PIN (4-6 digits)</label>
+                <input
+                  type="text"
+                  value={accessPin}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setAccessPin(val);
+                  }}
+                  placeholder="e.g., 1234"
+                  maxLength={6}
+                  className="w-40 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-red-500 focus:outline-none"
+                />
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-xs text-red-800 leading-relaxed">
+                  <strong>🔒 Secure Profile:</strong> Visitors will need to enter this PIN to view your profile. 
+                  Once a logged-in user enters the correct PIN, they won't need to enter it again.
+                </p>
+              </div>
+              {individual?.authorizedViewers && individual.authorizedViewers.length > 0 && (
+                <div className="text-xs text-gray-500">
+                  {individual.authorizedViewers.length} authorized viewer{individual.authorizedViewers.length !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="flex items-center gap-4">
         <button onClick={save} disabled={saving} className="px-4 py-2 rounded bg-brand-main text-white text-sm font-semibold disabled:opacity-50">{saving? 'Saving...':'Save Settings'}</button>
         {savedAt && <span className="text-xs text-gray-500">Saved {new Date(savedAt).toLocaleTimeString()}</span>}

@@ -35,7 +35,7 @@ function Home() {
       try {
         if (kind === 'project') {
           const proj = await getProjectByCode(raw);
-          if (proj) { window.location.replace(`/projects/${proj.id}/proposal`); return; }
+          if (proj) { window.location.replace(`/projects/${proj.id}/profile`); return; }
         } else if (kind === 'organization') {
           const org = await getOrgByCode(raw);
           if (org) { window.location.replace(`/org/${raw}`); return; }
@@ -66,7 +66,7 @@ function Home() {
       if(!kind){ setCodeError('Unknown code prefix'); return; }
       if(kind==='project'){
         const proj = await getProjectByCode(raw);
-        if(proj){ window.location.href = `/projects/${proj.id}/proposal`; return; }
+        if(proj){ window.location.href = `/projects/${proj.id}/profile`; return; }
       } else if(kind==='organization'){
         const org = await getOrgByCode(raw);
         if(org){ window.location.href = `/org/${raw}`; return; }

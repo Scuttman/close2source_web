@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "../../components/PageShell";
+import C2SStampSVG from "../../components/C2SStampSVG";
 import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import { app } from "../../src/lib/firebase";
 import { getUser, createUserDoc } from "@/lib/dal";
@@ -129,11 +130,8 @@ export default function LoginPage() {
         />
         {/* Overlay with branding */}
         <div className="absolute inset-0 bg-gradient-to-br from-brand-main/70 via-brand-main/40 to-transparent" />
-        <div className="relative z-10 flex flex-col justify-end p-12 text-white">
-          <h2 className="text-4xl font-bold mb-3 drop-shadow-lg">Close2Source</h2>
-          <p className="text-lg text-white/90 max-w-md drop-shadow">
-            Connecting communities to sustainable development projects across Africa.
-          </p>
+        <div className="relative z-10 flex flex-col items-center justify-center w-full h-full">
+          <C2SStampSVG message="Welcome! Please Sign In!" size={350} />
         </div>
       </div>
 

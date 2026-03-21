@@ -164,7 +164,7 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
 
   function handleCreateOrganization() {
     // Navigate to org creation with return URL
-    const returnUrl = `/projects/${project.projectId || projectDocId}/proposal?openPartner=true`;
+    const returnUrl = `/projects/${project.projectId || projectDocId}/profile?openPartner=true`;
     router.push(`/org/create?returnUrl=${encodeURIComponent(returnUrl)}`);
   }
 
@@ -192,7 +192,6 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
         supportType,
         message: message || undefined,
         addedAt: new Date().toISOString(),
-        timestamp: fieldServerTimestamp()
       };
 
       if (partnerType === 'organization' && selectedOrg) {

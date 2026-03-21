@@ -666,7 +666,7 @@ function AIRegisterProjectPageInner() {
       localStorage.removeItem(locationStorageKey);
 
       // Navigate to the new project profile
-      router.push(`/projects/${projectId}/proposal`);
+      router.push(`/projects/${projectId}/profile`);
 
     } catch (e: any) {
       setCreateError(e.message || 'Failed to create project');

@@ -8,6 +8,7 @@ import PageShell from 'components/PageShell';
 import Image from 'next/image';
 import ProfileLoadingShell from 'components/ProfileLoadingShell';
 import { MapPreview } from 'components/MapPreview';
+import { getCountryCenter, isSensitiveLocation } from '@/lib/countryHelpers';
 import { RectangleGroupIcon, MapPinIcon, PencilIcon, CheckIcon, TrashIcon, PlusIcon, XMarkIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 type FullProject = ProjectDoc & { id: string };
@@ -65,12 +66,13 @@ export default function ShowcasePage() {
           docIds.map(id => getProject(id)),
         );
         if (!cancelled) {
-          const validProjects = results
+          const allProjects = results
             .filter((r): r is PromiseFulfilledResult<FullProject> =>
               r.status === 'fulfilled' && r.value !== null)
             .map(r => r.value);
-          setAllFetchedProjects(validProjects);
-          setProjects(validProjects);
+          setAllFetchedProjects(allProjects);
+          // Only hide draft projects for non-owners
+          setProjects(allProjects);
           setLoading(false);
         }
       } catch (e: any) {
@@ -181,12 +183,12 @@ export default function ShowcasePage() {
 
   return (
     <PageShell title={<span>{showcase.title}</span>}>
-      <div className="space-y-8 max-w-5xl mx-auto">
+      <div className="space-y-4 sm:space-y-8 max-w-5xl mx-auto">
 
         {/* Header */}
-        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-8 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 sm:p-8 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
               <div className="inline-block mb-3 px-3 py-1 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full uppercase tracking-wider">
                 Project Showcase
               </div>
@@ -414,9 +416,15 @@ export default function ShowcasePage() {
 function locationInfo(project: FullProject): { key: string; name: string; address: string } {
   const loc = project.location;
   const locName = (project as any).locationName || '';
-  const town    = loc?.town    || loc?.name    || '';
+  const isSensitive = loc?.sensitiveLocation;
+  const town    = isSensitive ? '' : (loc?.town || loc?.name || '');
   const country = loc?.country || '';
-  const address = [town, country].filter(Boolean).join(', ');
+  
+  // For sensitive locations, only show country
+  const address = isSensitive 
+    ? `${country} (exact location hidden for safety)`
+    : [town, country].filter(Boolean).join(', ');
+  
   // Use locationName as the primary grouping key, fall back to town+country
   const key = locName || [town, country].filter(Boolean).join('||');
   return { key, name: locName, address };
@@ -457,11 +465,11 @@ function ProjectCard({ project, showcaseCode }: { project: FullProject; showcase
 
   return (
     <a
-      href={`/projects/${project.projectId || project.id}/proposal${suffix}`}
+      href={`/projects/${project.projectId || project.id}/profile${suffix}`}
       className="group rounded-2xl overflow-hidden border border-gray-200 bg-white hover:shadow-lg transition flex flex-col"
     >
       {project.coverPhotoUrl ? (
-        <div className="relative w-full h-44">
+        <div className="relative w-full h-44 bg-gray-100">
           <Image
             fill
             src={project.coverPhotoUrl}
@@ -548,8 +556,16 @@ function ProjectCard({ project, showcaseCode }: { project: FullProject; showcase
 /** Find the first valid lat/lng from a list of projects. */
 function findGroupCoords(projects: FullProject[]): { lat: number; lng: number } | null {
   for (const p of projects) {
-    const lat = p.location?.latitude;
-    const lng = p.location?.longitude;
+    const loc = p.location;
+    
+    // If sensitive location, use country center
+    if (loc?.sensitiveLocation && loc.country) {
+      const center = getCountryCenter(loc.country);
+      if (center) return { lat: center.lat, lng: center.lng };
+    }
+    
+    const lat = loc?.latitude;
+    const lng = loc?.longitude;
     if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
       return { lat, lng };
     }
@@ -563,8 +579,12 @@ function ProjectGridWithMap({ projects, showcaseCode }: { projects: FullProject[
   return (
     <div className="flex gap-6 items-stretch">
       {/* Project cards — 2 columns, wrapping to extra rows */}
-      <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-6">
-        {projects.map(p => <ProjectCard key={p.id} project={p} showcaseCode={showcaseCode} />)}
+      <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
+        {projects.map(p => (
+          <div key={p.id} className="w-full">
+            <ProjectCard project={p} showcaseCode={showcaseCode} />
+          </div>
+        ))}
       </div>
 
       {/* Map — right side, stretches to full height of card grid, hidden on mobile */}

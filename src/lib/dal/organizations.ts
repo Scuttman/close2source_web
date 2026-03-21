@@ -100,32 +100,102 @@ export async function getOrgByCode(orgId: string): Promise<(OrgDoc & { id: strin
   return data;
 }
 
-/** Fetch all organizations owned by a given user. Not cached (list can grow). */
+/** 
+ * Fetch all organizations where the user is either the owner OR a team member.
+ * Not cached (list can grow). 
+ * 
+ * Uses efficient Firestore queries via the memberUids array:
+ * - Query 1: ownerUid == uid (organizations owned by user)
+ * - Query 2: memberUids array-contains uid (organizations where user is a member)
+ */
 export async function getUserOrgs(uid: string): Promise<(OrgDoc & { id: string })[]> {
-  const snap = await getDocs(
+  // Query 1: Organizations where user is the owner
+  const ownedSnap = await getDocs(
     query(collection(db(), 'organizations'), where('ownerUid', '==', uid)),
   );
-  return snap.docs.map(d => ({ id: d.id, ...(d.data() as OrgDoc) }));
+  
+  // Query 2: Organizations where user is in memberUids array
+  const memberSnap = await getDocs(
+    query(collection(db(), 'organizations'), where('memberUids', 'array-contains', uid)),
+  );
+  
+  // Merge results and deduplicate by document ID
+  const orgMap = new Map<string, OrgDoc & { id: string }>();
+  
+  ownedSnap.docs.forEach(d => {
+    orgMap.set(d.id, { id: d.id, ...(d.data() as OrgDoc) });
+  });
+  
+  memberSnap.docs.forEach(d => {
+    if (!orgMap.has(d.id)) {
+      orgMap.set(d.id, { id: d.id, ...(d.data() as OrgDoc) });
+    }
+  });
+  
+  return Array.from(orgMap.values());
 }
 
 /**
- * Subscribe to the orgs list for a user.  Each snapshot repopulates the
- * per-org doc cache entries so that getOrg/getOrgByCode calls hit cache.
+ * Subscribe to the orgs list for a user (both owned and team membership).
+ * Each snapshot repopulates the per-org doc cache entries so that 
+ * getOrg/getOrgByCode calls hit cache.
+ * 
+ * Note: Firestore doesn't support OR queries across different fields directly,
+ * so we maintain two separate subscriptions and merge the results.
  */
 export function subscribeUserOrgs(
   uid: string,
   onData: (orgs: (OrgDoc & { id: string })[]) => void,
   onError?: (err: Error) => void,
 ): () => void {
-  const q = query(collection(db(), 'organizations'), where('ownerUid', '==', uid));
-  return onSnapshot(q, (snap) => {
-    const orgs = snap.docs.map(d => ({ id: d.id, ...(d.data() as OrgDoc) }));
-    orgs.forEach(org => {
-      cache.set(orgDocKey(org.id), org, DalCache.TTL.ORG_DOC);
-      if (org.orgId) cache.set(orgCodeKey(org.orgId), org, DalCache.TTL.CODE_LOOKUP);
-    });
-    onData(orgs);
-  }, err => onError?.(err as Error));
+  const orgMap = new Map<string, OrgDoc & { id: string }>();
+  let ownedReady = false;
+  let memberReady = false;
+
+  const emitMerged = () => {
+    if (ownedReady && memberReady) {
+      const merged = Array.from(orgMap.values());
+      merged.forEach(org => {
+        cache.set(orgDocKey(org.id), org, DalCache.TTL.ORG_DOC);
+        if (org.orgId) cache.set(orgCodeKey(org.orgId), org, DalCache.TTL.CODE_LOOKUP);
+      });
+      onData(merged);
+    }
+  };
+
+  // Subscription 1: Organizations where user is owner
+  const unsubOwned = onSnapshot(
+    query(collection(db(), 'organizations'), where('ownerUid', '==', uid)),
+    (snap) => {
+      snap.docs.forEach(d => {
+        orgMap.set(d.id, { id: d.id, ...(d.data() as OrgDoc) });
+      });
+      ownedReady = true;
+      emitMerged();
+    },
+    err => onError?.(err as Error)
+  );
+
+  // Subscription 2: Organizations where user is in memberUids
+  const unsubMember = onSnapshot(
+    query(collection(db(), 'organizations'), where('memberUids', 'array-contains', uid)),
+    (snap) => {
+      snap.docs.forEach(d => {
+        if (!orgMap.has(d.id)) {
+          orgMap.set(d.id, { id: d.id, ...(d.data() as OrgDoc) });
+        }
+      });
+      memberReady = true;
+      emitMerged();
+    },
+    err => onError?.(err as Error)
+  );
+
+  // Return combined unsubscribe function
+  return () => {
+    unsubOwned();
+    unsubMember();
+  };
 }
 
 /**

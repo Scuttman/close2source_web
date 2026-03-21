@@ -66,6 +66,8 @@ export interface OrgLocation {
   whatWeDo?: string;
   lat?: number;
   lng?: number;
+  country?: string;         // Country name for country-level display
+  sensitiveLocation?: boolean;  // If true, only show country-level map pin
 }
 
 export interface OrgTeamMember {
@@ -94,12 +96,14 @@ export interface OrgDoc {
   website?: string;
   locations?: OrgLocation[];
   team?: OrgTeamMember[];
+  memberUids?: string[];   // array of all member UIDs (for efficient querying)
   partners?: string[];     // array of project IDs
   accentColor?: string;
   accentTextColor?: string;
   joinPin?: string;
   orgType?: string;
   publicVisible?: boolean;
+  hideFromSearch?: boolean;  // If true, only accessible via direct link
   accessSettings?: Record<string, { view: string[]; edit: string[] }>;
   themeHeaderBg?: string;
   themeHeaderText?: string;
@@ -124,6 +128,7 @@ export interface ProjectLocation {
   country?: string;
   latitude?: number;
   longitude?: number;
+  sensitiveLocation?: boolean;  // If true, only show country-level map pin and hide address details
 }
 
 export interface ProjectTeamMember {
@@ -139,6 +144,7 @@ export interface ProjectDoc {
   description?: string;
   createdBy: string;       // uid
   organizationId?: string; // org short code
+  originatingOrganizationDbId?: string; // org Firestore doc id
   status: ProjectStatus;
   visibility: ProjectVisibility;
   location?: ProjectLocation;
@@ -158,6 +164,16 @@ export interface ProjectDoc {
   moderationReviewedAt?: string;
   moderationReviewedBy?: string;
   amountPledged?: number;
+  budgetPhases?: {
+    id: string;
+    name: string;
+    notes?: string;
+    target: number;
+    pledged?: number;
+    raised?: number;
+  }[];
+  accessPin?: string; // 4-6 digit PIN for view protection
+  authorizedViewers?: string[]; // UIDs of users who have entered correct PIN
   createdAt?: unknown;
 }
 
@@ -181,6 +197,8 @@ export interface IndividualDoc {
   coverPhotoUrl?: string;
   status?: ProjectStatus;
   visibility?: ProjectVisibility;
+  accessPin?: string;      // 4-6 digit PIN for access control
+  authorizedViewers?: string[];  // UIDs of users who have entered correct PIN
   createdAt?: unknown;
 }
 

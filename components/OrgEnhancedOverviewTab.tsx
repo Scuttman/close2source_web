@@ -258,7 +258,7 @@ export default function OrgEnhancedOverview({ org, isOwner, editMode, onOrgUpdat
               const isPublic = (p.visibility ?? 'public') === 'public';
               const budget = p.totalBudget ? `${p.currency || '$'}${p.totalBudget.toLocaleString()}` : null;
               return (
-                <a key={p.id} href={`/projects/${p.projectId || p.id}/proposal`} className="group rounded-md border border-brand-main/10 overflow-hidden bg-white hover:shadow transition relative flex flex-col">
+                <a key={p.id} href={`/projects/${p.projectId || p.id}`} className="group rounded-md border border-brand-main/10 overflow-hidden bg-white hover:shadow transition relative flex flex-col">
                   {p.coverPhotoUrl && (
                     <div className="h-32 w-full overflow-hidden">
                       <img src={p.coverPhotoUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition" />

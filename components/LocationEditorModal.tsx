@@ -1,5 +1,6 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import InteractiveMapPicker from './InteractiveMapPicker';
 import AITextarea from './AITextarea';
 import { MapPinIcon, XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
@@ -16,6 +17,7 @@ export interface LocationEditorValues {
     town?: string;
     country?: string;
     name?: string;
+    sensitiveLocation?: boolean;
   };
 }
 
@@ -29,6 +31,9 @@ interface Props {
 }
 
 export default function LocationEditorModal({ initial, saving, onSave, onClose, orgLocations = [] }: Props) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [selectedLocationId, setSelectedLocationId] = useState(initial.locationId ?? '');
   const [locationName, setLocationName] = useState(initial.locationName ?? '');
   const [locationDescription, setLocationDescription] = useState(initial.locationDescription ?? '');
@@ -44,6 +49,7 @@ export default function LocationEditorModal({ initial, saving, onSave, onClose, 
 
   const [town, setTown] = useState(initial.location?.town ?? '');
   const [country, setCountry] = useState(initial.location?.country ?? '');
+  const [sensitiveLocation, setSensitiveLocation] = useState(initial.location?.sensitiveLocation ?? false);
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -100,9 +106,20 @@ export default function LocationEditorModal({ initial, saving, onSave, onClose, 
 
   function handleSave() {
     const loc = mapVisible
-      ? { latitude: mapLat!, longitude: mapLng!, zoom, town: town || undefined, country: country || undefined }
+      ? { 
+          latitude: mapLat!, 
+          longitude: mapLng!, 
+          zoom, 
+          town: town || undefined, 
+          country: country || undefined,
+          ...(sensitiveLocation ? { sensitiveLocation: true } : {})
+        }
       : town || country
-        ? { town: town || undefined, country: country || undefined }
+        ? { 
+            town: town || undefined, 
+            country: country || undefined,
+            ...(sensitiveLocation ? { sensitiveLocation: true } : {})
+          }
         : undefined;
     onSave({
       locationId: selectedLocationId || undefined,
@@ -118,6 +135,7 @@ export default function LocationEditorModal({ initial, saving, onSave, onClose, 
     setLocationName(loc.name);
     if (loc.town) setTown(loc.town);
     if (loc.country) setCountry(loc.country);
+    if (loc.sensitiveLocation !== undefined) setSensitiveLocation(loc.sensitiveLocation);
     if (loc.latitude !== undefined && loc.longitude !== undefined) {
       setMapLat(loc.latitude);
       setMapLng(loc.longitude);
@@ -127,8 +145,10 @@ export default function LocationEditorModal({ initial, saving, onSave, onClose, 
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white" style={{ overscrollBehavior: 'contain' }}>
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[500] flex flex-col bg-white" style={{ overscrollBehavior: 'contain' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b bg-white flex-shrink-0 shadow-sm">
         <h2 className="text-lg font-bold flex items-center gap-2">
@@ -374,11 +394,37 @@ export default function LocationEditorModal({ initial, saving, onSave, onClose, 
                 />
               </div>
             </div>
+
+            {/* Sensitive Location Checkbox */}
+            <div className="border-t border-orange-100 pt-4">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={sensitiveLocation}
+                  onChange={e => setSensitiveLocation(e.target.checked)}
+                  className="mt-0.5 text-red-600 focus:ring-red-500"
+                />
+                <div>
+                  <div className="flex items-center gap-2 font-medium text-gray-700">
+                    <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <span>Protected/Sensitive Location</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {sensitiveLocation 
+                      ? '🔒 Maps will only show country-level pin. Address details hidden for safety.' 
+                      : 'Check this for security-sensitive locations (persecution risk, safety concerns, etc.)'
+                    }
+                  </p>
+                </div>
+              </label>
+            </div>
           </div>
 
         </div>
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }

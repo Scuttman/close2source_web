@@ -64,13 +64,21 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
           const newTeam = [ownerMember, ...team];
           setTeam(newTeam);
           if(isOwner){ // persist only if you're the owner viewing (avoid unauthorized writes)
-            try { await updateOrg(org.id, { team: newTeam }); } catch {/* ignore */}
+            try { 
+              const memberUids = extractMemberUids(newTeam);
+              await updateOrg(org.id, { team: newTeam, memberUids }); 
+            } catch {/* ignore */}
           }
         } else {
           // Fallback minimal member
           const fallback = { uid: org.ownerUid, id: org.ownerUid, name: 'Owner', type: 'user', role: 'Owner' };
           const newTeam = [fallback, ...team]; setTeam(newTeam);
-          if(isOwner){ try { await updateOrg(org.id, { team: newTeam }); } catch {/* ignore */} }
+          if(isOwner){ 
+            try { 
+              const memberUids = extractMemberUids(newTeam);
+              await updateOrg(org.id, { team: newTeam, memberUids }); 
+            } catch {/* ignore */} 
+          }
         }
       } finally { setLoadingOwner(false); }
     }
@@ -91,8 +99,23 @@ export default function OrgTeamTab({ org, isOwner, editMode }: OrgTeamTabProps){
 
   const ROLES = ['Member', 'Admin', 'Representative', 'Supporter'];
 
+  // Helper to extract unique UIDs from team array for memberUids field
+  function extractMemberUids(teamArray: any[]): string[] {
+    const uids = new Set<string>();
+    // Add owner UID
+    if (org.ownerUid) uids.add(org.ownerUid);
+    // Add all team member UIDs
+    teamArray.forEach(member => {
+      if (member.uid) uids.add(member.uid);
+    });
+    return Array.from(uids);
+  }
+
   async function persist(newTeam:any[]){
-    try { await updateOrg(org.id, { team: newTeam }); }
+    try { 
+      const memberUids = extractMemberUids(newTeam);
+      await updateOrg(org.id, { team: newTeam, memberUids }); 
+    }
     catch(e:any){ alert(e.message || 'Save failed'); }
   }
 

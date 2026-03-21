@@ -6,6 +6,7 @@ import { resizeImageFile, IMAGE_MAX_THUMB } from '../src/lib/imageResize';
 import { improveTextWithAI } from '../src/lib/ai';
 import { logCreditTransaction } from '../src/lib/credits';
 import { updateProject, getUser, updateUser, getUserOrgs } from '@/lib/dal';
+import { getCountryCenter, isSensitiveLocation } from '../src/lib/countryHelpers';
 import MapPreview from './MapPreview';
 
 interface ProjectOverviewTabProps {
@@ -60,6 +61,13 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
 
   function getMapParams(loc: any): { lat: number; lng: number; zoom: number } | null {
     if (!loc) return null;
+    
+    // If sensitive location, use country center
+    if (loc.sensitiveLocation && loc.country) {
+      const center = getCountryCenter(loc.country);
+      if (center) return { lat: center.lat, lng: center.lng, zoom: center.zoom || 6 };
+    }
+    
     const hasCoords = typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
     if (hasCoords) return { lat: loc.latitude, lng: loc.longitude, zoom: 13 };
     const countryCenters: Record<string, { lat: number; lng: number; zoom: number }> = {
@@ -285,7 +293,22 @@ export default function ProjectOverviewTab({ project, projectId, setProject, isP
               <div className="mt-4">
                 <h2 className="text-base font-semibold text-brand-main mb-2">Project Location Map</h2>
                 {project.location && (project.location.town || project.location.country) && (
-                  <div className="text-sm mb-2"><span className="font-semibold">Location:</span> {project.location.town ? `${project.location.town}, ` : ''}{project.location.country || ''}</div>
+                  <div className="text-sm mb-2">
+                    <span className="font-semibold">Location:</span>{' '}
+                    {project.location.sensitiveLocation ? (
+                      <>
+                        {project.location.country || 'Protected Location'}{' '}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-200 rounded text-[10px] text-red-700 font-medium ml-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          Protected - exact location hidden
+                        </span>
+                      </>
+                    ) : (
+                      <>{project.location.town ? `${project.location.town}, ` : ''}{project.location.country || ''}</>
+                    )}
+                  </div>
                 )}
                 <MapPreview lat={(mapParams||geoParams)!.lat} lng={(mapParams||geoParams)!.lng} zoom={(mapParams||geoParams)!.zoom} className="w-full" />
                 {(!project.location?.latitude && !project.location?.longitude) && (

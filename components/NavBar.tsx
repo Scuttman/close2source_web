@@ -11,11 +11,13 @@ const UserHero = dynamic(() => import("./UserHero"), { ssr: false });
 
 export default function NavBar() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const auth = getAuth(app);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setIsLoggedIn(!!user);
+      setAuthReady(true);
     });
     return () => unsubscribe();
   }, [auth]);
@@ -29,7 +31,7 @@ export default function NavBar() {
       </div>
       <div className="flex items-center gap-6">
         <ul className="flex gap-6 text-white font-medium">
-          <li><Link href={isLoggedIn ? "/profile" : "/"}>Home</Link></li>
+          <li><Link href={authReady && isLoggedIn ? "/profile" : "/"}>Home</Link></li>
           <li><Link href="/about">About</Link></li>
           <li><Link href="/contact">Contact</Link></li>
         </ul>

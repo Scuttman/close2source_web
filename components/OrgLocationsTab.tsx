@@ -15,6 +15,7 @@ export interface OrgLocation {
   description?: string;
   vision?: string;
   whatWeDo?: string;
+  sensitiveLocation?: boolean;  // If true, only show country-level map
 }
 
 interface Props {
@@ -32,6 +33,7 @@ const emptyForm = (): Omit<OrgLocation, 'id'> => ({
   description: '',
   vision: '',
   whatWeDo: '',
+  sensitiveLocation: false,
 });
 
 function nanoid8() {
@@ -57,10 +59,20 @@ function LocationCard({
             <MapPinIcon className="w-5 h-5 text-orange-600" />
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-gray-900 text-sm truncate">{loc.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-gray-900 text-sm truncate">{loc.name}</p>
+              {loc.sensitiveLocation && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-200 rounded text-[10px] text-red-700 font-medium whitespace-nowrap">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Protected
+                </span>
+              )}
+            </div>
             {(loc.town || loc.country) && (
               <p className="text-xs text-gray-500 mt-0.5">
-                {[loc.town, loc.country].filter(Boolean).join(', ')}
+                {loc.sensitiveLocation ? `${loc.country || 'Protected Location'} (exact location hidden)` : [loc.town, loc.country].filter(Boolean).join(', ')}
               </p>
             )}
             {loc.vision && (
@@ -205,6 +217,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
           description: form.description?.trim() || undefined,
           vision: form.vision?.trim() || undefined,
           whatWeDo: form.whatWeDo?.trim() || undefined,
+          sensitiveLocation: form.sensitiveLocation || undefined,
         };
         // Remove undefined keys for Firestore
         const clean: any = Object.fromEntries(Object.entries(updated).filter(([, v]) => v !== undefined));
@@ -221,6 +234,7 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
           description: form.description?.trim() || undefined,
           vision: form.vision?.trim() || undefined,
           whatWeDo: form.whatWeDo?.trim() || undefined,
+          sensitiveLocation: form.sensitiveLocation || undefined,
         };
         const clean: any = Object.fromEntries(Object.entries(newLoc).filter(([, v]) => v !== undefined));
         await updateOrg(org.id, { locations: fieldArrayUnion(clean) } as any);
@@ -365,6 +379,33 @@ export default function OrgLocationsTab({ org, isOwner }: Props) {
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none bg-white font-mono"
               />
             </div>
+
+            {/* Sensitive Location Checkbox */}
+            <div className="sm:col-span-2 border-t border-orange-100 pt-3">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.sensitiveLocation || false}
+                  onChange={e => setForm(prev => ({ ...prev, sensitiveLocation: e.target.checked }))}
+                  className="mt-0.5 text-red-600 focus:ring-red-500"
+                />
+                <div>
+                  <div className="flex items-center gap-2 font-medium text-gray-700">
+                    <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <span>Protected/Sensitive Location</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {form.sensitiveLocation 
+                      ? '🔒 Maps will only show country-level pin. Exact address hidden for safety.' 
+                      : 'Check this for security-sensitive locations (persecution risk, safety concerns, etc.)'
+                    }
+                  </p>
+                </div>
+              </label>
+            </div>
+
             {/* Vision */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Vision <span className="text-gray-400">(shown at top of project proposals)</span></label>

@@ -16,7 +16,9 @@ import AITextarea from "../../../../components/AITextarea";
 import LocationEditorModal from "../../../../components/LocationEditorModal";
 import ProjectAIReviewModal from "../../../../components/ProjectAIReviewModal";
 import BecomePartnerModal from "../../../../components/BecomePartnerModal";
+import ProjectPinGate from "../../../../components/ProjectPinGate";
 import type { OrgLocation } from "../../../../components/OrgLocationsTab";
+import { getCountryCenter, isSensitiveLocation, getDisplayCoordinates, getDisplayAddress } from "../../../../src/lib/countryHelpers";
 import { 
   MapPinIcon,
   CalendarIcon, 
@@ -43,7 +45,9 @@ import {
   StarIcon,
   SparklesIcon,
   ArrowDownTrayIcon,
-  ShareIcon
+  ShareIcon,
+  XMarkIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline';
 import { generateProjectPDF } from '../../../../src/lib/pdfGenerator';
 import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../../src/lib/moderation';
@@ -65,6 +69,16 @@ interface ProjectLocation {
   longitude?: number;
   zoom?: number;
   name?: string;
+  sensitiveLocation?: boolean;
+}
+
+interface BudgetPhase {
+  id: string;
+  name: string;
+  notes?: string;
+  target: number;
+  pledged?: number;
+  raised?: number;
 }
 
 interface Project {
@@ -91,6 +105,7 @@ interface Project {
   currency?: string;
   matchedFundingNote?: string;
   seekingMultiplePartners?: boolean;
+  budgetPhases?: BudgetPhase[];
   organizationId?: string;
   organizationName?: string;
   organizationLogoUrl?: string;
@@ -116,6 +131,8 @@ interface Project {
   status?: 'draft' | 'live' | 'pending_review';
   showOnOrganizationOverview?: boolean;
   locationId?: string;
+  accessPin?: string;
+  authorizedViewers?: string[];
 }
 
 function ProjectProposalInner() {
@@ -129,6 +146,7 @@ function ProjectProposalInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAuthorized, setIsAuthorized] = useState(false);
   const [editMode, setEditMode] = useState<Record<string, boolean>>({});
   const [editValues, setEditValues] = useState<Partial<Project>>({});
   const [saving, setSaving] = useState(false);
@@ -159,6 +177,7 @@ function ProjectProposalInner() {
   const [aiReviewModalOpen, setAiReviewModalOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [editPhases, setEditPhases] = useState<BudgetPhase[]>([]);
   const [orgTeamMembers, setOrgTeamMembers] = useState<any[]>([]);
   const [uploadingPersonPhoto, setUploadingPersonPhoto] = useState<number | null>(null);
   const [showOrgMemberPicker, setShowOrgMemberPicker] = useState(false);
@@ -216,6 +235,20 @@ function ProjectProposalInner() {
   const isActualCreator = !!(currentUser && project && project.createdBy === currentUser.uid);
   const isCreator = isActualCreator && !previewMode;
 
+  // PIN Authorization check
+  useEffect(() => {
+    if (!project) return;
+    const requiresPin = !!project.accessPin;
+    if (!requiresPin) {
+      setIsAuthorized(true);
+      return;
+    }
+    
+    const userIsCreator = isActualCreator;
+    const userIsAuthorized = currentUser && Array.isArray(project.authorizedViewers) && project.authorizedViewers.includes(currentUser.uid);
+    setIsAuthorized(!requiresPin || userIsCreator || userIsAuthorized);
+  }, [project, currentUser?.uid, isActualCreator]);
+
   const toggleEditMode = (section: string) => {
     setEditMode(prev => ({
       ...prev,
@@ -238,6 +271,10 @@ function ProjectProposalInner() {
       // Initialize location as empty object if not exists
       if (section === 'location' && !values.location) {
         values.location = {};
+      }
+      // Initialize budget phases from project
+      if (section === 'budget') {
+        setEditPhases(project?.budgetPhases || []);
       }
       setEditValues(values || {});
     }
@@ -325,6 +362,50 @@ function ProjectProposalInner() {
       setEditMode(prev => ({ ...prev, [section]: false }));
     } catch (err: any) {
       console.error('Error saving:', err);
+      alert('Failed to save changes: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveBudget = async () => {
+    if (!resolvedDocId) return;
+    setSaving(true);
+    try {
+      const usePhases = editPhases.length > 0;
+      const computedTotal   = usePhases ? editPhases.reduce((s, p) => s + (p.target  || 0), 0) : (editValues.totalBudget  || 0);
+      const computedPledged = usePhases ? editPhases.reduce((s, p) => s + (p.pledged || 0), 0) : (editValues.amountPledged || 0);
+      const computedRaised  = usePhases ? editPhases.reduce((s, p) => s + (p.raised  || 0), 0) : (editValues.amountRaised  || 0);
+
+      const updates: any = {
+        budgetPhases:           usePhases ? editPhases : fieldDelete(),
+        totalBudget:            computedTotal   || fieldDelete(),
+        amountPledged:          computedPledged || fieldDelete(),
+        amountRaised:           computedRaised  || fieldDelete(),
+        currency:               editValues.currency            || fieldDelete(),
+        beneficiaries:          editValues.beneficiaries       || fieldDelete(),
+        matchedFundingNote:     editValues.matchedFundingNote  || fieldDelete(),
+        seekingMultiplePartners: editValues.seekingMultiplePartners !== undefined
+          ? editValues.seekingMultiplePartners
+          : fieldDelete(),
+      };
+
+      const localUpdates: Partial<Project> = {
+        budgetPhases:           usePhases ? editPhases : undefined,
+        totalBudget:            computedTotal   || undefined,
+        amountPledged:          computedPledged || undefined,
+        amountRaised:           computedRaised  || undefined,
+        currency:               editValues.currency            || undefined,
+        beneficiaries:          editValues.beneficiaries       || undefined,
+        matchedFundingNote:     editValues.matchedFundingNote  || undefined,
+        seekingMultiplePartners: editValues.seekingMultiplePartners,
+      };
+
+      await updateProject(resolvedDocId, updates);
+      setProject(prev => prev ? { ...prev, ...localUpdates } : null);
+      setEditMode(prev => ({ ...prev, budget: false }));
+    } catch (err: any) {
+      console.error('Error saving budget:', err);
       alert('Failed to save changes: ' + err.message);
     } finally {
       setSaving(false);
@@ -456,11 +537,18 @@ function ProjectProposalInner() {
   const getMapParams = (loc: ProjectLocation | undefined): { lat: number; lng: number; zoom: number } | null => {
     if (!loc) return null;
     
+    // If sensitive location, use country center from helper
+    if (loc.sensitiveLocation && loc.country) {
+      const center = getCountryCenter(loc.country);
+      if (center) return { lat: center.lat, lng: center.lng, zoom: center.zoom || 6 };
+    }
+    
     const hasCoords = typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
     if (hasCoords && loc.latitude !== undefined && loc.longitude !== undefined) {
       return { lat: loc.latitude, lng: loc.longitude, zoom: loc.zoom || 13 };
     }
     
+    // Fallback to country center if no sensitive flag but has country
     const countryCenters: Record<string, { lat: number; lng: number; zoom: number }> = {
       kenya: { lat: -0.0236, lng: 37.9062, zoom: 6 },
       uganda: { lat: 1.3733, lng: 32.2903, zoom: 6 },
@@ -522,14 +610,22 @@ function ProjectProposalInner() {
     ? orgLocations.find(l => l.id === project.locationId) ?? null
     : null;
 
+  // Check if location is sensitive (org location or project location)
+  const isSensitive = activeLoc?.sensitiveLocation || project.location?.sensitiveLocation;
+
   // Prefer linked org location data over project-level location fields
   const activeLocMapParams = activeLoc?.latitude && activeLoc?.longitude
-    ? { lat: activeLoc.latitude, lng: activeLoc.longitude, zoom: activeLoc.zoom || 13 }
+    ? (activeLoc.sensitiveLocation && activeLoc.country 
+        ? (() => { const c = getCountryCenter(activeLoc.country); return c ? { lat: c.lat, lng: c.lng, zoom: c.zoom || 6 } : null; })()
+        : { lat: activeLoc.latitude, lng: activeLoc.longitude, zoom: activeLoc.zoom || 13 }
+      )
     : null;
   const displayMapParams = activeLocMapParams || mapParams;
   const displayLocationName = activeLoc?.name || project.locationName;
   const displayLocationDescription = activeLoc?.description || project.locationDescription;
-  const displayTown = activeLoc?.town || project.location?.town;
+  
+  // Handle sensitive locations - only show country
+  const displayTown = isSensitive ? undefined : (activeLoc?.town || project.location?.town);
   const displayCountry = activeLoc?.country || project.location?.country;
 
   async function saveVisibilityField(patch: Partial<Pick<Project, 'visibility' | 'status' | 'showOnOrganizationOverview'>>) {
@@ -584,6 +680,18 @@ function ProjectProposalInner() {
   const isPublic = projectVisibility === 'public';
   const isLive = projectStatus === 'live';
   const isPendingReview = projectStatus === 'pending_review';
+
+  // PIN gate - show if project has PIN and user is not authorized
+  if (!loading && project && project.accessPin && !isAuthorized) {
+    return (
+      <ProjectPinGate
+        projectDocId={resolvedDocId || ''}
+        correctPin={project.accessPin}
+        currentUserUid={currentUser?.uid || null}
+        onSuccess={() => setIsAuthorized(true)}
+      />
+    );
+  }
 
   return (
     <PageShell
@@ -860,6 +968,16 @@ function ProjectProposalInner() {
                 <SparklesIcon className="w-3.5 h-3.5" />
                 <span>AI Review</span>
               </button>
+
+              {/* Dashboard Link */}
+              <a
+                href={`/projects/${project.projectId || resolvedDocId}/dashboard`}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-white/15 text-white border-white/25 hover:bg-white/25"
+                title="Manage project settings and content"
+              >
+                <Cog6ToothIcon className="w-3.5 h-3.5" />
+                <span>Dashboard</span>
+              </a>
               </div>
               )}
               {!isCreator && <div className="flex-1" />}
@@ -2229,7 +2347,7 @@ function ProjectProposalInner() {
                 </h2>
                 {isCreator && (
                   <button
-                    onClick={() => editMode.budget ? saveSection('budget', ['totalBudget', 'amountPledged', 'amountRaised', 'currency', 'beneficiaries', 'matchedFundingNote', 'seekingMultiplePartners']) : toggleEditMode('budget')}
+                    onClick={() => editMode.budget ? saveBudget() : toggleEditMode('budget')}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                     title={editMode.budget ? 'Save' : 'Edit'}
@@ -2243,61 +2361,146 @@ function ProjectProposalInner() {
                 )}
               </div>
               {editMode.budget ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Total Budget</label>
-                    <input
-                      type="number"
-                      value={editValues.totalBudget || ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, totalBudget: Number(e.target.value) }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                      placeholder="Amount"
-                    />
+                <div className="space-y-5">
+                  {/* Currency + shared settings */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                      <select
+                        value={editValues.currency || 'GBP'}
+                        onChange={(e) => setEditValues(prev => ({ ...prev, currency: e.target.value }))}
+                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="USD">USD ($)</option>
+                        <option value="GBP">GBP (£)</option>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="KES">KES (KSh)</option>
+                        <option value="MWK">MWK (MK)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Beneficiaries</label>
+                      <input
+                        type="text"
+                        value={editValues.beneficiaries || ''}
+                        onChange={(e) => setEditValues(prev => ({ ...prev, beneficiaries: e.target.value }))}
+                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                        placeholder="Who will benefit?"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-                    <select
-                      value={editValues.currency || 'USD'}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, currency: e.target.value }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                    >
-                      <option value="USD">USD ($)</option>
-                      <option value="GBP">GBP (£)</option>
-                      <option value="EUR">EUR (€)</option>
-                      <option value="KES">KES (KSh)</option>
-                      <option value="MWK">MWK (MK)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount Pledged</label>
-                    <input
-                      type="number"
-                      value={editValues.amountPledged ?? ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, amountPledged: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                      placeholder="Amount pledged so far"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount Raised</label>
-                    <input
-                      type="number"
-                      value={editValues.amountRaised ?? ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, amountRaised: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                      placeholder="Amount actually received"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Beneficiaries</label>
-                    <input
-                      type="text"
-                      value={editValues.beneficiaries || ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, beneficiaries: e.target.value }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                      placeholder="Who will benefit?"
-                    />
-                  </div>
+
+                  {/* Phase mode toggle */}
+                  {editPhases.length === 0 ? (
+                    <div className="space-y-4 border border-gray-200 rounded-xl p-4 bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-gray-700">Single Phase</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const total = editValues.totalBudget || 0;
+                            setEditPhases([{
+                              id: Date.now().toString(),
+                              name: 'Phase 1',
+                              notes: '',
+                              target: total,
+                              pledged: editValues.amountPledged || 0,
+                              raised: editValues.amountRaised || 0,
+                            }]);
+                          }}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 transition"
+                        >
+                          + Add Phases
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Total to Raise</label>
+                          <input type="number" value={editValues.totalBudget || ''} onChange={(e) => setEditValues(prev => ({ ...prev, totalBudget: Number(e.target.value) }))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pledged</label>
+                          <input type="number" value={editValues.amountPledged ?? ''} onChange={(e) => setEditValues(prev => ({ ...prev, amountPledged: e.target.value ? Number(e.target.value) : undefined }))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Raised</label>
+                          <input type="number" value={editValues.amountRaised ?? ''} onChange={(e) => setEditValues(prev => ({ ...prev, amountRaised: e.target.value ? Number(e.target.value) : undefined }))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700">{editPhases.length} Phase{editPhases.length !== 1 && 's'}</p>
+                          <p className="text-xs text-gray-400">
+                            Target: {formatCurrency(editPhases.reduce((s, p) => s + (p.target || 0), 0), editValues.currency || 'GBP')}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditPhases([])}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-100 border border-gray-200 text-gray-600 hover:bg-gray-200 transition"
+                        >
+                          Single phase only
+                        </button>
+                      </div>
+
+                      {/* Phase list */}
+                      {editPhases.map((phase, idx) => (
+                        <div key={phase.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <input
+                              type="text"
+                              value={phase.name}
+                              onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value } : p))}
+                              className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm font-semibold"
+                              placeholder={`Phase ${idx + 1} name`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditPhases(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Remove phase"
+                            >
+                              <XMarkIcon className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <textarea
+                            value={phase.notes || ''}
+                            onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, notes: e.target.value } : p))}
+                            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
+                            placeholder="Context or notes for this phase (optional)"
+                            rows={2}
+                          />
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Target</label>
+                              <input type="number" value={phase.target || ''} onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, target: Number(e.target.value) } : p))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Pledged</label>
+                              <input type="number" value={phase.pledged ?? ''} onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, pledged: e.target.value ? Number(e.target.value) : undefined } : p))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Raised</label>
+                              <input type="number" value={phase.raised ?? ''} onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, raised: e.target.value ? Number(e.target.value) : undefined } : p))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => setEditPhases(prev => [...prev, { id: Date.now().toString(), name: `Phase ${prev.length + 1}`, notes: '', target: 0 }])}
+                        className="w-full py-2.5 border-2 border-dashed border-orange-200 rounded-xl text-sm font-medium text-orange-600 hover:border-orange-400 hover:bg-orange-50 transition"
+                      >
+                        + Add Phase
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Matched funding + seeking multiple */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Matched Funding Note <span className="text-gray-400 font-normal">(optional)</span></label>
                     <textarea
@@ -2326,67 +2529,167 @@ function ProjectProposalInner() {
                 </div>
               ) : (
                 <>
-                  <div className="text-3xl font-bold text-gray-900 mb-4">
-                    {project.totalBudget 
-                      ? formatCurrency(project.totalBudget, project.currency || 'USD')
-                      : 'Budget not set'}
-                  </div>
-                  {project.seekingMultiplePartners && (
-                    <div className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium">
-                      <UsersIcon className="w-4 h-4" />
-                      Seeking Multiple Partners
-                    </div>
-                  )}
-                  {/* Pledged & Raised rows */}
-                  {(project.amountPledged || project.amountRaised) && (
-                    <div className="space-y-3 pt-2 border-t">
-                      {project.amountPledged ? (
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-500">Pledged</span>
-                            <span className="font-semibold text-gray-800">{formatCurrency(project.amountPledged, project.currency || 'USD')}</span>
-                          </div>
-                          {project.totalBudget ? (
-                            <div className="w-full bg-gray-100 rounded-full h-2">
-                              <div
-                                className="bg-orange-400 h-2 rounded-full transition-all"
-                                style={{ width: `${Math.min(100, (project.amountPledged / project.totalBudget) * 100).toFixed(1)}%` }}
-                              />
-                            </div>
-                          ) : null}
+                  {project.budgetPhases && project.budgetPhases.length > 1 ? (
+                    // ─── Multi-phase display ───────────────────────────────
+                    <div>
+                      {/* Totals summary */}
+                      <div className="flex items-end justify-between mb-1">
+                        <div className="text-3xl font-bold text-gray-900">
+                          {formatCurrency(project.totalBudget || project.budgetPhases.reduce((s, p) => s + p.target, 0), project.currency || 'GBP')}
                         </div>
-                      ) : null}
-                      {project.amountRaised ? (
-                        <div>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-500">Raised</span>
-                            <span className="font-semibold text-green-700">{formatCurrency(project.amountRaised, project.currency || 'USD')}</span>
-                          </div>
-                          {project.totalBudget ? (
-                            <div className="w-full bg-gray-100 rounded-full h-2">
-                              <div
-                                className="bg-green-500 h-2 rounded-full transition-all"
-                                style={{ width: `${Math.min(100, (project.amountRaised / project.totalBudget) * 100).toFixed(1)}%` }}
-                              />
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                  {project.beneficiaries && (
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="text-sm text-gray-500">Beneficiaries</div>
-                      <div className="text-gray-700">{project.beneficiaries}</div>
-                    </div>
-                  )}
-                  {project.matchedFundingNote && (
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="text-sm text-gray-500 flex items-center gap-1.5 mb-1">
-                        <span>💰</span> Matched Funding
+                        <span className="text-sm text-gray-400 mb-1">{project.budgetPhases.length} phases</span>
                       </div>
-                      <div className="text-gray-700 whitespace-pre-wrap text-sm bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">{project.matchedFundingNote}</div>
+                      {project.seekingMultiplePartners && (
+                        <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium">
+                          <UsersIcon className="w-4 h-4" />
+                          Seeking Multiple Partners
+                        </div>
+                      )}
+
+                      {/* Phase rows */}
+                      <div className="space-y-3 mt-4">
+                        {project.budgetPhases.map((phase, i) => (
+                          <div key={phase.id} className="bg-gray-50 rounded-xl border border-gray-100 p-4">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <h4 className="font-semibold text-gray-800 text-sm">{phase.name || `Phase ${i + 1}`}</h4>
+                              <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(phase.target, project.currency || 'GBP')}</span>
+                            </div>
+                            {phase.notes && (
+                              <p className="text-xs text-gray-500 mb-3 leading-relaxed">{phase.notes}</p>
+                            )}
+                            {(phase.pledged || phase.raised) ? (
+                              <div className="space-y-2 mt-2">
+                                {phase.pledged ? (
+                                  <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                      <span className="text-gray-500">Pledged</span>
+                                      <span className="font-medium text-gray-700">{formatCurrency(phase.pledged, project.currency || 'GBP')}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                      <div className="bg-orange-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.pledged / phase.target) * 100 : 0)}%` }} />
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {phase.raised ? (
+                                  <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                      <span className="text-gray-500">Raised</span>
+                                      <span className="font-medium text-green-700">{formatCurrency(phase.raised, project.currency || 'GBP')}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                      <div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.raised / phase.target) * 100 : 0)}%` }} />
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Overall totals */}
+                      {(project.amountPledged || project.amountRaised) && (
+                        <div className="mt-4 pt-4 border-t space-y-3">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Overall Progress</p>
+                          {project.amountPledged ? (
+                            <div>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-500">Total Pledged</span>
+                                <span className="font-semibold text-gray-800">{formatCurrency(project.amountPledged, project.currency || 'GBP')}</span>
+                              </div>
+                              {project.totalBudget ? (
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-orange-400 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amountPledged / project.totalBudget) * 100).toFixed(1)}%` }} />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {project.amountRaised ? (
+                            <div>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-500">Total Raised</span>
+                                <span className="font-semibold text-green-700">{formatCurrency(project.amountRaised, project.currency || 'GBP')}</span>
+                              </div>
+                              {project.totalBudget ? (
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amountRaised / project.totalBudget) * 100).toFixed(1)}%` }} />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {project.beneficiaries && (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="text-sm text-gray-500">Beneficiaries</div>
+                          <div className="text-gray-700">{project.beneficiaries}</div>
+                        </div>
+                      )}
+                      {project.matchedFundingNote && (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="text-sm text-gray-500 flex items-center gap-1.5 mb-1"><span>💰</span> Matched Funding</div>
+                          <div className="text-gray-700 whitespace-pre-wrap text-sm bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">{project.matchedFundingNote}</div>
+                        </div>
+                      )}
                     </div>
+                  ) : (
+                    // ─── Single-phase display (existing) ──────────────────
+                    <>
+                      <div className="text-3xl font-bold text-gray-900 mb-4">
+                        {project.totalBudget
+                          ? formatCurrency(project.totalBudget, project.currency || 'GBP')
+                          : 'Budget not set'}
+                      </div>
+                      {project.seekingMultiplePartners && (
+                        <div className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium">
+                          <UsersIcon className="w-4 h-4" />
+                          Seeking Multiple Partners
+                        </div>
+                      )}
+                      {(project.amountPledged || project.amountRaised) && (
+                        <div className="space-y-3 pt-2 border-t">
+                          {project.amountPledged ? (
+                            <div>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-500">Pledged</span>
+                                <span className="font-semibold text-gray-800">{formatCurrency(project.amountPledged, project.currency || 'GBP')}</span>
+                              </div>
+                              {project.totalBudget ? (
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-orange-400 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amountPledged / project.totalBudget) * 100).toFixed(1)}%` }} />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {project.amountRaised ? (
+                            <div>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-500">Raised</span>
+                                <span className="font-semibold text-green-700">{formatCurrency(project.amountRaised, project.currency || 'GBP')}</span>
+                              </div>
+                              {project.totalBudget ? (
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amountRaised / project.totalBudget) * 100).toFixed(1)}%` }} />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                      {project.beneficiaries && (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="text-sm text-gray-500">Beneficiaries</div>
+                          <div className="text-gray-700">{project.beneficiaries}</div>
+                        </div>
+                      )}
+                      {project.matchedFundingNote && (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="text-sm text-gray-500 flex items-center gap-1.5 mb-1"><span>💰</span> Matched Funding</div>
+                          <div className="text-gray-700 whitespace-pre-wrap text-sm bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">{project.matchedFundingNote}</div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}

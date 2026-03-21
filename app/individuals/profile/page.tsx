@@ -17,7 +17,8 @@ import IndividualAboutTab from "../../../components/IndividualAboutTab";
 import IndividualUpdatesTab from "../../../components/IndividualUpdatesTab";
 import IndividualPrayerTab from "../../../components/IndividualPrayerTab";
 import IndividualFinanceTab from "../../../components/IndividualFinanceTab";
-// import IndividualSettingsTab from "../../../components/IndividualSettingsTab"; // TODO: re-enable with permissions
+import ProfilePinGate from "../../../components/ProfilePinGate";
+import IndividualSettingsTab from "../../../components/IndividualSettingsTab";
 
 function ProfilePageInner() {
   const searchParams = useSearchParams();
@@ -35,6 +36,7 @@ function ProfilePageInner() {
   const [searchValue, setSearchValue] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [showAIReview, setShowAIReview] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false); // For PIN gate
 
   // Build unified feed from legacy arrays (idempotent)
   function buildUnifiedFeed(raw: any){
@@ -121,11 +123,28 @@ function ProfilePageInner() {
         const u = auth.currentUser;
         const ownerId = raw.ownerId || raw.ownerUID || raw.owner || raw.userId;
         setIsOwner(!!u && !!ownerId && u.uid===ownerId);
+        
+        // Check PIN authorization
+        const requiresPin = !!raw.accessPin;
+        const userIsOwner = !!u && !!ownerId && u.uid===ownerId;
+        const userIsAuthorized = u && Array.isArray(raw.authorizedViewers) && raw.authorizedViewers.includes(u.uid);
+        setIsAuthorized(!requiresPin || userIsOwner || userIsAuthorized);
+        
         // if(u) setRole(computeRole(u, raw)); // TODO: tab permissions
         // Start real-time listener on the doc
         unsub = subscribeIndividual(raw.id, (liveData) => {
           if(!liveData) return;
           const live: any = { ...liveData };
+          
+          // Check PIN authorization on live updates
+          const authNow = getAuth();
+          const uNow = authNow.currentUser;
+          const liveOwnerId = live.ownerId || live.ownerUID || live.owner || live.userId;
+          const requiresPin = !!live.accessPin;
+          const userIsOwner = !!uNow && !!liveOwnerId && uNow.uid===liveOwnerId;
+          const userIsAuthorized = uNow && Array.isArray(live.authorizedViewers) && live.authorizedViewers.includes(uNow.uid);
+          setIsAuthorized(!requiresPin || userIsOwner || userIsAuthorized);
+          
           // Ensure profilePosts exists (one-time migration for newly viewed docs)
           if(!Array.isArray(live.profilePosts)) {
             const updates = Array.isArray(live.updates)? live.updates: [];
@@ -144,8 +163,7 @@ function ProfilePageInner() {
             updateIndividual(raw.id, { profilePosts: posts, updates: fieldDelete(), prayerRequests: fieldDelete(), fundingNeeds: fieldDelete(), feed: fieldDelete() } as any).catch(()=>{});
           }
           setIndividual((prev:any) => ({ ...prev, ...live }));
-          const authNow = getAuth();
-          const uNow = authNow.currentUser;
+          // Reuse authNow and uNow from above
           if(uNow){
             // setRole(computeRole(uNow, live)); // TODO: tab permissions
             const liveOwnerId = live.ownerId || live.ownerUID || live.owner || live.userId;
@@ -172,6 +190,13 @@ function ProfilePageInner() {
           // no owner set yet
           setIsOwner(false);
         }
+        
+        // Re-check PIN authorization when auth state changes
+        const requiresPin = !!individual.accessPin;
+        const userIsOwner = !!u && !!ownerId && u.uid===ownerId;
+        const userIsAuthorized = u && Array.isArray(individual.authorizedViewers) && individual.authorizedViewers.includes(u.uid);
+        setIsAuthorized(!requiresPin || userIsOwner || userIsAuthorized);
+        
         // if(u){ setRole(computeRole(u, individual)); } else { setRole('public'); } // TODO: tab permissions
       }
     });
@@ -267,6 +292,19 @@ function ProfilePageInner() {
   */
 
   const profileCode = individual?.individualId || individual?.code || code || '';
+  
+  // PIN Gate Check
+  if (!loading && individual && individual.accessPin && !isAuthorized) {
+    return (
+      <ProfilePinGate
+        individualId={individual.id}
+        correctPin={individual.accessPin}
+        currentUserUid={userUid || null}
+        onSuccess={() => setIsAuthorized(true)}
+      />
+    );
+  }
+  
   const headerRight = (
     <div className="flex items-center gap-3">
       {profileCode && (
@@ -478,7 +516,6 @@ function ProfilePageInner() {
               }))}
               readOnly={!(isOwner && editMode)}
             />
-            {/* Settings tab disabled – TODO: re-enable with permissions
             {isOwner && (
               <IndividualSettingsTab
                 individual={individual}
@@ -486,7 +523,6 @@ function ProfilePageInner() {
                 onUpdate={(partial)=> setIndividual((prev:any)=>({...prev, ...partial}))}
               />
             )}
-            */}
           </div>
 
         </div>

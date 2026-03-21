@@ -46,9 +46,14 @@ export const onInviteAccepted = functions.region(REGION).firestore
           if (!orgSnapshot.exists) return;
             const data: any = orgSnapshot.data();
             const team: any[] = Array.isArray(data.team) ? data.team : [];
+            const memberUids: string[] = Array.isArray(data.memberUids) ? data.memberUids : [];
             const exists = team.some(m => m.uid === member.uid || (m.email && m.email.toLowerCase() === email.toLowerCase()));
             if (!exists) {
-              tx.update(orgRef, { team: [...team, member] });
+              const updatedMemberUids = memberUids.includes(member.uid) ? memberUids : [...memberUids, member.uid];
+              tx.update(orgRef, { 
+                team: [...team, member],
+                memberUids: updatedMemberUids
+              });
             }
         });
         console.log('Added member via invite', email, 'to org', orgDbId);
