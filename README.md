@@ -81,6 +81,13 @@ src/lib/dal/
 - User opt-in/opt-out consent tracked per user; consent gate on first use
 - AI usage disclosed in `/ai-policy`
 
+### PDF & Print Exports
+- Professional A4 Prospectus: High-fidelity 3-page HTML-to-PDF print engine for project profiles.
+- Automated Layout: Paragraph-aware content splitting (Page 1 summary split at 26 lines, Page 2 continuation).
+- Visual Branding: Hero images (164px), brand typography (Inter), and custom sidebar layouts.
+- Deep Linking: Integrated QR codes for both Projects (Page 1) and Organizations (Page 3).
+- Print Safety: 1.5cm safety margins and widened sidebars for physical printing compatibility.
+
 ### Moderation
 - All new org/project/individual submissions enter a `pending_review` state
 - AI safety pre-screen runs via `/api/moderate/`
