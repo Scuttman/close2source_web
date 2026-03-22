@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { EyeIcon, LightBulbIcon, FlagIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, LightBulbIcon, FlagIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { getUser, getUsersByEmails, updateProject } from '@/lib/dal';
+import ProjectVisionWizard from './ProjectVisionWizard';
 
 interface ResourceRef { id: string; name: string; url?: string; note?: string; qty: number; unitCost?: number; cost?: number; currency?: string; }
 interface Task { id: string; title: string; startDate: string; endDate: string; status: 'todo'|'inprogress'|'done'; resources: ResourceRef[]; assignees: string[]; }
@@ -12,6 +13,7 @@ interface TeamMember { id: string; name: string; role?: string; email?: string; 
 
 interface Props {
   projectId: string;
+  projectName?: string;
   plan: ProjectPlan | undefined;
   isProjectCreator: boolean;
   onUpdated: (plan: ProjectPlan)=> void;
@@ -115,7 +117,7 @@ function stripUndefined<T>(val: T): T {
   return val;
 }
 
-export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUpdated, allowEdit=false, projectCurrency, currencySymbol, teamMembers }: Props){
+export default function ProjectPlanTab({ projectId, projectName, plan, isProjectCreator, onUpdated, allowEdit=false, projectCurrency, currencySymbol, teamMembers }: Props){
   const [draft, setDraft] = useState<ProjectPlan>(()=> normalizePlan(plan));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -123,6 +125,7 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
   const [planTab, setPlanTab] = useState<'overview'|'areas'|'upcoming'>('overview');
   const [activeFocusAreaId, setActiveFocusAreaId] = useState<string | null>(null);
   const [profileMap, setProfileMap] = useState<Record<string,{ name:string; photoURL?:string }>>({});
+  const [showWizard, setShowWizard] = useState(false);
   // Assignee selection modal state
   const [assigneePicker, setAssigneePicker] = useState<{ fi:number; ti:number; open:boolean } | null>(null);
   const [assigneeTemp, setAssigneeTemp] = useState<string[]>([]);
@@ -181,6 +184,14 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
     setDirty(true); setSaveError('');
   }
 
+  function handleWizardSave(data: { vision: string; strategy: string; focus: string }) {
+    updateDraft(d => {
+      d.vision = data.vision;
+      d.strategy = data.strategy;
+      d.focusStatement = data.focus;
+    });
+  }
+
   async function save(){
     if(!isProjectCreator || !dirty) return; setSaving(true); setSaveError('');
     try {
@@ -222,6 +233,39 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
       </div>
       {planTab === 'overview' && (
         <div className="space-y-8">
+          {!readonly && (
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">✨ Planning Framework Wizard</h3>
+                  <p className="text-sm text-gray-700 mb-3">
+                    Get guided through creating your Vision, Strategy, and Focus statements with AI-powered assistance.
+                  </p>
+                  <ul className="text-xs text-gray-600 space-y-1 mb-4">
+                    <li className="flex items-start gap-2">
+                      <span className="text-orange-500 mt-0.5">•</span>
+                      <span>Learn the difference between Vision, Strategy, and Focus</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-orange-500 mt-0.5">•</span>
+                      <span>Write and improve each statement with AI</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-orange-500 mt-0.5">•</span>
+                      <span>Build a complete planning framework</span>
+                    </li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => setShowWizard(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold text-sm transition-colors shadow-md whitespace-nowrap"
+                >
+                  <SparklesIcon className="w-5 h-5" />
+                  Launch Wizard
+                </button>
+              </div>
+            </div>
+          )}
           <section>
             <h3 className="text-base font-semibold text-brand-main mb-2 flex items-center gap-2">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-main/10 text-brand-main"><EyeIcon className="h-4 w-4" /></span>
@@ -558,6 +602,16 @@ export default function ProjectPlanTab({ projectId, plan, isProjectCreator, onUp
           </div>
         </div>
       )}
+
+      <ProjectVisionWizard
+        isOpen={showWizard}
+        onClose={() => setShowWizard(false)}
+        projectName={projectName || projectId}
+        initialVision={draft.vision}
+        initialStrategy={draft.strategy}
+        initialFocus={draft.focusStatement}
+        onSave={handleWizardSave}
+      />
     </div>
   );
 }

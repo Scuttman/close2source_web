@@ -21,10 +21,11 @@ import {
 } from "@/lib/dal";
 import { generateCode } from "../../src/lib/codes";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon, ShieldCheckIcon, DocumentTextIcon, CheckCircleIcon, XCircleIcon, ArrowDownTrayIcon, PresentationChartBarIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon, ShieldCheckIcon, DocumentTextIcon, CheckCircleIcon, XCircleIcon, ArrowDownTrayIcon, PresentationChartBarIcon, TrashIcon, MapPinIcon } from "@heroicons/react/24/outline";
 import { updateAIConsent } from "../../src/lib/userConsent";
 import AIConsentModal from "../../components/AIConsentModal";
 import PageShell from "../../components/PageShell";
+import C2SStampSVG from "../../components/C2SStampSVG";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { resizeImageFile, IMAGE_MAX_BANNER, IMAGE_MAX_THUMB } from "../../src/lib/imageResize";
 
@@ -45,9 +46,11 @@ function ProfilePageInner() {
 
   // Create showcase modal state
   const [showCreateShowcase, setShowCreateShowcase] = useState(false);
+  const [showcaseType, setShowcaseType] = useState<'projects' | 'locations'>('projects');
   const [showcaseTitle, setShowcaseTitle] = useState('');
   const [showcaseDesc, setShowcaseDesc] = useState('');
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<Array<{ orgId: string; orgDbId: string; locationId: string; locationName: string; orgName: string }>>([]);
   const [showcaseCreating, setShowcaseCreating] = useState(false);
   const [showcaseCreateError, setShowcaseCreateError] = useState('');
   const [showcaseOrgScope, setShowcaseOrgScope] = useState<string | undefined>(undefined); // undefined = personal
@@ -287,8 +290,8 @@ function ProfilePageInner() {
   if (!user) {
     return (
       <PageShell title="Profile">
-        <div className="text-center py-20">
-          <p className="text-gray-600 mb-4">Please log in to view your profile.</p>
+        <div className="flex flex-col items-center justify-center py-20 gap-6">
+          <C2SStampSVG message="Please login to view your profile" size={280} />
           <button
             onClick={() => router.push('/login')}
             className="px-6 py-2 bg-brand-main text-white rounded-lg font-semibold hover:bg-brand-dark transition"
@@ -702,9 +705,11 @@ function ProfilePageInner() {
                   <h3 className="text-xl font-semibold text-brand-dark">Your Showcases</h3>
                   <button
                     onClick={() => {
+                      setShowcaseType('projects');
                       setShowcaseTitle('');
                       setShowcaseDesc('');
                       setSelectedProjectIds([]);
+                      setSelectedLocations([]);
                       setShowcaseOrgScope(undefined);
                       setShowcaseCreateError('');
                       setShowCreateShowcase(true);
@@ -725,9 +730,11 @@ function ProfilePageInner() {
                     <p className="text-sm text-gray-500 mb-6">Create a showcase to share a curated set of projects with partners via a single link or code.</p>
                     <button
                       onClick={() => {
+                        setShowcaseType('projects');
                         setShowcaseTitle('');
                         setShowcaseDesc('');
                         setSelectedProjectIds([]);
+                        setSelectedLocations([]);
                         setShowcaseOrgScope(undefined);
                         setShowcaseCreateError('');
                         setShowCreateShowcase(true);
@@ -987,26 +994,46 @@ function ProfilePageInner() {
               aria-label="Close"
             >✕</button>
             <h2 className="text-xl font-bold text-brand-main mb-1">Create a Showcase</h2>
-            <p className="text-sm text-gray-500 mb-6">Give your showcase a title, add a description, and pick the projects to include. Share it with partners via the generated code or link.</p>
+            <p className="text-sm text-gray-500 mb-6">
+              {showcaseType === 'projects' 
+                ? 'Give your showcase a title, add a description, and pick the projects to include.' 
+                : 'Create a showcase featuring your organization locations with their vision and activities.'}
+            </p>
 
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!user) return;
                 if (!showcaseTitle.trim()) { setShowcaseCreateError('Please enter a title.'); return; }
-                if (selectedProjectIds.length === 0) { setShowcaseCreateError('Select at least one project.'); return; }
+                
+                if (showcaseType === 'projects' && selectedProjectIds.length === 0) {
+                  setShowcaseCreateError('Select at least one project.');
+                  return;
+                }
+                
+                if (showcaseType === 'locations' && selectedLocations.length === 0) {
+                  setShowcaseCreateError('Select at least one location.');
+                  return;
+                }
+                
                 setShowcaseCreating(true);
                 setShowcaseCreateError('');
                 try {
                   const code = generateCode('showcase');
-                  console.log('[showcases] creating with ownerUid', user.uid, 'code', code);
+                  console.log('[showcases] creating with ownerUid', user.uid, 'code', code, 'type', showcaseType);
                   const newId = await createShowcase({
                     showcaseId: code,
                     title: showcaseTitle.trim(),
                     description: showcaseDesc.trim() || undefined,
                     ownerUid: user.uid,
                     orgId: showcaseOrgScope,
-                    projectDocIds: selectedProjectIds,
+                    type: showcaseType,
+                    projectDocIds: showcaseType === 'projects' ? selectedProjectIds : [],
+                    locationEntries: showcaseType === 'locations' ? selectedLocations.map(loc => ({
+                      orgId: loc.orgId,
+                      orgDbId: loc.orgDbId,
+                      locationId: loc.locationId,
+                    })) : undefined,
                   });
                   console.log('[showcases] created doc id', newId);
                   setShowCreateShowcase(false);
@@ -1019,6 +1046,37 @@ function ProfilePageInner() {
               }}
               className="space-y-5"
             >
+              {/* Type Selector */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Showcase Type <span className="text-red-500">*</span></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowcaseType('projects')}
+                    disabled={showcaseCreating}
+                    className={`px-4 py-3 rounded-lg border-2 text-sm font-semibold transition ${
+                      showcaseType === 'projects'
+                        ? 'border-brand-main bg-brand-main/5 text-brand-main'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    📁 Projects
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowcaseType('locations')}
+                    disabled={showcaseCreating}
+                    className={`px-4 py-3 rounded-lg border-2 text-sm font-semibold transition ${
+                      showcaseType === 'locations'
+                        ? 'border-brand-main bg-brand-main/5 text-brand-main'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    📍 Locations
+                  </button>
+                </div>
+              </div>
+
               {/* Title */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Title <span className="text-red-500">*</span></label>
@@ -1065,43 +1123,114 @@ function ProfilePageInner() {
               )}
 
               {/* Project picker */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Select Projects <span className="text-red-500">*</span></label>
-                {projects.length === 0 ? (
-                  <p className="text-sm text-gray-500 italic">You have no projects yet. Create a project first.</p>
-                ) : (
-                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
-                    {projects.map(p => {
-                      const checked = selectedProjectIds.includes(p.id);
-                      return (
-                        <label key={p.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-orange-50 transition ${checked ? 'bg-orange-50' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setSelectedProjectIds(prev =>
-                                prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id],
+              {showcaseType === 'projects' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Select Projects <span className="text-red-500">*</span></label>
+                  {projects.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">You have no projects yet. Create a project first.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                      {projects.map(p => {
+                        const checked = selectedProjectIds.includes(p.id);
+                        return (
+                          <label key={p.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-orange-50 transition ${checked ? 'bg-orange-50' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setSelectedProjectIds(prev =>
+                                  prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id],
+                                );
+                              }}
+                              className="h-4 w-4 rounded border-gray-300 text-brand-main focus:ring-brand-main"
+                              disabled={showcaseCreating}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
+                              <div className="text-xs text-gray-400 font-mono">{p.projectId}</div>
+                            </div>
+                            {p.coverPhotoUrl && (
+                              <img src={p.coverPhotoUrl} alt="" className="w-10 h-8 object-cover rounded shrink-0" />
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedProjectIds.length > 0 && (
+                    <p className="text-xs text-orange-600 mt-1.5 font-medium">{selectedProjectIds.length} project{selectedProjectIds.length !== 1 ? 's' : ''} selected</p>
+                  )}
+                </div>
+              )}
+
+              {/* Location picker */}
+              {showcaseType === 'locations' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Select Locations <span className="text-red-500">*</span></label>
+                  {organizations.filter(org => Array.isArray(org.locations) && org.locations.length > 0).length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">No locations found. Add locations to your organizations first.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                      {organizations
+                        .filter(org => Array.isArray(org.locations) && org.locations.length > 0)
+                        .map(org => (
+                          <div key={org.id}>
+                            <div className="px-4 py-2 bg-gray-50 sticky top-0">
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{org.name}</span>
+                            </div>
+                            {org.locations.map((loc: any) => {
+                              const isSelected = selectedLocations.some(
+                                sl => sl.orgDbId === org.id && sl.locationId === loc.id
                               );
-                            }}
-                            className="h-4 w-4 rounded border-gray-300 text-brand-main focus:ring-brand-main"
-                            disabled={showcaseCreating}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
-                            <div className="text-xs text-gray-400 font-mono">{p.projectId}</div>
+                              return (
+                                <label key={`${org.id}-${loc.id}`} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-orange-50 transition ${isSelected ? 'bg-orange-50' : ''}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      setSelectedLocations(prev => {
+                                        const exists = prev.some(
+                                          sl => sl.orgDbId === org.id && sl.locationId === loc.id
+                                        );
+                                        if (exists) {
+                                          return prev.filter(
+                                            sl => !(sl.orgDbId === org.id && sl.locationId === loc.id)
+                                          );
+                                        } else {
+                                          return [...prev, {
+                                            orgId: org.orgId,
+                                            orgDbId: org.id,
+                                            locationId: loc.id,
+                                            locationName: loc.name,
+                                            orgName: org.name,
+                                          }];
+                                        }
+                                      });
+                                    }}
+                                    className="h-4 w-4 rounded border-gray-300 text-brand-main focus:ring-brand-main"
+                                    disabled={showcaseCreating}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-800 truncate">{loc.name}</div>
+                                    {(loc.country || loc.town) && (
+                                      <div className="text-xs text-gray-500">
+                                        {[loc.town, loc.country].filter(Boolean).join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <MapPinIcon className="w-5 h-5 text-orange-500" />
+                                </label>
+                              );
+                            })}
                           </div>
-                          {p.coverPhotoUrl && (
-                            <img src={p.coverPhotoUrl} alt="" className="w-10 h-8 object-cover rounded shrink-0" />
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                {selectedProjectIds.length > 0 && (
-                  <p className="text-xs text-orange-600 mt-1.5 font-medium">{selectedProjectIds.length} project{selectedProjectIds.length !== 1 ? 's' : ''} selected</p>
-                )}
-              </div>
+                        ))}
+                    </div>
+                  )}
+                  {selectedLocations.length > 0 && (
+                    <p className="text-xs text-orange-600 mt-1.5 font-medium">{selectedLocations.length} location{selectedLocations.length !== 1 ? 's' : ''} selected</p>
+                  )}
+                </div>
+              )}
 
               {showcaseCreateError && (
                 <p className="text-red-600 text-sm">{showcaseCreateError}</p>
@@ -1118,7 +1247,11 @@ function ProfilePageInner() {
                 </button>
                 <button
                   type="submit"
-                  disabled={showcaseCreating || projects.length === 0}
+                  disabled={
+                    showcaseCreating || 
+                    (showcaseType === 'projects' && projects.length === 0) ||
+                    (showcaseType === 'locations' && organizations.filter(org => Array.isArray(org.locations) && org.locations.length > 0).length === 0)
+                  }
                   className="flex-1 py-2.5 rounded-lg bg-brand-main text-white text-sm font-semibold hover:bg-brand-dark transition disabled:opacity-60"
                 >
                   {showcaseCreating ? 'Creating…' : 'Create Showcase'}

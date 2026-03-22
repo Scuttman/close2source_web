@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { getUserOrgs, updateProject, fieldArrayUnion, fieldServerTimestamp } from '@/lib/dal';
+import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { getUserOrgs, getUser, updateProject, fieldArrayUnion, fieldServerTimestamp } from '@/lib/dal';
 import { XMarkIcon, BuildingOfficeIcon, UserIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 
@@ -79,20 +79,26 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
     }
   }, [isOpen]);
 
+  function getPartnerReturnUrl() {
+    const projectId = (project as any).projectId || projectDocId;
+    return `/projects/${projectId}/profile?openPartner=true`;
+  }
+
   async function handleAuthSubmit() {
     setAuthError('');
     setAuthLoading(true);
     const auth = getAuth();
     try {
-      let result;
       if (authMode === 'login') {
-        result = await signInWithEmailAndPassword(auth, authEmail, authPassword);
+        const result = await signInWithEmailAndPassword(auth, authEmail, authPassword);
+        setLocalUser(result.user);
+        await loadUserOrganizations(result.user);
+        setStep('select-type');
       } else {
-        result = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        // Redirect to full register page so new users complete the required consent flow
+        const returnUrl = getPartnerReturnUrl();
+        router.push(`/register?returnUrl=${encodeURIComponent(returnUrl)}`);
       }
-      setLocalUser(result.user);
-      await loadUserOrganizations(result.user);
-      setStep('select-type');
     } catch (e: any) {
       const msg = e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password'
         ? 'Invalid email or password.'
@@ -114,9 +120,17 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      setLocalUser(result.user);
-      await loadUserOrganizations(result.user);
-      setStep('select-type');
+      // Check if this is an existing user (already completed registration & consent)
+      const existingUser = await getUser(result.user.uid);
+      if (existingUser) {
+        setLocalUser(result.user);
+        await loadUserOrganizations(result.user);
+        setStep('select-type');
+      } else {
+        // New user — redirect to full registration so they complete the consent flow
+        const returnUrl = getPartnerReturnUrl();
+        router.push(`/register?returnUrl=${encodeURIComponent(returnUrl)}`);
+      }
     } catch (e: any) {
       setAuthError(e.message || 'Google sign-in failed.');
     } finally {
@@ -300,32 +314,30 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
                   </div>
 
                   {/* Email/password form */}
-                  <div className="space-y-3">
-                    {authMode === 'register' && (
+                  {authMode === 'login' ? (
+                    <div className="space-y-3">
                       <input
-                        type="text"
-                        placeholder="Full name"
-                        value={authName}
-                        onChange={e => setAuthName(e.target.value)}
+                        type="email"
+                        placeholder="Email address"
+                        value={authEmail}
+                        onChange={e => setAuthEmail(e.target.value)}
                         className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-main text-sm"
                       />
-                    )}
-                    <input
-                      type="email"
-                      placeholder="Email address"
-                      value={authEmail}
-                      onChange={e => setAuthEmail(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-main text-sm"
-                    />
-                    <input
-                      type="password"
-                      placeholder="Password"
-                      value={authPassword}
-                      onChange={e => setAuthPassword(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAuthSubmit()}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-main text-sm"
-                    />
-                  </div>
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={authPassword}
+                        onChange={e => setAuthPassword(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAuthSubmit()}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-main text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-brand-main/5 border border-brand-main/20 rounded-lg p-4 text-sm text-gray-700 space-y-3">
+                      <p>To create an account you&apos;ll need to complete our quick registration form, including agreeing to our terms of service.</p>
+                      <p className="text-xs text-gray-500">After registering you&apos;ll be brought straight back here to complete your partnership.</p>
+                    </div>
+                  )}
 
                   {authError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{authError}</div>
@@ -333,10 +345,10 @@ export default function BecomePartnerModal({ isOpen, onClose, project, projectDo
 
                   <button
                     onClick={handleAuthSubmit}
-                    disabled={authLoading || !authEmail || !authPassword}
+                    disabled={authLoading || (authMode === 'login' && (!authEmail || !authPassword))}
                     className="w-full py-2.5 px-4 bg-brand-main text-white rounded-lg font-semibold hover:bg-brand-dark transition disabled:opacity-50"
                   >
-                    {authLoading ? 'Please wait...' : authMode === 'login' ? 'Log In' : 'Create Account'}
+                    {authLoading ? 'Please wait...' : authMode === 'login' ? 'Log In' : 'Go to Registration →'}
                   </button>
 
                   <p className="text-center text-sm text-gray-600">

@@ -21,7 +21,9 @@ function RegisterPage() {
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const initialInviteToken = qp?.get('invite') || qp?.get('inviteToken') || null;
   const initialEmail = qp?.get('email') || '';
+  const initialReturnUrl = qp?.get('returnUrl') || null;
   const [inviteToken, setInviteToken] = useState<string | null>(initialInviteToken);
+  const [returnUrl, setReturnUrl] = useState<string | null>(initialReturnUrl);
   const [stage, setStage] = useState(1); // 1: form, 2: profile pic, 3: description, 4: complete
   const role = "User"; // fixed base role
   const [name, setName] = useState("");
@@ -138,7 +140,7 @@ function RegisterPage() {
     try {
       await recordConsent(currentUid, { aiPolicy: true });
       setConsentStep(null);
-      if (oauthFlow) { router.push('/profile'); } else { setStage(2); }
+      setStage(2);
     } finally { setConsentSubmitting(false); }
   }
 
@@ -148,7 +150,7 @@ function RegisterPage() {
     try {
       await recordConsent(currentUid, { aiPolicy: false });
       setConsentStep(null);
-      if (oauthFlow) { router.push('/profile'); } else { setStage(2); }
+      setStage(2);
     } finally { setConsentSubmitting(false); }
   }
 
@@ -625,23 +627,31 @@ function RegisterPage() {
           )}
           <p className="mb-8 text-slate-500 text-sm">Your account is ready. You can now create an Individual or Organization profile.</p>
           <div className="flex flex-col gap-3 items-stretch">
+            {returnUrl && (
+              <button
+                onClick={() => router.push(returnUrl)}
+                className="w-full px-6 py-2.5 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition"
+              >
+                Continue to Project
+              </button>
+            )}
             {inviteToken && inviteAccepted && inviteOrgId && (
               <button
                 onClick={() => router.push(`/org/${inviteOrgId}?tab=team`)}
-                className="w-full px-6 py-2.5 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition"
+                className={`w-full px-6 py-2.5 rounded-lg font-semibold transition ${returnUrl ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50' : 'bg-brand-main text-white hover:bg-brand-dark'}`}
               >
                 Go to Invited Organization
               </button>
             )}
             <button
               onClick={() => router.push('/individuals/create')}
-              className="w-full px-6 py-2.5 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition"
+              className={`w-full px-6 py-2.5 rounded-lg font-semibold transition ${returnUrl ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50' : 'bg-brand-main text-white hover:bg-brand-dark'}`}
             >
               Create Individual Profile
             </button>
             <button
               onClick={() => router.push('/org/create')}
-              className="w-full px-6 py-2.5 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition"
+              className={`w-full px-6 py-2.5 rounded-lg font-semibold transition ${returnUrl ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50' : 'bg-brand-main text-white hover:bg-brand-dark'}`}
             >
               Create Organization Profile
             </button>

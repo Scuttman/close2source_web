@@ -210,7 +210,7 @@ export default function ProjectSettings() {
       <div id={`project-theme-${idKey}`} className="flex flex-col flex-1 min-h-0 relative">
   <PageShell
           title={<span>{project.name} - Settings</span>}
-          headerStyle={{ background:'var(--project-header-bg)', color:'var(--project-header-text)' }}
+          headerStyle={{ background:'#000000', color:'#ffffff' }}
           headerRight={(
             <div className="flex items-center gap-3">
               <a
@@ -228,7 +228,7 @@ export default function ProjectSettings() {
                 type="button"
                 onClick={()=> setEditMode(m=>!m)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border transition ${editMode? 'shadow-inner':''}`}
-                style={ editMode ? {background:'var(--project-accent)', color:'var(--project-accent-text)', borderColor:'var(--project-accent)' } : { background:'rgba(255,255,255,0.1)', color:'var(--project-header-text)', borderColor:'rgba(255,255,255,0.3)' }}
+                style={ editMode ? {background:'var(--project-accent)', color:'var(--project-accent-text)', borderColor:'var(--project-accent)' } : { background:'rgba(255,255,255,0.1)', color:'#ffffff', borderColor:'rgba(255,255,255,0.3)' }}
               >
                 <span>Edit</span>
                 <span className='inline-flex items-center h-4 w-8 rounded-full transition' style={{ background: editMode? 'var(--project-accent-hover)' : 'rgba(255,255,255,0.3)' }}>
@@ -272,6 +272,7 @@ export default function ProjectSettings() {
                 <h2 className="text-lg font-semibold text-brand-main mb-4">Project Plan</h2>
                 <ProjectPlanTab
                   projectId={externalProjectCode}
+                  projectName={project?.name}
                   plan={project?.plan}
                   isProjectCreator={isProjectCreator}
                   allowEdit={editMode}

@@ -130,7 +130,7 @@ export const MapPreview: React.FC<MapPreviewProps> = ({ lat, lng, className = ""
   const link = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   
   return (
-    <div className={`relative rounded overflow-hidden border border-brand-main/40 bg-white min-h-[320px] ${className}`}>
+    <div className={`relative rounded overflow-hidden border border-brand-main/40 bg-gray-100 min-h-[320px] ${className}`}>
       {/* Map fills entire container */}
       <div ref={mapRef} className="absolute inset-0" />
 

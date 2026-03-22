@@ -172,6 +172,7 @@ export interface ProjectDoc {
     pledged?: number;
     raised?: number;
   }[];
+  currentPhaseId?: string; // ID of the currently active phase
   accessPin?: string; // 4-6 digit PIN for view protection
   authorizedViewers?: string[]; // UIDs of users who have entered correct PIN
   createdAt?: unknown;
@@ -210,7 +211,13 @@ export interface ShowcaseDoc {
   description?: string;
   ownerUid: string;
   orgId?: string;           // undefined/null = personal showcase; set = org showcase
-  projectDocIds: string[];  // Firestore document IDs of included projects
+  type?: 'projects' | 'locations';  // Type of showcase - defaults to 'projects' for backward compatibility
+  projectDocIds: string[];  // Firestore document IDs of included projects (used when type is 'projects' or undefined)
+  locationEntries?: Array<{  // Used when type is 'locations'
+    orgId: string;          // Organization code/ID
+    orgDbId: string;        // Organization Firestore doc ID
+    locationId: string;     // Location ID within that org
+  }>;
   createdAt?: unknown;      // serverTimestamp
 }
 

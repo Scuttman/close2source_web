@@ -74,13 +74,23 @@ service cloud.firestore {
       allow read: if true;
       // Any authenticated user may create a new project (they become createdBy)
       allow create: if isSignedIn();
-      // Only creator or SuperAdmin may modify or remove
-      // NOTE: org team members who are not the creator cannot edit via rules alone;
-      //       this requires storing the Firestore org doc ID on the project to enable
-      //       a get()-based membership check. Tracked as a data-model improvement.
-      allow update, delete: if isSignedIn()
-                               && (request.auth.uid == resource.data.createdBy
-                                   || isSuperAdmin());
+      // Only creator or SuperAdmin may modify or remove — with two self-service exceptions:
+      //   1. Any signed-in user can append themselves to the partners array (+ updatedAt only)
+      //   2. Any signed-in user can update amountPledged alone (pledge total update)
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.createdBy ||
+        isSuperAdmin() ||
+        // Partner self-add: only 'partners' and 'updatedAt' fields change, partners grows by 1
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partners', 'updatedAt']) &&
+          request.resource.data.partners.size() == resource.data.partners.size() + 1
+        ) ||
+        // Pledge amount update: only 'amountPledged' changes
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPledged'])
+      );
+      allow delete: if isSignedIn()
+                       && (request.auth.uid == resource.data.createdBy
+                           || isSuperAdmin());
     }
     // Project sub-collections: public read so profile pages work without authentication
     match /projects/{projectId}/{rest=**} {

@@ -19,6 +19,7 @@ import IndividualPrayerTab from "../../../components/IndividualPrayerTab";
 import IndividualFinanceTab from "../../../components/IndividualFinanceTab";
 import ProfilePinGate from "../../../components/ProfilePinGate";
 import IndividualSettingsTab from "../../../components/IndividualSettingsTab";
+import IndividualProjectsSection from "../../../components/IndividualProjectsSection";
 
 function ProfilePageInner() {
   const searchParams = useSearchParams();
@@ -516,6 +517,13 @@ function ProfilePageInner() {
               }))}
               readOnly={!(isOwner && editMode)}
             />
+            {individual.ownerUid && (
+              <IndividualProjectsSection
+                ownerUid={individual.ownerUid}
+                isOwner={isOwner}
+                currentUser={userUid ? { uid: userUid } : null}
+              />
+            )}
             {isOwner && (
               <IndividualSettingsTab
                 individual={individual}

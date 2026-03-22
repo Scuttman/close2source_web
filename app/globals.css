@@ -2,4 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* Prevent white flash during scroll repaints — browser falls back to
+     html background when body/fixed layers haven't been composited yet */
+  background-color: #FAF9F6; /* brand-sand */
+}

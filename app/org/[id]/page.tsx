@@ -71,7 +71,7 @@ function OrganizationDetailPage(){
   useEffect(()=> {
     if(!orgDoc?.id || !orgDoc?.orgId) return;
     const unsubShowcases = subscribeOrgShowcases(orgDoc.orgId, setOrgShowcases);
-    const unsubPicker = subscribeOrgProjects(orgDoc.id, (projs) => setOrgProjectsForPicker(projs));
+    const unsubPicker = subscribeOrgProjects(orgDoc.orgId, (projs) => setOrgProjectsForPicker(projs));
     return ()=> { unsubShowcases(); unsubPicker(); };
   }, [orgDoc?.id, orgDoc?.orgId]);
   // Resolve document by orgId field (like project code) once, then subscribe real-time

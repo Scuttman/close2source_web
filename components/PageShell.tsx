@@ -14,6 +14,8 @@ interface PageShellProps {
   searchPlaceholder?: string;
   // Optional right side actions (e.g., button). Rendered to the right of search (or title if no search)
   headerRight?: React.ReactNode;
+  // Override padding on the black header bar (default: pt-4 pb-4)
+  headerClassName?: string;
 }
 
 // Reusable page container with semi-transparent background and black title bar
@@ -28,15 +30,16 @@ export default function PageShell({
   searchPlaceholder = "Search...",
   headerRight,
   headerStyle,
+  headerClassName = "py-3",
 }: PageShellProps) {
   // Keep a local controlled copy of search value to avoid uncontrolled->controlled warnings
   const [localSearch, setLocalSearch] = useState(searchValue);
   // Sync when prop changes (externally driven)
   useEffect(()=> { setLocalSearch(searchValue); }, [searchValue]);
   return (
-    <div className={`relative mx-auto max-w-[1200px] w-full px-2 sm:px-4 md:px-6 flex flex-col flex-1 min-h-full ${className}`}>
-      <div className="rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-white/90 flex flex-col flex-1 min-h-0">
-  <div className="bg-black text-white px-4 md:px-6 py-4 flex items-center gap-4" style={headerStyle}>
+    <div className={`relative mx-auto max-w-[1200px] w-full sm:px-4 md:px-6 flex flex-col flex-1 min-h-full ${className}`}>
+      <div className="rounded-none sm:rounded-xl overflow-hidden sm:shadow-2xl border-0 sm:border sm:border-white/10 bg-white flex flex-col flex-1 min-h-0">
+        <div className={`bg-black text-white px-4 md:px-6 ${headerClassName} flex items-center gap-4`} style={headerStyle}>
           <h1 className="flex-1 text-xl md:text-2xl font-semibold leading-none truncate">{title}</h1>
           {searchEnabled && (
             <div className="w-40 sm:w-56 md:w-72">

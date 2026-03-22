@@ -275,7 +275,11 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 									const isLive = (p.status ?? 'live') === 'live';
 									const isPrivate = (p.visibility ?? 'public') === 'private';
 									const isPublic = (p.visibility ?? 'public') === 'public';
-									const budget = p.totalBudget ? `${p.currency || '$'}${p.totalBudget.toLocaleString()}` : null;
+								const curr = p.currency || '$';
+								const budget = p.totalBudget ? `${curr}${Number(p.totalBudget).toLocaleString()}` : null;
+								const amountRaised = typeof p.amountRaised === 'number' && p.amountRaised > 0 ? p.amountRaised : null;
+								const phases: any[] | undefined = Array.isArray(p.budgetPhases) ? p.budgetPhases : undefined;
+								const currentPhase = phases && p.currentPhaseId ? phases.find((ph: any) => ph.id === p.currentPhaseId) : null;
 									return (
 										<a key={p.id} href={`/projects/${p.projectId || p.id}`} className='group relative rounded-lg overflow-hidden border border-brand-main/10 bg-white hover:shadow-md transition flex flex-col'>
 											{p.coverPhotoUrl && <img src={p.coverPhotoUrl} alt={p.name} className='w-full h-40 object-cover' />}
@@ -288,9 +292,30 @@ export default function OrgProjectsTab({ org, isOwner, currentUser }: OrgProject
 													</div>
 												)}
 												{budget && currentUser && (
-													<div className='text-[11px] text-gray-600 flex items-center gap-0.5 mb-1'>
+												<div className='mb-1 space-y-0.5'>
+													{/* Total budget */}
+													<div className='text-[11px] text-gray-600 flex items-center gap-0.5'>
 														<svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><circle cx='12' cy='12' r='10'/><path d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'/><path d='M12 18V6'/></svg>
 														<span className='font-medium'>{budget}</span>
+														<span className='text-gray-400 ml-0.5'>target</span>
+													</div>
+													{/* Amount raised */}
+													{amountRaised && (
+														<div className='text-[11px] text-green-700 flex items-center gap-0.5'>
+															<svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><polyline points='23 6 13.5 15.5 8.5 10.5 1 18'/><polyline points='17 6 23 6 23 12'/></svg>
+															<span className='font-medium'>{curr}{amountRaised.toLocaleString()}</span>
+															<span className='text-green-600 ml-0.5'>raised</span>
+														</div>
+													)}
+													{/* Current phase */}
+													{currentPhase && (
+														<div className='text-[11px] text-blue-700 flex items-center gap-0.5'>
+															<svg xmlns='http://www.w3.org/2000/svg' className='w-3 h-3 flex-shrink-0' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><path d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'/><line x1='4' y1='22' x2='4' y2='15'/></svg>
+															<span className='truncate max-w-[80px]'>{currentPhase.name}</span>
+															<span className='text-gray-400'>·</span>
+															<span className='font-medium'>{curr}{Number(currentPhase.target || 0).toLocaleString()}</span>
+														</div>
+													)}
 													</div>
 												)}
 												{p.description && <div className='text-[11px] text-gray-600 line-clamp-3 flex-1'>{p.description}</div>}

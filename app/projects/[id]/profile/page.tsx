@@ -44,12 +44,12 @@ import {
   LockClosedIcon,
   StarIcon,
   SparklesIcon,
-  ArrowDownTrayIcon,
   ShareIcon,
   XMarkIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
-import { generateProjectPDF } from '../../../../src/lib/pdfGenerator';
+import { openPrintPreview } from '../../../../src/lib/htmlPrintPreview';
 import { moderateProfileContent, submitToModerationQueue, getPendingReviewMessage } from '../../../../src/lib/moderation';
 import { generateListWithAI } from '../../../../src/lib/ai';
 
@@ -79,6 +79,9 @@ interface BudgetPhase {
   target: number;
   pledged?: number;
   raised?: number;
+  duration?: number;
+  durationUnit?: string;
+  targetDate?: string;
 }
 
 interface Project {
@@ -106,6 +109,7 @@ interface Project {
   matchedFundingNote?: string;
   seekingMultiplePartners?: boolean;
   budgetPhases?: BudgetPhase[];
+  currentPhaseId?: string;
   organizationId?: string;
   organizationName?: string;
   organizationLogoUrl?: string;
@@ -129,6 +133,7 @@ interface Project {
   galleryImages?: string[];
   visibility?: 'public' | 'private';
   status?: 'draft' | 'live' | 'pending_review';
+  projectStage?: 'proposal' | 'active' | 'completed';
   showOnOrganizationOverview?: boolean;
   locationId?: string;
   accessPin?: string;
@@ -170,13 +175,18 @@ function ProjectProposalInner() {
   const [ytInput, setYtInput] = useState('');
   const [keyDocsEditOpen, setKeyDocsEditOpen] = useState(false);
   const [newImpactItem, setNewImpactItem] = useState('');
-  const [newGoalItem, setNewGoalItem] = useState('');
-  const [generatingGoals, setGeneratingGoals] = useState(false);
   const [generatingImpactItems, setGeneratingImpactItems] = useState(false);
+  const [combiningGoalsImpact, setCombiningGoalsImpact] = useState(false);
+  const [combinePreview, setCombinePreview] = useState<{ intro: string; points: string[] } | null>(null);
+  const [combiningSummary, setCombiningSummary] = useState(false);
+  const [summaryPreview, setSummaryPreview] = useState<string[] | null>(null);
+  const [summaryModifyInstruction, setSummaryModifyInstruction] = useState('');
+  const [summaryModifying, setSummaryModifying] = useState(false);
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [aiReviewModalOpen, setAiReviewModalOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'location' | 'project'>('project');
   const [editPhases, setEditPhases] = useState<BudgetPhase[]>([]);
   const [orgTeamMembers, setOrgTeamMembers] = useState<any[]>([]);
   const [uploadingPersonPhoto, setUploadingPersonPhoto] = useState<number | null>(null);
@@ -412,6 +422,20 @@ function ProjectProposalInner() {
     }
   };
 
+  const setCurrentPhase = async (phaseId: string | null) => {
+    if (!resolvedDocId) return;
+    try {
+      const updates: any = {
+        currentPhaseId: phaseId || fieldDelete(),
+      };
+      await updateProject(resolvedDocId, updates);
+      setProject(prev => prev ? { ...prev, currentPhaseId: phaseId || undefined } : null);
+    } catch (err: any) {
+      console.error('Error setting current phase:', err);
+      alert('Failed to update current phase: ' + err.message);
+    }
+  };
+
   // Resolve project ID or doc ID
   useEffect(() => {
     let cancelled = false;
@@ -628,7 +652,7 @@ function ProjectProposalInner() {
   const displayTown = isSensitive ? undefined : (activeLoc?.town || project.location?.town);
   const displayCountry = activeLoc?.country || project.location?.country;
 
-  async function saveVisibilityField(patch: Partial<Pick<Project, 'visibility' | 'status' | 'showOnOrganizationOverview'>>) {
+  async function saveVisibilityField(patch: Partial<Pick<Project, 'visibility' | 'status' | 'projectStage' | 'showOnOrganizationOverview'>>) {
     if (!resolvedDocId) return;
     setSavingVisibility(true);
     setPendingReviewMsg(null);
@@ -696,6 +720,7 @@ function ProjectProposalInner() {
   return (
     <PageShell
       title={`${project.name} - Proposal`}
+      headerClassName="pt-4 pb-10"
       headerRight={(
         <div className="flex items-center gap-2">
           {project?.projectId && (
@@ -719,11 +744,11 @@ function ProjectProposalInner() {
         )}
 
         {/* Hero Header */}
-        <div className="relative w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8" style={{ marginTop: '-2rem' }}>
+        <div className="relative w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-3 sm:-ml-6 md:-ml-8" style={{ marginTop: '-2rem' }}>
           {/* Background Image with Overlay */}
           <div className="absolute inset-0 bg-gray-900 overflow-hidden">
-            {project.coverPhotoUrl && (
-              <>
+            {project.coverPhotoUrl ? (
+              <div className="relative w-full h-full">
                 <NextImage
                   src={project.coverPhotoUrl}
                   alt={project.name}
@@ -733,66 +758,83 @@ function ProjectProposalInner() {
                   style={{ objectFit: 'cover' }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/20"></div>
-              </>
+              </div>
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900"></div>
             )}
           </div>
           
           {/* Organization Logo - Top Right */}
           {orgLogo && (
-            <div className="absolute top-10 right-[2.7rem] z-20">
+            <div className="hidden sm:block absolute top-6 sm:top-10 right-3 sm:right-[2.7rem] z-20">
               <NextImage
                 src={orgLogo}
                 alt="Organization"
                 width={160}
                 height={96}
-                style={{ height: '6rem', width: 'auto', objectFit: 'contain' }}
-                className="bg-white rounded-lg p-3 shadow-2xl border-2 border-gray-200"
+                style={{ height: '4.5rem', width: 'auto', objectFit: 'contain' }}
+                className="sm:[height:6rem] bg-white rounded-lg p-2 sm:p-3 shadow-2xl border-2 border-gray-200"
               />
             </div>
           )}
           
-          {/* Project Code + Partner Button + Share - Bottom Right */}
-          <div className="absolute bottom-10 right-[2.7rem] z-20 flex items-stretch gap-3">
+          {/* Project Code + Partner Button + Share - hidden on mobile (shown in action bar), Bottom Right on sm+ */}
+          <div className="hidden sm:flex absolute bottom-10 right-[2.7rem] z-20 items-stretch gap-3">
             {!isActualCreator && (
               <button
                 onClick={() => setPartnerModalOpen(true)}
-                className="px-5 py-3 bg-white text-brand-main rounded-lg font-semibold hover:bg-gray-100 transition-all shadow-lg flex items-center gap-2 text-sm"
+                className="px-3 sm:px-5 py-2 sm:py-3 bg-white text-brand-main rounded-lg font-semibold hover:bg-gray-100 transition-all shadow-lg flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
               >
                 <StarIcon className="w-4 h-4" />
-                Become a Partner
+                <span className="hidden sm:inline">Become a Partner</span>
               </button>
             )}
-            {/* Download PDF — visible to all visitors */}
-            <button
-              onClick={() => {
-                generateProjectPDF({
-                  name: project.name,
-                  projectId: project.projectId || resolvedDocId || undefined,
-                  strapline: project.strapline,
-                  description: project.description,
-                  coverPhotoUrl: project.coverPhotoUrl,
-                  locationName: project.locationName,
-                  locationIntroduction: project.locationIntroduction,
-                  locationVision: activeLoc?.vision,
-                  locationWhatWeDo: activeLoc?.whatWeDo,
-                  vision: project.vision,
-                  projectSummary: project.projectSummary,
-                  projectImpact: project.projectImpact,
-                  targetCompletionDate: project.targetCompletionDate,
-                  totalBudget: project.totalBudget,
-                  currency: project.currency,
-                  goals: project.goals,
-                  beneficiaries: project.beneficiaries,
-                  organizationName: project.organizationName,
-                  organizationLogoUrl: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined
-                });
-              }}
-              className="h-full px-4 py-3 bg-white/20 backdrop-blur-sm rounded-lg border border-white/30 text-white hover:bg-white/30 transition flex items-center gap-2 text-sm font-medium"
-              title="Download profile as PDF"
-            >
-              <ArrowDownTrayIcon className="w-5 h-5" />
-              <span className="hidden md:inline">Download PDF</span>
-            </button>
+            {/* Print / PDF — visible to all visitors */}
+              <button
+                onClick={() => {
+                  openPrintPreview({
+                    projectName: project.name,
+                    projectId: project.projectId || resolvedDocId || undefined,
+                    strapline: project.strapline,
+                    description: project.description,
+                    coverPhotoURL: project.coverPhotoUrl,
+                    locationName: displayLocationName,
+                    locationTown: displayTown,
+                    locationCountry: displayCountry,
+                    locationIntroduction: project.locationIntroduction,
+                    locationVision: activeLoc?.vision,
+                    locationWhatWeDo: activeLoc?.whatWeDo,
+                    vision: project.vision,
+                    projectSummary: project.projectSummary,
+                    projectImpact: project.projectImpact,
+                    impactItems: project.impactItems,
+                    otherDetails: project.otherDetails,
+                    goals: project.goals,
+                    beneficiaries: project.beneficiaries,
+                    oversight: project.oversight,
+                    safeguardingInPlace: project.safeguardingInPlace,
+                    financialAccountabilityInPlace: project.financialAccountabilityInPlace,
+                    totalBudget: project.totalBudget,
+                    amountPledged: project.amountPledged,
+                    amountRaised: project.amountRaised,
+                    currency: project.currency,
+                    budgetPhases: project.budgetPhases,
+                    targetCompletionDate: project.targetCompletionDate,
+                    projectDuration: project.projectDuration,
+                    projectDurationUnit: project.projectDurationUnit,
+                    orgName: project.organizationName,
+                    orgLogoURL: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined,
+                    orgId: project.organizationId || undefined,
+                    people: project.peopleInvolved || [],
+                    currentPhaseId: (project as any).currentPhaseId
+                  });
+                }}
+                className="h-full px-4 py-3 bg-brand-main text-white rounded-lg border border-brand-main/30 hover:bg-brand-dark transition flex items-center gap-2 text-sm font-semibold shadow-lg"
+                title="Print project profile or Save as PDF"
+              >
+                <PrinterIcon className="w-5 h-5" />
+                <span className="hidden md:inline">Print / PDF</span>
+              </button>
             {project.projectId && (
               <div className="relative">
                 <button
@@ -848,15 +890,25 @@ function ProjectProposalInner() {
           </div>
           
           {/* Content */}
-          <div className="relative py-12 md:py-20 px-8">
-            <div className="max-w-4xl">
+          <div className="relative py-6 sm:py-12 md:py-20 px-4 sm:px-8">
+            <div className="max-w-4xl pr-0 sm:pr-[11rem] xl:pr-0">
               {/* Project Label */}
-              <div className="inline-block mb-4 px-4 py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
-                <span className="text-xs font-semibold text-white uppercase tracking-wider">Project Proposal</span>
-              </div>
+              {(() => {
+                const stage = project.projectStage ?? 'proposal';
+                const stageConfig = {
+                  proposal: { label: 'Project Proposal', bg: 'bg-white/10', border: 'border-white/20' },
+                  active:   { label: 'Active Project',   bg: 'bg-green-500/30', border: 'border-green-300/40' },
+                  completed:{ label: 'Completed Project', bg: 'bg-blue-500/30',  border: 'border-blue-300/40' },
+                }[stage];
+                return (
+                  <div className={`inline-block mb-4 px-4 py-1.5 backdrop-blur-md rounded-full border ${stageConfig.bg} ${stageConfig.border}`}>
+                    <span className="text-xs font-semibold text-white uppercase tracking-wider">{stageConfig.label}</span>
+                  </div>
+                );
+              })()}
               
               {/* Project Title */}
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-3 leading-tight">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-2 sm:mb-3 leading-tight">
                 {project.name}
               </h1>
 
@@ -893,7 +945,7 @@ function ProjectProposalInner() {
         </div>
         
         {/* Creator Action Bar / Black Border Line */}
-        <div className="w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8 bg-black">
+        <div className="w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-3 sm:-ml-6 md:-ml-8 bg-black">
           {isActualCreator ? (
             <div className="flex items-center gap-2 px-6 py-2.5 min-h-[42px]">
               {isCreator && (
@@ -917,6 +969,28 @@ function ProjectProposalInner() {
                 {isPublic ? <GlobeAltIcon className="w-3.5 h-3.5" /> : <LockClosedIcon className="w-3.5 h-3.5" />}
                 <span>{isPublic ? 'Public' : 'Private'}</span>
               </button>
+
+              {/* Project Stage: Proposal / Active / Completed */}
+              {(() => {
+                const stage = project.projectStage ?? 'proposal';
+                const next: Record<string, 'active' | 'completed' | 'proposal'> = { proposal: 'active', active: 'completed', completed: 'proposal' };
+                const cfg: Record<string, { label: string; cls: string }> = {
+                  proposal:  { label: 'Proposal',  cls: 'bg-white/15 text-white border-white/25 hover:bg-white/25' },
+                  active:    { label: 'Active',    cls: 'bg-green-600/80 text-white border-green-500 hover:bg-green-700' },
+                  completed: { label: 'Completed', cls: 'bg-blue-600/80 text-white border-blue-500 hover:bg-blue-700' },
+                };
+                return (
+                  <button
+                    disabled={savingVisibility}
+                    onClick={() => saveVisibilityField({ projectStage: next[stage] })}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all disabled:opacity-60 ${cfg[stage].cls}`}
+                    title="Click to cycle project stage: Proposal → Active → Completed"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${{ proposal: 'bg-white/60', active: 'bg-green-300', completed: 'bg-blue-300' }[stage]}`}></span>
+                    <span>{cfg[stage].label}</span>
+                  </button>
+                );
+              })()}
 
               {/* Status: Draft / Live / Pending Review */}
               {isPendingReview ? (
@@ -981,20 +1055,20 @@ function ProjectProposalInner() {
               </div>
               )}
               {!isCreator && <div className="flex-1" />}
-              {/* Return to Showcase — visible to all when accessed from a showcase */}
+              {/* Return to Showcase — hidden on mobile, shown in mobile icon row instead */}
               {fromShowcase && showcaseReturnCode && (
                 <a
                   href={`/showcase/${showcaseReturnCode}`}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-orange-500 text-white border-orange-400 hover:bg-orange-600"
+                  className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all bg-orange-500 text-white border-orange-400 hover:bg-orange-600 whitespace-nowrap"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                  Return to Showcase
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  Back
                 </a>
               )}
               {/* Preview/Edit toggle — always visible, right-aligned */}
               <div className="ml-auto pl-2">
                 <button
-                  onClick={() => setPreviewMode(p => !p)}
+                  onClick={() => { setPreviewMode(p => !p); setEditMode({}); }}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
                     previewMode
                       ? 'bg-orange-500 text-white border-orange-400 hover:bg-orange-600'
@@ -1012,19 +1086,107 @@ function ProjectProposalInner() {
             </div>
           ) : (
             fromShowcase && showcaseReturnCode ? (
-              <div className="flex items-center justify-end px-6 py-2 min-h-[42px]">
+              <div className="hidden sm:flex items-center justify-end px-6 py-2 min-h-[42px]">
                 <a
                   href={`/showcase/${showcaseReturnCode}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-semibold rounded-md hover:bg-orange-600 transition"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-semibold rounded-md hover:bg-orange-600 transition whitespace-nowrap"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                  Return to Showcase
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  Back
                 </a>
               </div>
             ) : (
               <div className="h-[2px]" />
             )
           )}
+          {/* Mobile-only: Partner + Download + Share icons (left) + Back (right) */}
+          <div className="sm:hidden flex items-center gap-2 px-3 pb-3">
+            {!isActualCreator && (
+              <button
+                onClick={() => setPartnerModalOpen(true)}
+                className="w-10 h-10 flex items-center justify-center bg-white text-brand-main rounded-lg shrink-0"
+                title="Become a Partner"
+              >
+                <StarIcon className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={() => {
+                openPrintPreview({
+                  projectName: project.name,
+                  projectId: project.projectId || resolvedDocId || undefined,
+                  strapline: project.strapline,
+                  description: project.description,
+                  coverPhotoURL: project.coverPhotoUrl,
+                  locationName: displayLocationName,
+                  locationTown: displayTown,
+                  locationCountry: displayCountry,
+                  locationIntroduction: project.locationIntroduction,
+                  locationVision: activeLoc?.vision,
+                  locationWhatWeDo: activeLoc?.whatWeDo,
+                  vision: project.vision,
+                  projectSummary: project.projectSummary,
+                  projectImpact: project.projectImpact,
+                  impactItems: project.impactItems,
+                  otherDetails: project.otherDetails,
+                  goals: project.goals,
+                  beneficiaries: project.beneficiaries,
+                  oversight: project.oversight,
+                  safeguardingInPlace: project.safeguardingInPlace,
+                  financialAccountabilityInPlace: project.financialAccountabilityInPlace,
+                  totalBudget: project.totalBudget,
+                  amountPledged: project.amountPledged,
+                  amountRaised: project.amountRaised,
+                  currency: project.currency,
+                  budgetPhases: project.budgetPhases,
+                  targetCompletionDate: project.targetCompletionDate,
+                  projectDuration: project.projectDuration,
+                  projectDurationUnit: project.projectDurationUnit,
+                  orgName: project.organizationName,
+                  orgLogoURL: project.organizationLogoUrl || project.organizationLogo || orgLogo || undefined,
+                  orgId: project.organizationId || undefined,
+                  people: project.peopleInvolved || [],
+                  currentPhaseId: (project as any).currentPhaseId
+                });
+              }}
+              className="w-10 h-10 flex items-center justify-center bg-brand-main rounded-lg text-white shrink-0 border border-brand-main/20 shadow-md"
+              title="Print profile or Save as PDF"
+            >
+              <PrinterIcon className="w-5 h-5 font-bold" />
+            </button>
+            {project.projectId && (
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShareOpen(o => !o)}
+                  className="w-10 h-10 flex items-center justify-center bg-green-600/50 rounded-lg text-white"
+                  title="Share"
+                >
+                  <ShareIcon className="w-5 h-5" />
+                </button>
+                {shareOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShareOpen(false)} />
+                    <div className="absolute left-0 bottom-full mb-2 z-20 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden min-w-[200px]">
+                      <p className="text-xs text-gray-400 px-4 pt-3 pb-1 font-semibold uppercase tracking-wider">Share via</p>
+                      <a href={`https://wa.me/?text=${encodeURIComponent('Check out this project: https://close2source.com/?id=' + project.projectId)}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-4 py-2.5 hover:bg-green-50 text-gray-700 text-sm transition" onClick={() => setShareOpen(false)}><span className="text-lg">💬</span>WhatsApp</a>
+                      <a href={`mailto:?subject=${encodeURIComponent('Check out: ' + project.name)}&body=${encodeURIComponent('I wanted to share this project with you:\n\nhttps://close2source.com/?id=' + project.projectId)}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 text-gray-700 text-sm transition" onClick={() => setShareOpen(false)}><span className="text-lg">✉️</span>Email</a>
+                      <button onClick={() => { navigator.clipboard.writeText('https://close2source.com/?id=' + project.projectId); setShareOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-gray-700 text-sm transition border-t border-gray-100"><ShareIcon className="w-4 h-4 text-gray-400" />Copy link</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {/* Back button — right aligned */}
+            {fromShowcase && showcaseReturnCode && (
+              <a
+                href={`/showcase/${showcaseReturnCode}`}
+                className="ml-auto h-10 flex items-center gap-1 px-3 bg-orange-500 text-white text-xs font-semibold rounded-md hover:bg-orange-600 transition whitespace-nowrap"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                Back
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Content Container */}
@@ -1182,12 +1344,7 @@ function ProjectProposalInner() {
                 {isCreator && (
                   <button
                     onClick={() => {
-                      if (activeLoc && orgDocId) {
-                        setOrgLocEditForm({ ...activeLoc });
-                        setOrgLocEditOpen(true);
-                      } else {
-                        setLocationModalOpen(true);
-                      }
+                      setLocationModalOpen(true);
                     }}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
@@ -1455,6 +1612,117 @@ function ProjectProposalInner() {
                 </div>
               )}
             </div>
+
+            {/* Compliance */}
+            <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg shadow-md p-6 border-l-4 border-orange-600">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <CheckCircleIcon className="w-6 h-6 text-orange-600" />
+                  Compliance
+                </h2>
+                {isCreator && (
+                  <button
+                    onClick={() => editMode.quickCheck ? saveSection('quickCheck', ['oversight', 'approved', 'safeguardingInPlace', 'financialAccountabilityInPlace']) : toggleEditMode('quickCheck')}
+                    disabled={saving}
+                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
+                    title={editMode.quickCheck ? 'Save' : 'Edit'}
+                  >
+                    {editMode.quickCheck ? (
+                      <CheckIcon className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <PencilIcon className="w-5 h-5 text-orange-600" />
+                    )}
+                  </button>
+                )}
+              </div>
+              {editMode.quickCheck ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Oversight</label>
+                    <input
+                      type="text"
+                      value={editValues.oversight || ''}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, oversight: e.target.value }))}
+                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Who has oversight?"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="approved2" checked={editValues.approved || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, approved: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="approved2" className="text-sm font-medium text-gray-700">Approved</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="safeguarding2" checked={editValues.safeguardingInPlace || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, safeguardingInPlace: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="safeguarding2" className="text-sm font-medium text-gray-700">Safeguarding Process in Place</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="financial2" checked={editValues.financialAccountabilityInPlace || false}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, financialAccountabilityInPlace: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                    <label htmlFor="financial2" className="text-sm font-medium text-gray-700">Financial Accountability in Place</label>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {project.oversight && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Oversight:</div>
+                      <div className="text-gray-900 text-sm">{project.oversight}</div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Safeguarding:</div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {project.safeguardingInPlace ? (
+                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                      {project.safeguardingInPlace && orgSafeguardingUrl && (
+                        <a
+                          href={orgSafeguardingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          View Safeguarding Document
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Financial:</div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {project.financialAccountabilityInPlace ? (
+                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                      {project.financialAccountabilityInPlace && orgLatestAuditReport && (
+                        <a
+                          href={orgLatestAuditReport.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          View Latest Audit Report{orgLatestAuditReport.year ? ` (${orgLatestAuditReport.year})` : ''}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1497,16 +1765,16 @@ function ProjectProposalInner() {
           {/* Left Column - Project Name, Summary, Impact, Other Details (67%) */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Project Overview Card */}
+            {/* Project Summary Card */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <DocumentTextIcon className="w-6 h-6 text-orange-600" />
-                  Project Overview
+                  Project Summary
                 </h2>
                 {isCreator && (
                   <button
-                    onClick={() => editMode.projectName ? saveSection('projectName', ['name', 'strapline', 'description']) : toggleEditMode('projectName')}
+                    onClick={() => editMode.projectName ? saveSection('projectName', ['name', 'strapline', 'description', 'projectSummary']) : toggleEditMode('projectName')}
                     disabled={saving}
                     className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                     title={editMode.projectName ? 'Save' : 'Edit'}
@@ -1542,6 +1810,65 @@ function ProjectProposalInner() {
                     placeholder="Short project description..."
                     rows={3}
                   />
+                  {/* Combine with AI — only shown when projectSummary also has content */}
+                  {(project.projectSummary || (editValues.projectSummary && (editValues.projectSummary as string).trim())) && (
+                    <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                      <p className="text-xs text-purple-700 font-medium mb-2">
+                        You have a separate Project Summary. Use AI to merge both into three polished paragraphs, avoiding any repetition.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={combiningSummary}
+                        onClick={async () => {
+                          setCombiningSummary(true);
+                          try {
+                            const overviewText = editValues.description || project.description || '';
+                            const summaryText = (editValues.projectSummary as string) || project.projectSummary || '';
+                            const context = [
+                              project.name ? `Project: ${project.name}` : '',
+                              project.strapline ? `Strapline: ${project.strapline}` : '',
+                              overviewText ? `Overview/Description:\n${overviewText}` : '',
+                              summaryText ? `Project Summary:\n${summaryText}` : '',
+                            ].filter(Boolean).join('\n\n');
+                            const result = await fetch('/api/ai', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                model: 'gpt-4o-mini',
+                                messages: [
+                                  {
+                                    role: 'system',
+                                    content: 'You are a professional project writer. Combine the provided overview and summary into exactly 3 well-written paragraphs that flow naturally, with no repetition of ideas or phrases across paragraphs. The first paragraph should introduce the project and its context, the second should describe what will be done and how, and the third should explain the expected outcomes and impact. Each paragraph should cover distinct ground. Return a JSON object with a single key "paragraphs" containing an array of exactly 3 strings. No markdown, no extra keys.',
+                                  },
+                                  { role: 'user', content: context },
+                                ],
+                                temperature: 0.7,
+                                max_tokens: 900,
+                              }),
+                            });
+                            if (!result.ok) throw new Error('AI request failed');
+                            const data = await result.json();
+                            const raw = data.choices[0].message.content.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+                            const parsed = JSON.parse(raw);
+                            setSummaryPreview(Array.isArray(parsed.paragraphs) ? parsed.paragraphs : []);
+                            setSummaryModifyInstruction('');
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to combine summaries');
+                          } finally {
+                            setCombiningSummary(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium hover:from-purple-700 hover:to-indigo-700 transition disabled:opacity-50"
+                      >
+                        {combiningSummary ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <SparklesIcon className="w-4 h-4" />
+                        )}
+                        {combiningSummary ? 'Combining…' : 'Combine Overview & Summary with AI'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -1550,14 +1877,18 @@ function ProjectProposalInner() {
                     <p className="mt-2 text-base font-semibold text-gray-800">{project.strapline}</p>
                   )}
                   {project.description && (
-                    <p className="mt-2 text-gray-600 leading-relaxed">{project.description}</p>
+                    <div className="mt-2 space-y-4">
+                      {project.description.split('\n\n').map((para, i) => (
+                        <p key={i} className="text-gray-600 leading-relaxed">{para}</p>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
             </div>
 
             {/* Project Summary */}
-            {(project.projectSummary || isCreator) && (
+            {!!project.projectSummary && (
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-bold flex items-center gap-2">
@@ -1596,17 +1927,17 @@ function ProjectProposalInner() {
               </div>
             )}
 
-            {/* Project Impact */}
-            {(project.projectImpact || (project.impactItems && project.impactItems.length > 0) || isCreator) && (
+            {/* Goals & Impact */}
+            {(project.projectImpact || (project.impactItems && project.impactItems.length > 0) || (project.goals && project.goals.length > 0) || isCreator) && (
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-bold flex items-center gap-2">
                     <LightBulbIcon className="w-6 h-6 text-orange-600" />
-                    Project Impact
+                    Goals &amp; Impact
                   </h2>
                   {isCreator && (
                     <button
-                      onClick={() => editMode.projectImpact ? saveSection('projectImpact', ['projectImpact', 'impactItems']) : toggleEditMode('projectImpact')}
+                      onClick={() => editMode.projectImpact ? saveSection('projectImpact', ['projectImpact', 'impactItems', 'goals']) : toggleEditMode('projectImpact')}
                       disabled={saving}
                       className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
                       title={editMode.projectImpact ? 'Save' : 'Edit'}
@@ -1622,6 +1953,71 @@ function ProjectProposalInner() {
 
                 {editMode.projectImpact ? (
                   <div className="space-y-5">
+                    {/* AI Combine Goals & Impact — only shown when goals exist */}
+                    {((project.goals && project.goals.length > 0) || (editValues.goals && editValues.goals.length > 0)) && (
+                      <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                        <p className="text-xs text-purple-700 font-medium mb-2">
+                          You have existing Goals. Use AI to merge both sections into a single introduction + numbered points.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={combiningGoalsImpact}
+                          onClick={async () => {
+                            setCombiningGoalsImpact(true);
+                            try {
+                              const goalsList = (editValues.goals || project.goals || []).join('\n');
+                              const impactList = (editValues.impactItems || project.impactItems || []).join('\n');
+                              const impactIntro = editValues.projectImpact || project.projectImpact || '';
+                              const context = [
+                                project.name ? `Project: ${project.name}` : '',
+                                project.description ? `Description: ${project.description}` : '',
+                                project.projectSummary ? `Summary: ${project.projectSummary}` : '',
+                                goalsList ? `Goals:\n${goalsList}` : '',
+                                impactIntro ? `Impact overview: ${impactIntro}` : '',
+                                impactList ? `Impact points:\n${impactList}` : '',
+                              ].filter(Boolean).join('\n\n');
+                              const result = await fetch('/api/ai', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  model: 'gpt-4o-mini',
+                                  messages: [
+                                    {
+                                      role: 'system',
+                                      content: 'You are a project writer. Given project goals and impact information, produce a JSON object with two keys: "intro" (one to two sentences introducing the combined goals and impact, max 40 words) and "points" (an array of exactly 5 clear sentences, each 15-25 words, that cover both the goals and expected impact). Each point should be a complete, meaningful sentence. Return only valid JSON, no markdown.',
+                                    },
+                                    { role: 'user', content: context },
+                                  ],
+                                  temperature: 0.7,
+                                  max_tokens: 800,
+                                }),
+                              });
+                              if (!result.ok) throw new Error('AI request failed');
+                              const data = await result.json();
+                              const raw = data.choices[0].message.content.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+                              const parsed = JSON.parse(raw);
+                              setCombinePreview({
+                                intro: parsed.intro || '',
+                                points: Array.isArray(parsed.points) ? parsed.points : [],
+                              });
+                            } catch (err: any) {
+                              alert(err.message || 'Failed to combine sections');
+                            } finally {
+                              setCombiningGoalsImpact(false);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium hover:from-purple-700 hover:to-indigo-700 transition disabled:opacity-50"
+                        >
+                          {combiningGoalsImpact ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <SparklesIcon className="w-4 h-4" />
+                          )}
+                          {combiningGoalsImpact ? 'Combining…' : 'Combine Goals & Impact with AI'}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Intro text */}
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Introduction</label>
@@ -1629,19 +2025,19 @@ function ProjectProposalInner() {
                         value={editValues.projectImpact || ''}
                         onChange={(value) => setEditValues(prev => ({ ...prev, projectImpact: value }))}
                         className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                        placeholder="Write a short overview of the expected impact…"
+                        placeholder="Write a short overview of the goals and expected impact…"
                         rows={3}
-                        aiContext="a project impact introduction"
+                        aiContext="a project goals and impact introduction"
                       />
                     </div>
 
-                    {/* Impact items list */}
+                    {/* Numbered points list */}
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Impact Points</label>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Points</label>
                       <div className="space-y-2 mb-3">
                         {(editValues.impactItems || []).map((item: string, i: number) => (
                           <div key={i} className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                            <span className="w-5 h-5 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
                             <input
                               type="text"
                               value={item}
@@ -1665,9 +2061,9 @@ function ProjectProposalInner() {
                           </div>
                         ))}
                       </div>
-                      {/* Add new item */}
+                      {/* Add new point */}
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                        <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold flex-shrink-0">{(editValues.impactItems || []).length + 1}</span>
                         <input
                           type="text"
                           value={newImpactItem}
@@ -1678,7 +2074,7 @@ function ProjectProposalInner() {
                               setNewImpactItem('');
                             }
                           }}
-                          placeholder="Add impact point and press Enter…"
+                          placeholder="Add a point and press Enter…"
                           className="flex-1 px-3 py-1.5 text-sm border border-dashed border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
                         />
                         <button
@@ -1692,7 +2088,7 @@ function ProjectProposalInner() {
                           + Add
                         </button>
                       </div>
-                      {/* AI Generate Impact Points */}
+                      {/* AI Generate Points */}
                       <button
                         type="button"
                         disabled={generatingImpactItems}
@@ -1708,25 +2104,25 @@ function ProjectProposalInner() {
                             const existing = editValues.impactItems || [];
                             const count = Math.max(3, 5 - existing.length);
                             const generated = await generateListWithAI(
-                              `specific impact points describing how this project benefits the community: ${context}`,
+                              `specific goals and impact points describing what this project aims to achieve and how it benefits the community: ${context}`,
                               existing,
                               count
                             );
                             setEditValues(prev => ({ ...prev, impactItems: [...(prev.impactItems || []), ...generated] }));
                           } catch (err: any) {
-                            alert(err.message || 'Failed to generate impact points');
+                            alert(err.message || 'Failed to generate points');
                           } finally {
                             setGeneratingImpactItems(false);
                           }
                         }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50"
+                        className="mt-3 flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50"
                       >
                         {generatingImpactItems ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         ) : (
                           <SparklesIcon className="w-4 h-4" />
                         )}
-                        {generatingImpactItems ? 'Generating…' : 'Generate Impact Points with AI'}
+                        {generatingImpactItems ? 'Generating…' : 'Generate Points with AI'}
                       </button>
                     </div>
                   </div>
@@ -1736,145 +2132,17 @@ function ProjectProposalInner() {
                       <p className="text-gray-700 whitespace-pre-wrap">{project.projectImpact}</p>
                     )}
                     {project.impactItems && project.impactItems.length > 0 && (
-                      <ul className="space-y-2">
+                      <ol className="space-y-2">
                         {project.impactItems.map((item, i) => (
                           <li key={i} className="flex items-start gap-3">
-                            <span className="mt-1 w-4 h-4 rounded-full border-2 border-orange-400 flex items-center justify-center flex-shrink-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                            </span>
+                            <span className="mt-0.5 w-5 h-5 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
                             <span className="text-gray-700">{item}</span>
                           </li>
                         ))}
-                      </ul>
+                      </ol>
                     )}
-                    {!project.projectImpact && (!project.impactItems || project.impactItems.length === 0) && isCreator && (
-                      <p className="text-gray-400 text-sm">Click Edit to add project impact</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Project Goals */}
-            {(project.goals && project.goals.length > 0 || isCreator) && (
-              <div className="bg-white rounded-lg shadow-md p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold flex items-center gap-2">
-                    <CheckCircleIcon className="w-6 h-6 text-orange-600" />
-                    Project Goals
-                  </h2>
-                  {isCreator && (
-                    <button
-                      onClick={() => editMode.goals ? saveSection('goals', ['goals']) : toggleEditMode('goals')}
-                      disabled={saving}
-                      className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
-                      title={editMode.goals ? 'Save' : 'Edit'}
-                    >
-                      {editMode.goals ? (
-                        <CheckIcon className="w-5 h-5 text-green-600" />
-                      ) : (
-                        <PencilIcon className="w-5 h-5 text-orange-600" />
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {editMode.goals ? (
-                  <div className="space-y-4">
-                    <div className="space-y-2 mb-3">
-                      {(editValues.goals || []).map((goal: string, i: number) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
-                          <input
-                            type="text"
-                            value={goal}
-                            onChange={(e) => {
-                              const updated = [...(editValues.goals || [])];
-                              updated[i] = e.target.value;
-                              setEditValues(prev => ({ ...prev, goals: updated }));
-                            }}
-                            className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                          />
-                          <button
-                            onClick={() => {
-                              const updated = (editValues.goals || []).filter((_: string, j: number) => j !== i);
-                              setEditValues(prev => ({ ...prev, goals: updated }));
-                            }}
-                            className="p-1 text-red-400 hover:text-red-600 flex-shrink-0"
-                            title="Remove"
-                          >
-                            <TrashIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Add new goal */}
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold flex-shrink-0">{(editValues.goals || []).length + 1}</span>
-                      <input
-                        type="text"
-                        value={newGoalItem}
-                        onChange={(e) => setNewGoalItem(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newGoalItem.trim()) {
-                            setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), newGoalItem.trim()] }));
-                            setNewGoalItem('');
-                          }
-                        }}
-                        placeholder="Add a goal and press Enter…"
-                        className="flex-1 px-3 py-1.5 text-sm border border-dashed border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
-                      />
-                      <button
-                        onClick={() => {
-                          if (!newGoalItem.trim()) return;
-                          setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), newGoalItem.trim()] }));
-                          setNewGoalItem('');
-                        }}
-                        className="px-3 py-1.5 text-sm rounded-lg bg-orange-50 border border-orange-200 text-orange-700 font-medium hover:bg-orange-100 transition"
-                      >
-                        + Add
-                      </button>
-                    </div>
-                    {/* AI Generate Goals */}
-                    <button
-                      type="button"
-                      disabled={generatingGoals}
-                      onClick={async () => {
-                        setGeneratingGoals(true);
-                        try {
-                          const context = [
-                            project.name ? `Project: ${project.name}` : '',
-                            project.description ? `Description: ${project.description}` : '',
-                            project.projectSummary ? `Summary: ${project.projectSummary}` : '',
-                            project.projectImpact ? `Impact: ${project.projectImpact}` : '',
-                          ].filter(Boolean).join('. ');
-                          const existing = editValues.goals || [];
-                          const count = Math.max(3, 5 - existing.length);
-                          const generated = await generateListWithAI(
-                            `project goals/key objectives based on this project: ${context}`,
-                            existing,
-                            count
-                          );
-                          setEditValues(prev => ({ ...prev, goals: [...(prev.goals || []), ...generated] }));
-                        } catch (err: any) {
-                          alert(err.message || 'Failed to generate goals');
-                        } finally {
-                          setGeneratingGoals(false);
-                        }
-                      }}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 transition disabled:opacity-50"
-                    >
-                      {generatingGoals ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <SparklesIcon className="w-4 h-4" />
-                      )}
-                      {generatingGoals ? 'Generating…' : 'Generate Goals with AI'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {project.goals && project.goals.length > 0 ? (
+                    {/* Show unconverted goals as numbered list if no impactItems yet */}
+                    {(!project.impactItems || project.impactItems.length === 0) && project.goals && project.goals.length > 0 && (
                       <ol className="space-y-2">
                         {project.goals.map((goal, i) => (
                           <li key={i} className="flex items-start gap-3">
@@ -1883,9 +2151,10 @@ function ProjectProposalInner() {
                           </li>
                         ))}
                       </ol>
-                    ) : isCreator ? (
-                      <p className="text-gray-400 text-sm">Click Edit to add project goals</p>
-                    ) : null}
+                    )}
+                    {!project.projectImpact && (!project.impactItems || project.impactItems.length === 0) && (!project.goals || project.goals.length === 0) && isCreator && (
+                      <p className="text-gray-400 text-sm">Click Edit to add goals and impact</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1929,11 +2198,30 @@ function ProjectProposalInner() {
                 }}
               />
 
-              {editMode.people ? (
+              {editMode.people && isCreator ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {(editValues.peopleInvolved || []).map((person: any, index: number) => (
-                      <div key={index} className="relative flex flex-col items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div key={index} className={`relative flex flex-col items-center p-4 rounded-lg border-2 transition-all ${
+                        person.isLead ? 'bg-blue-50 border-blue-400' : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        {/* Lead toggle */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newPeople = (editValues.peopleInvolved || []).map((p: any, i: number) => ({
+                              ...p,
+                              isLead: i === index ? !p.isLead : false,
+                            }));
+                            setEditValues(prev => ({ ...prev, peopleInvolved: newPeople }));
+                          }}
+                          className={`absolute top-2 left-2 p-1 rounded-full transition-colors ${
+                            person.isLead ? 'text-blue-500 bg-blue-100 hover:bg-blue-200' : 'text-gray-300 hover:text-blue-400 hover:bg-blue-50'
+                          }`}
+                          title={person.isLead ? 'Remove as Project Lead' : 'Set as Project Lead'}
+                        >
+                          <StarIcon className="w-4 h-4" fill={person.isLead ? 'currentColor' : 'none'} />
+                        </button>
                         <button
                           onClick={() => {
                             const newPeople = (editValues.peopleInvolved || []).filter((_: any, i: number) => i !== index);
@@ -2099,24 +2387,36 @@ function ProjectProposalInner() {
                   )}
                 </>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-4">
                   {project.peopleInvolved && project.peopleInvolved.length > 0 ? (
-                    project.peopleInvolved.map((person: any, index: number) => (
-                      <div key={index} className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
-                        <div className="w-20 h-20 rounded-full overflow-hidden mb-3">
+                    [...project.peopleInvolved]
+                      .sort((a: any, b: any) => (b.isLead ? 1 : 0) - (a.isLead ? 1 : 0))
+                      .map((person: any, index: number) => (
+                      <div key={index} className={`flex flex-col items-center p-2 sm:p-4 rounded-lg relative ${
+                        person.isLead ? 'bg-blue-50 ring-2 ring-blue-400' : 'bg-gray-50'
+                      }`}>
+                        {person.isLead && (
+                          <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[8px] sm:text-[10px] font-semibold">
+                            <StarIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" fill="currentColor" />
+                            <span className="hidden sm:inline">Project Lead</span>
+                          </div>
+                        )}
+                        <div className={`w-12 h-12 sm:w-20 sm:h-20 rounded-full overflow-hidden mb-2 sm:mb-3 ${person.isLead ? 'mt-3 sm:mt-4' : ''} ${
+                          person.isLead ? 'ring-2 ring-blue-400 ring-offset-1 sm:ring-offset-2' : ''
+                        }`}>
                           {person.photoURL ? (
                             <img src={person.photoURL} alt={person.name || ''} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full bg-orange-100 flex items-center justify-center">
-                              <span className="text-2xl font-semibold text-orange-600">
+                              <span className="text-base sm:text-2xl font-semibold text-orange-600">
                                 {person.name?.charAt(0)?.toUpperCase() || '?'}
                               </span>
                             </div>
                           )}
                         </div>
                         <div className="text-center">
-                          <div className="font-semibold text-gray-900 mb-1">{person.name || 'Unknown'}</div>
-                          <div className="text-sm text-gray-600">{person.role || 'No role specified'}</div>
+                          <div className="font-semibold text-gray-900 text-xs sm:text-base mb-0.5 sm:mb-1 leading-tight">{person.name || 'Unknown'}</div>
+                          <div className="text-[10px] sm:text-sm text-gray-600 leading-tight">{person.role || 'No role specified'}</div>
                         </div>
                       </div>
                     ))
@@ -2223,7 +2523,7 @@ function ProjectProposalInner() {
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     {project.galleryImages.map((url, i) => (
-                      <div key={i} className="relative group aspect-square">
+                      <div key={i} className="relative group aspect-square bg-gray-100 overflow-hidden rounded-lg">
                         <NextImage
                           fill
                           src={url}
@@ -2271,7 +2571,7 @@ function ProjectProposalInner() {
                     </h2>
                   </div>
                   {project.coverPhotoUrl ? (
-                    <div className="relative group mb-3 h-40">
+                    <div className="relative group mb-3 h-40 bg-gray-100 overflow-hidden rounded-lg">
                       <NextImage
                         fill
                         src={project.coverPhotoUrl}
@@ -2447,25 +2747,41 @@ function ProjectProposalInner() {
                       </div>
 
                       {/* Phase list */}
-                      {editPhases.map((phase, idx) => (
-                        <div key={phase.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <input
-                              type="text"
-                              value={phase.name}
-                              onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value } : p))}
-                              className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm font-semibold"
-                              placeholder={`Phase ${idx + 1} name`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setEditPhases(prev => prev.filter((_, i) => i !== idx))}
-                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                              title="Remove phase"
-                            >
-                              <XMarkIcon className="w-4 h-4" />
-                            </button>
-                          </div>
+                      {editPhases.map((phase, idx) => {
+                        const isCurrentPhase = project.currentPhaseId === phase.id;
+                        return (
+                          <div key={phase.id} className={`border rounded-xl p-4 space-y-3 transition-all ${
+                            isCurrentPhase ? 'bg-blue-50 border-blue-400 border-2' : 'border-gray-200 bg-gray-50'
+                          }`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="text"
+                                value={phase.name}
+                                onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value } : p))}
+                                className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm font-semibold"
+                                placeholder={`Phase ${idx + 1} name`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPhase(isCurrentPhase ? null : phase.id)}
+                                className={`px-2 py-1.5 text-xs rounded-md font-medium transition-colors ${
+                                  isCurrentPhase
+                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                                title={isCurrentPhase ? 'Unmark as current' : 'Mark as current phase'}
+                              >
+                                {isCurrentPhase ? '✓ Current' : 'Set Current'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditPhases(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                title="Remove phase"
+                              >
+                                <XMarkIcon className="w-4 h-4" />
+                              </button>
+                            </div>
                           <textarea
                             value={phase.notes || ''}
                             onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, notes: e.target.value } : p))}
@@ -2487,8 +2803,50 @@ function ProjectProposalInner() {
                               <input type="number" value={phase.raised ?? ''} onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, raised: e.target.value ? Number(e.target.value) : undefined } : p))} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm" placeholder="0" />
                             </div>
                           </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Expected Duration <span className="font-normal text-gray-400">(once funded)</span></label>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={phase.duration ?? ''}
+                                  onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, duration: e.target.value ? Number(e.target.value) : undefined } : p))}
+                                  className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
+                                  placeholder="e.g. 6"
+                                />
+                                <select
+                                  value={phase.durationUnit || 'months'}
+                                  onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, durationUnit: e.target.value } : p))}
+                                  className="p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
+                                >
+                                  <option value="weeks">Weeks</option>
+                                  <option value="months">Months</option>
+                                  <option value="years">Years</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Target Completion Date</label>
+                              <input
+                                type="date"
+                                value={phase.targetDate || ''}
+                                onChange={(e) => setEditPhases(prev => prev.map((p, i) => i === idx ? { ...p, targetDate: e.target.value || undefined } : p))}
+                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
+                              />
+                            </div>
+                          </div>
+                          {isCurrentPhase && (
+                            <div className="mt-2 flex items-center gap-1.5 text-xs text-blue-700 font-medium">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-600 text-white">
+                                Current Phase
+                              </span>
+                              <span className="text-gray-500">— Highlighted for visitors</span>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
 
                       <button
                         type="button"
@@ -2548,43 +2906,91 @@ function ProjectProposalInner() {
 
                       {/* Phase rows */}
                       <div className="space-y-3 mt-4">
-                        {project.budgetPhases.map((phase, i) => (
-                          <div key={phase.id} className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-                            <div className="flex items-start justify-between gap-2 mb-1">
-                              <h4 className="font-semibold text-gray-800 text-sm">{phase.name || `Phase ${i + 1}`}</h4>
-                              <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(phase.target, project.currency || 'GBP')}</span>
-                            </div>
-                            {phase.notes && (
-                              <p className="text-xs text-gray-500 mb-3 leading-relaxed">{phase.notes}</p>
-                            )}
-                            {(phase.pledged || phase.raised) ? (
-                              <div className="space-y-2 mt-2">
-                                {phase.pledged ? (
-                                  <div>
-                                    <div className="flex justify-between text-xs mb-1">
-                                      <span className="text-gray-500">Pledged</span>
-                                      <span className="font-medium text-gray-700">{formatCurrency(phase.pledged, project.currency || 'GBP')}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                      <div className="bg-orange-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.pledged / phase.target) * 100 : 0)}%` }} />
-                                    </div>
-                                  </div>
-                                ) : null}
-                                {phase.raised ? (
-                                  <div>
-                                    <div className="flex justify-between text-xs mb-1">
-                                      <span className="text-gray-500">Raised</span>
-                                      <span className="font-medium text-green-700">{formatCurrency(phase.raised, project.currency || 'GBP')}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                      <div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.raised / phase.target) * 100 : 0)}%` }} />
-                                    </div>
-                                  </div>
-                                ) : null}
+                        {project.budgetPhases.map((phase, i) => {
+                          const isCurrentPhase = project.currentPhaseId === phase.id;
+                          return (
+                            <div 
+                              key={phase.id} 
+                              className={`rounded-xl border p-4 transition-all ${
+                                isCurrentPhase 
+                                  ? 'bg-blue-50 border-blue-400 border-2' 
+                                  : 'bg-gray-50 border-gray-100'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <h4 className="font-semibold text-gray-800 text-sm">{phase.name || `Phase ${i + 1}`}</h4>
+                                  {isCurrentPhase && !isCreator && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-600 text-white">
+                                      Current Phase
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-sm font-bold text-gray-900">{formatCurrency(phase.target, project.currency || 'GBP')}</span>
+                                  {isCreator && (
+                                    <button
+                                      onClick={() => setCurrentPhase(isCurrentPhase ? null : phase.id)}
+                                      className={`ml-2 px-2 py-1 text-xs rounded-md transition-colors ${
+                                        isCurrentPhase
+                                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                      }`}
+                                      title={isCurrentPhase ? 'Unmark as current' : 'Mark as current phase'}
+                                    >
+                                      {isCurrentPhase ? '✓ Current' : 'Set Current'}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                            ) : null}
-                          </div>
-                        ))}
+                              {phase.notes && (
+                                <p className="text-xs text-gray-500 mb-2 leading-relaxed">{phase.notes}</p>
+                              )}
+                              {(phase.duration || phase.targetDate) && (
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
+                                  {phase.duration && (
+                                    <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-medium">
+                                      <ClockIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                                      <span>{phase.duration} {(phase.durationUnit || 'months').charAt(0).toUpperCase() + (phase.durationUnit || 'months').slice(1)} — once funded</span>
+                                    </div>
+                                  )}
+                                  {phase.targetDate && (
+                                    <div className="flex items-center gap-1.5 text-xs text-orange-600 font-medium">
+                                      <CalendarIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                                      <span>Target: {new Date(phase.targetDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {(phase.pledged || phase.raised) ? (
+                                <div className="space-y-2 mt-2">
+                                  {phase.pledged ? (
+                                    <div>
+                                      <div className="flex justify-between text-xs mb-1">
+                                        <span className="text-gray-500">Pledged</span>
+                                        <span className="font-medium text-gray-700">{formatCurrency(phase.pledged, project.currency || 'GBP')}</span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                        <div className="bg-orange-400 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.pledged / phase.target) * 100 : 0)}%` }} />
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                  {phase.raised ? (
+                                    <div>
+                                      <div className="flex justify-between text-xs mb-1">
+                                        <span className="text-gray-500">Raised</span>
+                                        <span className="font-medium text-green-700">{formatCurrency(phase.raised, project.currency || 'GBP')}</span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                        <div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, phase.target > 0 ? (phase.raised / phase.target) * 100 : 0)}%` }} />
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
 
                       {/* Overall totals */}
@@ -2695,119 +3101,8 @@ function ProjectProposalInner() {
               )}
             </div>
 
-            {/* Compliance */}
-            <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg shadow-md p-6 border-l-4 border-orange-600">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <CheckCircleIcon className="w-6 h-6 text-orange-600" />
-                  Compliance
-                </h2>
-                {isCreator && (
-                  <button
-                    onClick={() => editMode.quickCheck ? saveSection('quickCheck', ['oversight', 'approved', 'safeguardingInPlace', 'financialAccountabilityInPlace']) : toggleEditMode('quickCheck')}
-                    disabled={saving}
-                    className="p-2 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50 shadow-sm border border-gray-200"
-                    title={editMode.quickCheck ? 'Save' : 'Edit'}
-                  >
-                    {editMode.quickCheck ? (
-                      <CheckIcon className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <PencilIcon className="w-5 h-5 text-orange-600" />
-                    )}
-                  </button>
-                )}
-              </div>
-              {editMode.quickCheck ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Oversight</label>
-                    <input
-                      type="text"
-                      value={editValues.oversight || ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, oversight: e.target.value }))}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Who has oversight?"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="approved2" checked={editValues.approved || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, approved: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                    <label htmlFor="approved2" className="text-sm font-medium text-gray-700">Approved</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="safeguarding2" checked={editValues.safeguardingInPlace || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, safeguardingInPlace: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                    <label htmlFor="safeguarding2" className="text-sm font-medium text-gray-700">Safeguarding Process in Place</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="financial2" checked={editValues.financialAccountabilityInPlace || false}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, financialAccountabilityInPlace: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                    <label htmlFor="financial2" className="text-sm font-medium text-gray-700">Financial Accountability in Place</label>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {project.oversight && (
-                    <div className="flex items-start gap-2">
-                      <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Oversight:</div>
-                      <div className="text-gray-900 text-sm">{project.oversight}</div>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-2">
-                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Safeguarding:</div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        {project.safeguardingInPlace ? (
-                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
-                        ) : (
-                          <span className="text-gray-500 text-sm">Not Set</span>
-                        )}
-                      </div>
-                      {project.safeguardingInPlace && orgSafeguardingUrl && (
-                        <a
-                          href={orgSafeguardingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                          View Safeguarding Document
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="text-sm text-gray-500 font-medium min-w-[120px] flex-shrink-0">Financial:</div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        {project.financialAccountabilityInPlace ? (
-                          <><CheckCircleIcon className="w-4 h-4 text-green-600" /><span className="text-green-700 font-medium text-sm">In Place</span></>
-                        ) : (
-                          <span className="text-gray-500 text-sm">Not Set</span>
-                        )}
-                      </div>
-                      {project.financialAccountabilityInPlace && orgLatestAuditReport && (
-                        <a
-                          href={orgLatestAuditReport.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-orange-700 underline hover:text-orange-900 font-medium"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                          View Latest Audit Report{orgLatestAuditReport.year ? ` (${orgLatestAuditReport.year})` : ''}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Timeline Cards */}
-            <div className="bg-white rounded-lg shadow-md p-6">
+            {/* Timeline Cards — hidden when phases exist (dates/durations are per-phase in Fundraising Target) */}
+            {(!project.budgetPhases || project.budgetPhases.length <= 1) && <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <CalendarIcon className="w-6 h-6 text-orange-600" />
@@ -2839,28 +3134,35 @@ function ProjectProposalInner() {
                       className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Duration</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        value={editValues.projectDuration ?? ''}
-                        onChange={(e) => setEditValues(prev => ({ ...prev, projectDuration: e.target.value ? Number(e.target.value) : undefined }))}
-                        className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                        placeholder="e.g. 6"
-                      />
-                      <select
-                        value={editValues.projectDurationUnit || 'months'}
-                        onChange={(e) => setEditValues(prev => ({ ...prev, projectDurationUnit: e.target.value }))}
-                        className="p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-                      >
-                        <option value="weeks">Weeks</option>
-                        <option value="months">Months</option>
-                        <option value="years">Years</option>
-                      </select>
+                  {(!project.budgetPhases || project.budgetPhases.length <= 1) ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Expected Duration <span className="font-normal text-gray-400 text-xs">(once funding is acquired)</span></label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          value={editValues.projectDuration ?? ''}
+                          onChange={(e) => setEditValues(prev => ({ ...prev, projectDuration: e.target.value ? Number(e.target.value) : undefined }))}
+                          className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                          placeholder="e.g. 6"
+                        />
+                        <select
+                          value={editValues.projectDurationUnit || 'months'}
+                          onChange={(e) => setEditValues(prev => ({ ...prev, projectDurationUnit: e.target.value }))}
+                          className="p-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                        >
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                          <option value="years">Years</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-sm text-indigo-700">
+                      <ClockIcon className="w-4 h-4 flex-shrink-0" />
+                      <span>Phase durations are set per phase in the <strong>Fundraising Target</strong> section above.</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2880,8 +3182,8 @@ function ProjectProposalInner() {
                       </div>
                     </div>
                   )}
-                  {/* Duration Card */}
-                  {(project.projectDuration || isCreator) && (
+                  {/* Duration Card — only shown when not using per-phase durations */}
+                  {(!project.budgetPhases || project.budgetPhases.length <= 1) && (project.projectDuration || isCreator) && (
                     <div className="flex items-center gap-3 p-3 bg-black rounded-lg">
                       <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
                         <ClockIcon className="w-5 h-5 text-white" />
@@ -2890,7 +3192,7 @@ function ProjectProposalInner() {
                         <div className="text-xs text-white/70 font-medium uppercase tracking-wide">Expected Duration</div>
                         <div className="text-white font-semibold">
                           {project.projectDuration
-                            ? `${project.projectDuration} ${(project.projectDurationUnit || 'months').charAt(0).toUpperCase() + (project.projectDurationUnit || 'months').slice(1)}`
+                            ? `${project.projectDuration} ${(project.projectDurationUnit || 'months').charAt(0).toUpperCase() + (project.projectDurationUnit || 'months').slice(1)} — once funded`
                             : (isCreator ? 'Click Edit to set' : 'Not set')}
                         </div>
                       </div>
@@ -2898,7 +3200,7 @@ function ProjectProposalInner() {
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Key Documents Card */}
             {((project.keyDocuments && project.keyDocuments.length > 0) || isCreator) && (
@@ -3319,6 +3621,202 @@ function ProjectProposalInner() {
           projectDocId={resolvedDocId}
           currentUser={currentUser}
         />
+      )}
+
+      {/* Combine Overview & Summary Preview Modal */}
+      {summaryPreview && typeof window !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5 text-purple-600" />
+                AI Combined Summary
+              </h3>
+              <button
+                onClick={() => setSummaryPreview(null)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Editable paragraphs */}
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Edit the paragraphs or adjust below, then accept</p>
+              {summaryPreview.map((para, i) => (
+                <div key={i}>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Paragraph {i + 1}</label>
+                  <textarea
+                    value={para}
+                    onChange={(e) => {
+                      const updated = [...summaryPreview];
+                      updated[i] = e.target.value;
+                      setSummaryPreview(updated);
+                    }}
+                    rows={4}
+                    className="w-full p-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 text-gray-700 leading-relaxed resize-none"
+                  />
+                </div>
+              ))}
+
+              {/* Modify with instructions */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className="block text-xs font-semibold text-purple-700 mb-1.5">Improve with instructions</label>
+                <div className="flex gap-2">
+                  <textarea
+                    value={summaryModifyInstruction}
+                    onChange={(e) => setSummaryModifyInstruction(e.target.value)}
+                    placeholder="e.g. Make the third paragraph more hopeful, shorten paragraph 1, emphasise community benefit..."
+                    rows={2}
+                    className="flex-1 p-3 text-sm border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 bg-purple-50 placeholder-purple-300 resize-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={summaryModifying || !summaryModifyInstruction.trim()}
+                    onClick={async () => {
+                      setSummaryModifying(true);
+                      try {
+                        const current = summaryPreview.map((p, i) => `Paragraph ${i + 1}:\n${p}`).join('\n\n');
+                        const result = await fetch('/api/ai', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            model: 'gpt-4o-mini',
+                            messages: [
+                              {
+                                role: 'system',
+                                content: 'You are a professional project writer. Apply the user instruction to improve the provided paragraphs. Keep exactly 3 paragraphs, avoid repetition across them. Return a JSON object with a single key "paragraphs" containing an array of exactly 3 strings. No markdown, no extra keys.',
+                              },
+                              { role: 'user', content: `Current text:\n\n${current}\n\nInstruction: ${summaryModifyInstruction}` },
+                            ],
+                            temperature: 0.7,
+                            max_tokens: 900,
+                          }),
+                        });
+                        if (!result.ok) throw new Error('AI request failed');
+                        const data = await result.json();
+                        const raw = data.choices[0].message.content.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed.paragraphs)) setSummaryPreview(parsed.paragraphs);
+                        setSummaryModifyInstruction('');
+                      } catch (err: any) {
+                        alert(err.message || 'Failed to apply modification');
+                      } finally {
+                        setSummaryModifying(false);
+                      }
+                    }}
+                    className="self-end px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium hover:from-purple-700 hover:to-indigo-700 transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                  >
+                    {summaryModifying ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <SparklesIcon className="w-4 h-4" />
+                    )}
+                    {summaryModifying ? 'Updating…' : 'Apply'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t bg-gray-50 rounded-b-2xl">
+              <button
+                onClick={() => setSummaryPreview(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-100 transition"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => {
+                  const combined = summaryPreview.join('\n\n');
+                  setEditValues(prev => ({
+                    ...prev,
+                    description: combined,
+                    projectSummary: '',
+                  }));
+                  setSummaryPreview(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <CheckIcon className="w-4 h-4" />
+                Accept &amp; Apply
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Combine Goals & Impact Preview Modal */}
+      {combinePreview && typeof window !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5 text-purple-600" />
+                AI Combined Goals &amp; Impact
+              </h3>
+              <button
+                onClick={() => setCombinePreview(null)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Preview content */}
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Preview — review before accepting</p>
+
+              {combinePreview.intro && (
+                <p className="text-gray-700 leading-relaxed italic border-l-4 border-orange-300 pl-3">
+                  {combinePreview.intro}
+                </p>
+              )}
+
+              <ol className="space-y-3">
+                {combinePreview.points.map((point, i) => (
+                  <li key={i} className="flex items-start gap-3">
+                    <span className="mt-0.5 w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                    <span className="text-gray-700 leading-relaxed">{point}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t bg-gray-50 rounded-b-2xl">
+              <button
+                onClick={() => setCombinePreview(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-100 transition"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => {
+                  setEditValues(prev => ({
+                    ...prev,
+                    projectImpact: combinePreview.intro,
+                    impactItems: combinePreview.points,
+                    goals: [],
+                  }));
+                  setCombinePreview(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <CheckIcon className="w-4 h-4" />
+                Accept &amp; Apply
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </PageShell>

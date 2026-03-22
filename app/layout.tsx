@@ -20,9 +20,19 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
  *
  * Use isCookieConsentGranted() anywhere analytics initialisation is guarded.
  */
-export function isCookieConsentGranted(): boolean {
+
+// Safe localStorage helpers — Safari/Samsung private/secret mode blocks
+// localStorage and throws SecurityError; these helpers swallow that silently.
+function lsGet(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function lsSet(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
+function isCookieConsentGranted(): boolean {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem("c2s_cookie_consent") === "accepted";
+  return lsGet("c2s_cookie_consent") === "accepted";
 }
 
 function CookieBanner() {
@@ -30,14 +40,14 @@ function CookieBanner() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("c2s_cookie_consent");
+      const stored = lsGet("c2s_cookie_consent");
       // Show banner only when no decision has been recorded yet
       setShow(stored !== "accepted" && stored !== "declined");
     }
   }, []);
 
   function handleAccept() {
-    localStorage.setItem("c2s_cookie_consent", "accepted");
+    lsSet("c2s_cookie_consent", "accepted");
     setShow(false);
     // Initialise Firebase Analytics now that consent is granted
     // Import is deferred so analytics never loads before consent
@@ -49,7 +59,7 @@ function CookieBanner() {
   }
 
   function handleDecline() {
-    localStorage.setItem("c2s_cookie_consent", "declined");
+    lsSet("c2s_cookie_consent", "declined");
     setShow(false);
   }
 
@@ -88,12 +98,17 @@ function CookieBanner() {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={`${inter.variable} bg-brand-sand`}>
       <body className="min-h-dvh flex flex-col bg-brand-sand text-brand-dark antialiased relative overflow-x-hidden">
         <AIConsentProvider>
         <LegacyConsentGate>
-        {/* Global background image and overlay */}
-        <div className="fixed inset-0 -z-10 w-full h-full">
+        {/* Global background image and overlay.
+             will-change:transform promotes this to a dedicated GPU compositing
+             layer so the browser doesn't repaint it on every scroll frame. */}
+        <div
+          className="fixed inset-0 -z-10 w-full h-full"
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+        >
           <img
             src="/images/sitebg.jpg"
             alt="Site background"
@@ -107,7 +122,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <CookieBanner />
-  <main className="flex-1 relative z-10 py-4 flex flex-col min-h-0">{children}</main>
+  <main className="flex-1 relative z-10 pt-0 sm:pt-4 pb-4 flex flex-col min-h-0">{children}</main>
         <footer className="border-t-0 bg-black relative z-10">
           <div className="absolute top-0 left-0 w-full h-2 bg-brand-main" style={{height: '8px'}} />
           <div className="mx-auto max-w-[1200px] w-full px-4 py-6 text-sm text-white relative z-10 flex flex-col sm:flex-row items-center justify-between gap-2">

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { getShowcaseByCode, getProject, updateShowcase, getUserProjects, deleteShowcase } from '@/lib/dal';
+import { getShowcaseByCode, getProject, updateShowcase, getUserProjects, deleteShowcase, getOrg, getOrgProjects } from '@/lib/dal';
 import type { ShowcaseDoc, ProjectDoc } from '@/lib/dal';
 import { getAuth } from 'firebase/auth';
 import PageShell from 'components/PageShell';
@@ -9,10 +9,21 @@ import Image from 'next/image';
 import ProfileLoadingShell from 'components/ProfileLoadingShell';
 import { MapPreview } from 'components/MapPreview';
 import { getCountryCenter, isSensitiveLocation } from '@/lib/countryHelpers';
-import { RectangleGroupIcon, MapPinIcon, PencilIcon, CheckIcon, TrashIcon, PlusIcon, XMarkIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import { RectangleGroupIcon, MapPinIcon, PencilIcon, CheckIcon, TrashIcon, PlusIcon, XMarkIcon, CurrencyDollarIcon, ShareIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 
 type FullProject = ProjectDoc & { id: string };
 type FullShowcase = ShowcaseDoc & { id: string };
+type ShowcaseLocation = {
+  orgId: string;
+  orgDbId: string;
+  locationId: string;
+  locationName: string;
+  orgName: string;
+  location: any;
+  vision?: string;
+  whatWeDo?: string;
+  projects?: FullProject[];
+};
 
 export default function ShowcasePage() {
   const params = useParams();
@@ -20,12 +31,14 @@ export default function ShowcasePage() {
 
   const [showcase, setShowcase] = useState<FullShowcase | null>(null);
   const [projects, setProjects] = useState<FullProject[]>([]);
+  const [locations, setLocations] = useState<ShowcaseLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   // Auth & edit state
   const [currentUid, setCurrentUid] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editProjectDocIds, setEditProjectDocIds] = useState<string[]>([]);
@@ -58,22 +71,64 @@ export default function ShowcasePage() {
         if (!sc) { if (!cancelled) { setError('Showcase not found.'); setLoading(false); } return; }
         if (!cancelled) setShowcase(sc);
 
-        // Load the projects in parallel — use allSettled so a single
-        // unreadable project (e.g. draft visible only to its creator) doesn't
-        // crash the whole showcase load.
-        const docIds = sc.projectDocIds || [];
-        const results = await Promise.allSettled(
-          docIds.map(id => getProject(id)),
-        );
-        if (!cancelled) {
-          const allProjects = results
-            .filter((r): r is PromiseFulfilledResult<FullProject> =>
-              r.status === 'fulfilled' && r.value !== null)
-            .map(r => r.value);
-          setAllFetchedProjects(allProjects);
-          // Only hide draft projects for non-owners
-          setProjects(allProjects);
-          setLoading(false);
+        // Handle different showcase types
+        if (sc.type === 'locations' && sc.locationEntries) {
+          // Load locations from organizations, plus their live projects
+          const locationResults = await Promise.allSettled(
+            sc.locationEntries.map(async (entry) => {
+              const [org, orgProjects] = await Promise.all([
+                getOrg(entry.orgDbId),
+                getOrgProjects(entry.orgId).catch(() => [] as FullProject[]),
+              ]);
+              if (!org) return null;
+              const location = org.locations?.find((loc: any) => loc.id === entry.locationId);
+              if (!location) return null;
+              const locationName: string = location.name;
+              const liveProjects = (orgProjects as FullProject[]).filter(
+                (p: any) =>
+                  p.locationName === locationName &&
+                  (p.status ?? 'live') === 'live' &&
+                  (p.visibility ?? 'public') === 'public',
+              );
+              return {
+                orgId: entry.orgId,
+                orgDbId: entry.orgDbId,
+                locationId: entry.locationId,
+                locationName,
+                orgName: org.name,
+                location: location,
+                vision: location.vision,
+                whatWeDo: location.whatWeDo,
+                projects: liveProjects,
+              };
+            })
+          );
+          if (!cancelled) {
+            const validLocations: ShowcaseLocation[] = [];
+            for (const result of locationResults) {
+              if (result.status === 'fulfilled' && result.value !== null) {
+                validLocations.push(result.value);
+              }
+            }
+            setLocations(validLocations);
+            setLoading(false);
+          }
+        } else {
+          // Load projects (default behavior)
+          const docIds = sc.projectDocIds || [];
+          const results = await Promise.allSettled(
+            docIds.map(id => getProject(id)),
+          );
+          if (!cancelled) {
+            const allProjects = results
+              .filter((r): r is PromiseFulfilledResult<FullProject> =>
+                r.status === 'fulfilled' && r.value !== null)
+              .map(r => r.value);
+            setAllFetchedProjects(allProjects);
+            // Only hide draft projects for non-owners
+            setProjects(allProjects);
+            setLoading(false);
+          }
         }
       } catch (e: any) {
         if (!cancelled) { setError(e.message || 'Failed to load showcase.'); setLoading(false); }
@@ -187,10 +242,10 @@ export default function ShowcasePage() {
 
         {/* Header */}
         <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 sm:p-8 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="inline-block mb-3 px-3 py-1 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full uppercase tracking-wider">
-                Project Showcase
+                {showcase.type === 'locations' ? 'Location Showcase' : 'Project Showcase'}
               </div>
               {editing ? (
                 <>
@@ -211,14 +266,14 @@ export default function ShowcasePage() {
                 </>
               ) : (
                 <>
-                  <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">{showcase.title}</h1>
+                  <h1 className="text-xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3">{showcase.title}</h1>
                   {showcase.description && (
                     <p className="text-gray-600 text-base leading-relaxed max-w-2xl">{showcase.description}</p>
                   )}
                 </>
               )}
             </div>
-            <div className="shrink-0 flex flex-col items-end gap-3">
+            <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 flex-wrap sm:flex-nowrap shrink-0">
               <div className="text-right">
                 <div className="text-xs text-gray-500 mb-1">Showcase Code</div>
                 <div className="font-mono font-bold text-lg text-gray-800 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
@@ -267,20 +322,41 @@ export default function ShowcasePage() {
           </div>
 
           {/* Share link */}
-          <div className="mt-6 flex items-center gap-3">
-            <span className="text-xs text-gray-500">Share link:</span>
+          <div className="mt-4 sm:mt-6 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500 mr-1">Share:</span>
+            {/* Copy link button */}
             <button
               onClick={() => {
                 const url = `${window.location.origin}/showcase/${showcase.showcaseId}`;
-                navigator.clipboard.writeText(url).catch(() => {});
+                navigator.clipboard.writeText(url).then(() => {
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 2000);
+                }).catch(() => {});
               }}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition font-mono"
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                linkCopied
+                  ? 'bg-green-50 border-green-300 text-green-700'
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
             >
-              {typeof window !== 'undefined' ? `${window.location.origin}/showcase/${showcase.showcaseId}` : `/showcase/${showcase.showcaseId}`}
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
+              {linkCopied ? (
+                <><CheckIcon className="w-4 h-4" /> Copied!</>
+              ) : (
+                <><ClipboardDocumentIcon className="w-4 h-4" /> Copy link</>
+              )}
             </button>
+            {/* Native share button — only shown when Web Share API is available */}
+            {typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function' && (
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/showcase/${showcase.showcaseId}`;
+                  (navigator as any).share({ title: showcase.title, url }).catch(() => {});
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 transition"
+              >
+                <ShareIcon className="w-4 h-4" /> Share
+              </button>
+            )}
           </div>
         </div>
 
@@ -384,25 +460,51 @@ export default function ShowcasePage() {
           </div>
         )}
 
-        {/* Project Count */}
+        {/* Count */}
         {!editing && (
           <div className="flex items-center gap-2">
-            <RectangleGroupIcon className="w-5 h-5 text-orange-500" />
-            <span className="text-sm font-semibold text-gray-700">
-              {projects.length} {projects.length === 1 ? 'Project' : 'Projects'}
-            </span>
+            {showcase.type === 'locations' ? (
+              <>
+                <MapPinIcon className="w-5 h-5 text-orange-500" />
+                <span className="text-sm font-semibold text-gray-700">
+                  {locations.length} {locations.length === 1 ? 'Location' : 'Locations'}
+                </span>
+              </>
+            ) : (
+              <>
+                <RectangleGroupIcon className="w-5 h-5 text-orange-500" />
+                <span className="text-sm font-semibold text-gray-700">
+                  {projects.length} {projects.length === 1 ? 'Project' : 'Projects'}
+                </span>
+              </>
+            )}
           </div>
         )}
 
-        {/* Project Cards — grouped by location when multiple locations present */}
+        {/* Content — Projects or Locations */}
         {!editing && (
-          projects.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-              <RectangleGroupIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-              <p className="text-gray-500">No projects in this showcase yet.</p>
-            </div>
+          showcase.type === 'locations' ? (
+            locations.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                <MapPinIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                <p className="text-gray-500">No locations in this showcase yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6">
+                {locations.map((loc) => (
+                  <LocationCard key={`${loc.orgDbId}-${loc.locationId}`} location={loc} />
+                ))}
+              </div>
+            )
           ) : (
-            <LocationGroupedProjects projects={projects} showcaseCode={showcase.showcaseId} />
+            projects.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                <RectangleGroupIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                <p className="text-gray-500">No projects in this showcase yet.</p>
+              </div>
+            ) : (
+              <LocationGroupedProjects projects={projects} showcaseCode={showcase.showcaseId} />
+            )
           )
         )}
       </div>
@@ -459,7 +561,11 @@ function ProjectCard({ project, showcaseCode }: { project: FullProject; showcase
   const suffix = showcaseCode ? `?from=showcase&code=${showcaseCode}` : '';
   const budget = (project as any).totalBudget as number | undefined;
   const pledged = (project as any).amountPledged as number | undefined;
+  const amountRaised = (project as any).amountRaised as number | undefined;
   const currency = (project as any).currency as string | undefined;
+  const phases = (project as any).budgetPhases as any[] | undefined;
+  const currentPhaseId = (project as any).currentPhaseId as string | undefined;
+  const currentPhase = phases && currentPhaseId ? phases.find(ph => ph.id === currentPhaseId) : null;
   const hasFunding = typeof budget === 'number' && budget > 0;
   const progressPct = hasFunding && typeof pledged === 'number' ? Math.min(100, Math.round((pledged / budget) * 100)) : 0;
 
@@ -520,6 +626,33 @@ function ProjectCard({ project, showcaseCode }: { project: FullProject; showcase
                   <span>{progressPct}%</span>
                 </div>
               </>
+            )}
+            {typeof amountRaised === 'number' && amountRaised > 0 && (
+              <div className="flex items-center justify-between text-xs mt-1.5">
+                <span className="text-gray-500 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                  Raised
+                </span>
+                <span className="font-semibold text-green-700">{formatCurrency(amountRaised, currency)}</span>
+              </div>
+            )}
+            {currentPhase && (
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400 uppercase tracking-wide">Current Phase</span>
+                  <span className="text-xs font-semibold text-blue-700 truncate max-w-[140px] text-right">{currentPhase.name}</span>
+                </div>
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="text-xs text-gray-400">Phase target</span>
+                  <span className="text-xs font-bold text-gray-800">{formatCurrency(Number(currentPhase.target || 0), currency)}</span>
+                </div>
+                {typeof currentPhase.raised === 'number' && currentPhase.raised > 0 && (
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-xs text-gray-400">Phase raised</span>
+                    <span className="text-xs font-semibold text-green-700">{formatCurrency(currentPhase.raised, currency)}</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -631,6 +764,122 @@ function LocationGroupedProjects({ projects, showcaseCode }: { projects: FullPro
           <ProjectGridWithMap projects={group.items} showcaseCode={showcaseCode} />
         </section>
       ))}
+    </div>
+  );
+}
+
+// ─── Location Card ───────────────────────────────────────────────────────────
+
+function LocationCard({ location }: { location: ShowcaseLocation }) {
+  const loc = location.location;
+  const hasCoords = loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
+  const isSensitive = loc?.sensitiveLocation;
+  const displayTown = isSensitive ? undefined : loc?.town;
+  const displayCountry = loc?.country;
+  
+  // Get map coordinates - if sensitive, use country center
+  let mapCoords: { lat: number; lng: number; zoom: number } | null = null;
+  if (hasCoords && !isSensitive) {
+    mapCoords = { lat: loc.latitude!, lng: loc.longitude!, zoom: loc.zoom || 13 };
+  } else if (isSensitive && displayCountry) {
+    const center = getCountryCenter(displayCountry);
+    if (center) mapCoords = { lat: center.lat, lng: center.lng, zoom: center.zoom || 6 };
+  }
+
+  const projects = location.projects ?? [];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+      {/* Top row: 66% text | 33% map */}
+      <div className="flex flex-col sm:flex-row">
+        {/* Left — text content (66%) */}
+        <div className="flex-1 p-6 space-y-4 min-w-0">
+          {/* Header */}
+          <div>
+            <div className="flex items-start gap-2 mb-2">
+              <MapPinIcon className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-bold text-gray-900 mb-1">{location.locationName}</h3>
+                <p className="text-sm text-gray-600">{location.orgName}</p>
+              </div>
+            </div>
+            {(displayTown || displayCountry) && (
+              <p className="text-sm text-gray-500 mt-1">
+                {[displayTown, displayCountry].filter(Boolean).join(', ')}
+                {isSensitive && ' (exact location hidden for safety)'}
+              </p>
+            )}
+          </div>
+
+          {/* Vision */}
+          {location.vision && (
+            <div>
+              <h4 className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-1">Vision</h4>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{location.vision}</p>
+            </div>
+          )}
+
+          {/* What We Do */}
+          {location.whatWeDo && (
+            <div>
+              <h4 className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-1">What We Do</h4>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{location.whatWeDo}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Right — map (33%) */}
+        {mapCoords && (
+          <div className="relative sm:w-[33%] flex-shrink-0 h-56 sm:h-auto min-h-[200px] bg-gray-100 sm:rounded-tr-2xl sm:rounded-br-2xl overflow-hidden">
+            <MapPreview
+              lat={mapCoords.lat}
+              lng={mapCoords.lng}
+              zoom={mapCoords.zoom}
+              className="w-full h-full"
+            />
+            {isSensitive && (
+              <div className="absolute top-2 right-2 bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-1 rounded">
+                General area only
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Projects below — only shown if any exist */}
+      {projects.length > 0 && (
+        <div className="border-t border-gray-100 px-6 py-5">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Projects ({projects.length})
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {projects.map(p => (
+              <a
+                key={p.id}
+                href={`/projects/${(p as any).projectId || p.id}`}
+                className="group flex gap-3 rounded-xl border border-gray-100 bg-gray-50 hover:bg-orange-50 hover:border-orange-200 transition p-3"
+              >
+                {(p as any).coverPhotoUrl && (
+                  <img
+                    src={(p as any).coverPhotoUrl}
+                    alt={(p as any).name}
+                    className="w-14 h-14 rounded-lg object-cover shrink-0"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-gray-900 truncate group-hover:text-orange-700 transition">
+                    {(p as any).name}
+                  </div>
+                  {(p as any).strapline && (
+                    <div className="text-xs text-gray-500 line-clamp-2 mt-0.5">{(p as any).strapline}</div>
+                  )}
+                  <div className="mt-1 text-[10px] font-mono text-gray-400">{(p as any).projectId}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
