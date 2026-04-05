@@ -29,6 +29,7 @@ class DalCache {
     PROJECT_DOC: 120_000, //  2 min
     INDIVIDUAL_DOC: 120_000,
     SHOWCASE_DOC: 120_000, //  2 min
+    NEWSLETTER_DOC: 120_000, //  2 min
     CODE_LOOKUP: 300_000, //  5 min  — short-code → doc ID mapping rarely changes
     CONFIG:     600_000,  // 10 min  — pricing config
   };

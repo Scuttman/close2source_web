@@ -37,6 +37,9 @@ export type {
   ProjectVisibility,
   ModerationStatus,
   ShowcaseDoc,
+  NewsletterDoc,
+  NewsletterProject,
+  NewsletterSupportMethod,
 } from './types';
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -67,6 +70,8 @@ export {
   updateOrg,
   createOrg,
   deleteOrg,
+  checkOrgCodeAvailability,
+  updateOrgCode,
 } from './organizations';
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -111,6 +116,17 @@ export {
   updateShowcase,
   deleteShowcase,
 } from './showcases';
+
+// ── Newsletters ────────────────────────────────────────────────────────────
+export {
+  getNewsletter,
+  getNewsletterByCode,
+  getNewslettersByIndividual,
+  getUserNewsletters,
+  createNewsletter,
+  updateNewsletter,
+  deleteNewsletter,
+} from './newsletters';
 
 // ── Config / Invites / Moderation ─────────────────────────────────────────────
 export {

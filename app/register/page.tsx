@@ -26,6 +26,7 @@ function RegisterPage() {
   const [returnUrl, setReturnUrl] = useState<string | null>(initialReturnUrl);
   const [stage, setStage] = useState(1); // 1: form, 2: profile pic, 3: description, 4: complete
   const role = "User"; // fixed base role
+  const [showEmailRegister, setShowEmailRegister] = useState(false);
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState(initialEmail);
@@ -121,6 +122,9 @@ function RegisterPage() {
       await recordConsent(currentUid, { privacyPolicy: true });
       setConsentStep('terms');
       setTermsAgreed(false);
+    } catch (err: any) {
+      console.error('Failed to record privacy consent:', err);
+      setError('Failed to record consent. Please try again.');
     } finally { setConsentSubmitting(false); }
   }
 
@@ -131,6 +135,9 @@ function RegisterPage() {
       await recordConsent(currentUid, { terms: true });
       setConsentStep('ai');
       setAiAgreed(false);
+    } catch (err: any) {
+      console.error('Failed to record terms consent:', err);
+      setError('Failed to record consent. Please try again.');
     } finally { setConsentSubmitting(false); }
   }
 
@@ -141,6 +148,9 @@ function RegisterPage() {
       await recordConsent(currentUid, { aiPolicy: true });
       setConsentStep(null);
       setStage(2);
+    } catch (err: any) {
+      console.error('Failed to record AI consent:', err);
+      setError('Failed to record consent. Please try again.');
     } finally { setConsentSubmitting(false); }
   }
 
@@ -151,6 +161,9 @@ function RegisterPage() {
       await recordConsent(currentUid, { aiPolicy: false });
       setConsentStep(null);
       setStage(2);
+    } catch (err: any) {
+      console.error('Failed to record AI consent:', err);
+      setError('Failed to record consent. Please try again.');
     } finally { setConsentSubmitting(false); }
   }
 
@@ -162,6 +175,10 @@ function RegisterPage() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
+      if (!user) {
+        throw new Error("No user returned from Google sign-in");
+      }
+      
       // Check if user already exists
       const existingUser = await getUser(user.uid);
       
@@ -171,15 +188,20 @@ function RegisterPage() {
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await createUserDoc(user.uid, {
-          email: user.email,
-          name: firstName,
-          surname: lastName,
-          role: "User",
-          createdAt: new Date().toISOString(),
-          photoURL: user.photoURL || "",
-          credits: 50,
-        });
+        try {
+          await createUserDoc(user.uid, {
+            email: user.email,
+            name: firstName,
+            surname: lastName,
+            role: "User",
+            createdAt: new Date().toISOString(),
+            photoURL: user.photoURL || "",
+            credits: 50,
+          });
+        } catch (createErr: any) {
+          console.error('Failed to create user document', createErr);
+          throw new Error('Failed to create your account. Please try again.');
+        }
         
         // Award initial signup credits
         try {
@@ -189,6 +211,25 @@ function RegisterPage() {
         }
         try { await logUserActivity(user.uid, 'account_created'); } catch { /* non-fatal */ }
         
+        // Handle invitation if present
+        if(inviteToken){
+          setInviteAccepting(true);
+          try {
+            const result = await acceptOrgInvite({
+              inviteToken,
+              user: { uid: user.uid, email: user.email || '', displayName: user.displayName || '' },
+              memberName: user.displayName || user.email || '',
+              memberRole: 'Member',
+            });
+            setInviteOrgId(result.orgId);
+            setInviteOrgName(result.orgName);
+            setInviteAccepted(true);
+          } catch(invErr:any){
+            console.warn('Invite acceptance failed', invErr?.message || invErr);
+            // Non-fatal: continue even if invite fails
+          } finally { setInviteAccepting(false); }
+        }
+        
         setSuccess("Account created with Google!");
         // New user — run consent flow before redirecting
         setCurrentUid(user.uid);
@@ -197,11 +238,18 @@ function RegisterPage() {
         return; // don't redirect yet
       } else {
         setSuccess("Welcome back!");
+        setTimeout(() => router.push("/profile"), 1000);
       }
-      
-      setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
-      setError(err.message || "Google sign-in failed");
+      console.error('Google sign-in error:', err);
+      // Handle specific error codes
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("Sign-in was cancelled. Please try again.");
+      } else if (err.code === 'auth/popup-blocked') {
+        setError("Popup was blocked. Please allow popups and try again.");
+      } else {
+        setError(err.message || "Google sign-in failed. Please try again or use email registration.");
+      }
     }
   }
 
@@ -213,6 +261,10 @@ function RegisterPage() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
+      if (!user) {
+        throw new Error("No user returned from Apple sign-in");
+      }
+      
       // Check if user already exists
       const existingUser = await getUser(user.uid);
       
@@ -222,15 +274,20 @@ function RegisterPage() {
         const firstName = displayNameParts[0] || "";
         const lastName = displayNameParts.slice(1).join(" ") || "";
         
-        await createUserDoc(user.uid, {
-          email: user.email,
-          name: firstName || "User",
-          surname: lastName,
-          role: "User",
-          createdAt: new Date().toISOString(),
-          photoURL: user.photoURL || "",
-          credits: 50,
-        });
+        try {
+          await createUserDoc(user.uid, {
+            email: user.email,
+            name: firstName || "User",
+            surname: lastName,
+            role: "User",
+            createdAt: new Date().toISOString(),
+            photoURL: user.photoURL || "",
+            credits: 50,
+          });
+        } catch (createErr: any) {
+          console.error('Failed to create user document', createErr);
+          throw new Error('Failed to create your account. Please try again.');
+        }
         
         // Award initial signup credits
         try {
@@ -240,6 +297,25 @@ function RegisterPage() {
         }
         try { await logUserActivity(user.uid, 'account_created'); } catch { /* non-fatal */ }
         
+        // Handle invitation if present
+        if(inviteToken){
+          setInviteAccepting(true);
+          try {
+            const result = await acceptOrgInvite({
+              inviteToken,
+              user: { uid: user.uid, email: user.email || '', displayName: user.displayName || '' },
+              memberName: user.displayName || user.email || '',
+              memberRole: 'Member',
+            });
+            setInviteOrgId(result.orgId);
+            setInviteOrgName(result.orgName);
+            setInviteAccepted(true);
+          } catch(invErr:any){
+            console.warn('Invite acceptance failed', invErr?.message || invErr);
+            // Non-fatal: continue even if invite fails
+          } finally { setInviteAccepting(false); }
+        }
+        
         setSuccess("Account created with Apple!");
         // New user — run consent flow
         setCurrentUid(user.uid);
@@ -248,11 +324,18 @@ function RegisterPage() {
         return;
       } else {
         setSuccess("Welcome back!");
+        setTimeout(() => router.push("/profile"), 1000);
       }
-      
-      setTimeout(() => router.push("/profile"), 1000);
     } catch (err: any) {
-      setError(err.message || "Apple sign-in failed");
+      console.error('Apple sign-in error:', err);
+      // Handle specific error codes
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("Sign-in was cancelled. Please try again.");
+      } else if (err.code === 'auth/popup-blocked') {
+        setError("Popup was blocked. Please allow popups and try again.");
+      } else {
+        setError(err.message || "Apple sign-in failed. Please try again or use email registration.");
+      }
     }
   }
 
@@ -406,119 +489,143 @@ function RegisterPage() {
             <h1 className="text-2xl font-bold mb-1 text-gray-900">Create an account</h1>
             <p className="text-sm text-gray-500 mb-6">After registering you can create an Individual or Organization profile.</p>
 
-            <form className="space-y-4" onSubmit={handleRegister}>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block mb-1 text-sm font-medium text-gray-700">Name</label>
-                  <input
-                    type="text"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block mb-1 text-sm font-medium text-gray-700">Surname</label>
-                  <input
-                    type="text"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
-                    value={surname}
-                    onChange={e => setSurname(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block mb-1 text-sm font-medium text-gray-700">Email</label>
-                <input
-                  type="email"
-                  className={`w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition ${emailLocked ? 'bg-slate-100 cursor-not-allowed' : ''}`}
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={e => { if (!emailLocked) setEmail(e.target.value); }}
-                  required
-                  disabled={emailLocked || inviteLoading}
-                />
-                {inviteToken && inviteLoading && (
-                  <div className="mt-1 text-[11px] text-brand-500 animate-pulse">Loading invitation…</div>
-                )}
-                {inviteToken && !inviteLoading && emailLocked && (
-                  <div className="mt-1 text-[11px] text-brand-600">Invitation email locked for security.</div>
-                )}
-              </div>
-              <div>
-                <label className="block mb-1 text-sm font-medium text-gray-700">Password</label>
-                <input
-                  type="password"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block mb-1 text-sm font-medium text-gray-700">Repeat Password</label>
-                <input
-                  type="password"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
-                  placeholder="••••••••"
-                  value={repeatPassword}
-                  onChange={e => setRepeatPassword(e.target.value)}
-                  required
-                />
-              </div>
-              {password && repeatPassword && password !== repeatPassword && (
-                <div className="text-red-600 text-sm">Passwords do not match.</div>
-              )}
-              {error && <div className="text-red-600 text-sm">{error}</div>}
-              {success && <div className="text-green-600 text-sm">{success}</div>}
-              <button type="submit" className="w-full py-2.5 px-4 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition text-sm">
-                Create account
-              </button>
-            </form>
+            {error && <div className="text-red-600 text-sm mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
+            {success && <div className="text-green-600 text-sm mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">{success}</div>}
 
-            {/* Social Sign In Options */}
-            <div className="mt-6">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-white text-gray-400">Or continue with</span>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
+            {!showEmailRegister ? (
+              /* OAuth Registration (Primary) */
+              <div className="space-y-4">
                 <button
                   type="button"
                   onClick={handleGoogleSignIn}
-                  className="w-full inline-flex justify-center items-center gap-2 py-2.5 px-4 border border-gray-200 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                  className="w-full inline-flex justify-center items-center gap-3 py-3 px-4 border border-gray-300 rounded-lg bg-white text-base font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition shadow-sm"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                   </svg>
-                  Google
+                  Sign up with Google
                 </button>
 
                 <button
                   type="button"
                   onClick={handleAppleSignIn}
-                  className="w-full inline-flex justify-center items-center gap-2 py-2.5 px-4 border border-gray-200 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                  className="w-full inline-flex justify-center items-center gap-3 py-3 px-4 border border-gray-300 rounded-lg bg-white text-base font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition shadow-sm"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
                   </svg>
-                  Apple
+                  Sign up with Apple
+                </button>
+
+                {/* Switch to email registration */}
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="px-3 bg-white text-gray-400">or</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowEmailRegister(true)}
+                  className="w-full py-2.5 px-4 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition"
+                >
+                  Use email and password
                 </button>
               </div>
-            </div>
+            ) : (
+              /* Email/Password Registration (Secondary) */
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailRegister(false)}
+                  className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back to quick sign-up
+                </button>
 
-            <p className="mt-6 text-center text-sm text-gray-500">
+                <form className="space-y-4" onSubmit={handleRegister}>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block mb-1 text-sm font-medium text-gray-700">Name</label>
+                      <input
+                        type="text"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block mb-1 text-sm font-medium text-gray-700">Surname</label>
+                      <input
+                        type="text"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
+                        value={surname}
+                        onChange={e => setSurname(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Email</label>
+                    <input
+                      type="email"
+                      className={`w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition ${emailLocked ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={e => { if (!emailLocked) setEmail(e.target.value); }}
+                      required
+                      disabled={emailLocked || inviteLoading}
+                    />
+                    {inviteToken && inviteLoading && (
+                      <div className="mt-1 text-[11px] text-brand-500 animate-pulse">Loading invitation…</div>
+                    )}
+                    {inviteToken && !inviteLoading && emailLocked && (
+                      <div className="mt-1 text-[11px] text-brand-600">Invitation email locked for security.</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Password</label>
+                    <input
+                      type="password"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Repeat Password</label>
+                    <input
+                      type="password"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-main/40 focus:border-brand-main transition"
+                      placeholder="••••••••"
+                      value={repeatPassword}
+                      onChange={e => setRepeatPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {password && repeatPassword && password !== repeatPassword && (
+                    <div className="text-red-600 text-sm">Passwords do not match.</div>
+                  )}
+                  <button type="submit" className="w-full py-2.5 px-4 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-dark transition text-sm">
+                    Create account
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <p className="mt-8 text-center text-sm text-gray-500">
               Already have an account?{' '}
               <a href="/login" className="text-brand-main font-semibold hover:text-brand-dark">
                 Sign in

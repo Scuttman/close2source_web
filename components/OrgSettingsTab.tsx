@@ -1,8 +1,8 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
-import { updateOrg, getUser, addOrgInvite } from '@/lib/dal';
+import { updateOrg, getUser, addOrgInvite, checkOrgCodeAvailability, updateOrgCode } from '@/lib/dal';
 import { storage } from '../src/lib/firebase';
-import { ClipboardDocumentIcon, ArrowPathIcon, EyeIcon, EyeSlashIcon, LinkIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentIcon, ArrowPathIcon, EyeIcon, EyeSlashIcon, LinkIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
 interface OrgSettingsTabProps {
@@ -146,6 +146,149 @@ function MemberAccessSection({ org, isOwner, onOrgUpdate }: { org: any; isOwner:
 					)}
 				</div>
 			</div>		</section>
+	);
+}
+
+function CustomCodeSection({ org, isOwner, onOrgUpdate }: { org: any; isOwner: boolean; onOrgUpdate: (patch: Record<string, any>) => void }) {
+	const [customCode, setCustomCode] = useState('');
+	const [checking, setChecking] = useState(false);
+	const [updating, setUpdating] = useState(false);
+	const [availability, setAvailability] = useState<{ available: boolean; message: string } | null>(null);
+
+	const validateFormat = (code: string): string | null => {
+		if (code.length < 2 || code.length > 10) {
+			return 'Code must be 2-10 characters';
+		}
+		if (!/^[a-zA-Z0-9]+$/.test(code)) {
+			return 'Code must be alphanumeric only';
+		}
+		return null;
+	};
+
+	const handleCheckAvailability = async () => {
+		const code = customCode.trim().toUpperCase();
+		if (!code) {
+			setAvailability({ available: false, message: 'Please enter a code' });
+			return;
+		}
+
+		const formatError = validateFormat(code);
+		if (formatError) {
+			setAvailability({ available: false, message: formatError });
+			return;
+		}
+
+		if (code === org.orgId) {
+			setAvailability({ available: false, message: 'This is your current code' });
+			return;
+		}
+
+		setChecking(true);
+		try {
+			const result = await checkOrgCodeAvailability(code);
+			setAvailability({
+				available: result.available,
+				message: result.available ? 'Code is available!' : result.reason || 'Code is not available'
+			});
+		} catch (error) {
+			setAvailability({
+				available: false,
+				message: 'Error checking availability'
+			});
+		} finally {
+			setChecking(false);
+		}
+	};
+
+	const handleUpdateCode = async () => {
+		const code = customCode.trim().toUpperCase();
+		if (!availability?.available) return;
+
+		if (!confirm(`Update organization code to "${code}"?\n\nYour current code "${org.orgId}" will continue to work for existing links.\n\nAll associated projects and showcases will be automatically updated to use the new code.`)) {
+			return;
+		}
+
+		setUpdating(true);
+		try {
+			await updateOrgCode(org.id, code);
+			onOrgUpdate({ orgId: code });
+			setCustomCode('');
+			setAvailability(null);
+		} catch (error) {
+			alert('Failed to update code. Please try again.');
+		} finally {
+			setUpdating(false);
+		}
+	};
+
+	if (!isOwner) return null;
+
+	return (
+		<section className='bg-white border border-brand-main/10 rounded-xl p-6 shadow-sm'>
+			<h3 className='text-lg font-semibold text-brand-main mb-1'>Customize Organization Code</h3>
+			<p className='text-xs text-gray-500 mb-4'>
+				Choose a memorable code for your organization (2-10 alphanumeric characters). 
+				Your current code is <span className='font-mono font-semibold'>{org.orgId}</span>.
+			</p>
+			<div className='flex flex-col sm:flex-row gap-3'>
+				<div className='flex-1'>
+					<input
+						type='text'
+						value={customCode}
+						onChange={(e) => {
+							const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+							setCustomCode(val);
+							if (availability) setAvailability(null);
+						}}
+						placeholder='Enter new code (e.g., AAC)'
+						maxLength={10}
+						className='w-full px-3 py-2 border rounded-lg font-mono text-lg tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-brand-main/50'
+					/>
+				</div>
+				<button
+					type='button'
+					onClick={handleCheckAvailability}
+					disabled={checking || !customCode.trim()}
+					className='px-4 py-2 rounded-lg border border-brand-main bg-white text-brand-main font-semibold hover:bg-brand-main/5 transition disabled:opacity-50 disabled:cursor-not-allowed'
+				>
+					{checking ? (
+						<span className='flex items-center gap-2'>
+							<ArrowPathIcon className='w-4 h-4 animate-spin' />
+							Checking...
+						</span>
+					) : (
+						'Check Availability'
+					)}
+				</button>
+				{availability?.available && (
+					<button
+						type='button'
+						onClick={handleUpdateCode}
+						disabled={updating}
+						className='px-4 py-2 rounded-lg bg-brand-main text-white font-semibold hover:bg-brand-main/90 transition disabled:opacity-50'
+					>
+						{updating ? (
+							<span className='flex items-center gap-2'>
+								<ArrowPathIcon className='w-4 h-4 animate-spin' />
+								Updating...
+							</span>
+						) : (
+							'Update Code'
+						)}
+					</button>
+				)}
+			</div>
+			{availability && (
+				<div className={`mt-3 flex items-center gap-2 text-sm ${availability.available ? 'text-green-600' : 'text-red-600'}`}>
+					{availability.available ? (
+						<CheckCircleIcon className='w-5 h-5 flex-shrink-0' />
+					) : (
+						<XCircleIcon className='w-5 h-5 flex-shrink-0' />
+					)}
+					<span>{availability.message}</span>
+				</div>
+			)}
+		</section>
 	);
 }
 
@@ -344,6 +487,8 @@ export default function OrgSettingsTab({ org, enrichedTeam, isOwner, editMode, o
 		<div className='space-y-8'>
 			{/* Member Access — org code + join PIN */}
 			<MemberAccessSection org={org} isOwner={isOwner} onOrgUpdate={onOrgUpdate} />
+			{/* Custom Organization Code */}
+			<CustomCodeSection org={org} isOwner={isOwner} onOrgUpdate={onOrgUpdate} />
 			{/* Background Image */}
 			<section className='bg-white border border-brand-main/10 rounded-xl p-6 shadow-sm'>
 				<h3 className='text-lg font-semibold text-brand-main mb-2'>Background Image</h3>

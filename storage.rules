@@ -11,6 +11,12 @@ service firebase.storage {
 
     function isSignedIn() { return request.auth != null; }
 
+    // Newsletters
+    match /newsletters/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     // Profile pictures
     match /profile-pics/{userId}/{fileName=**} {
       allow read: if true;

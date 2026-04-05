@@ -78,7 +78,8 @@ export async function getOrg(docId: string): Promise<(OrgDoc & { id: string }) |
 }
 
 /**
- * Fetch an org by its human-readable short code (e.g. "OABC123").
+ * Fetch an org by its human-readable short code (e.g. "OABC123" or "AAC").
+ * Also checks previousCodes array for backwards compatibility.
  *
  * The code→docId mapping is cached (TTL 5 min) so repeated code-search
  * lookups (home page, project registration) only hit Firestore once per
@@ -89,9 +90,20 @@ export async function getOrgByCode(orgId: string): Promise<(OrgDoc & { id: strin
   const hit = cache.get<OrgDoc & { id: string }>(codeKey);
   if (hit) return hit;
 
-  const snap = await getDocs(
-    query(collection(db(), 'organizations'), where('orgId', '==', orgId.toUpperCase())),
+  const upperCode = orgId.toUpperCase();
+  
+  // First try current orgId
+  let snap = await getDocs(
+    query(collection(db(), 'organizations'), where('orgId', '==', upperCode)),
   );
+  
+  // If not found, try previousCodes array
+  if (snap.empty) {
+    snap = await getDocs(
+      query(collection(db(), 'organizations'), where('previousCodes', 'array-contains', upperCode)),
+    );
+  }
+  
   if (snap.empty) return null;
 
   const data = { id: snap.docs[0].id, ...(snap.docs[0].data() as OrgDoc) };
@@ -270,4 +282,222 @@ export async function deleteOrg(docId: string): Promise<void> {
   await deleteDoc(doc(db(), 'organizations', docId));
   cache.invalidate(orgDocKey(docId));
   cache.invalidatePrefix('org_code/');
+}
+
+// ─── Organization Code Management ────────────────────────────────────────────
+
+/**
+ * Check if a custom organization code is available.
+ * Returns { available: true } if the code can be used.
+ * Returns { available: false, reason: string } if the code is taken or invalid.
+ * 
+ * Rules:
+ * - Code must be 2-10 uppercase letters/numbers
+ * - Cannot conflict with existing orgId or previousCodes
+ * - Should not start with reserved prefixes unless intentional (O, P, I, S)
+ */
+export async function checkOrgCodeAvailability(
+  code: string,
+  currentOrgId?: string
+): Promise<{ available: boolean; reason?: string }> {
+  const trimmed = code.trim().toUpperCase();
+  
+  // Validate format: 2-10 alphanumeric characters
+  if (!/^[A-Z0-9]{2,10}$/.test(trimmed)) {
+    return {
+      available: false,
+      reason: 'Code must be 2-10 uppercase letters or numbers (e.g., AAC, OXFAM)'
+    };
+  }
+  
+  // Check if it's the same as current code (allow keeping current)
+  if (currentOrgId && trimmed === currentOrgId.toUpperCase()) {
+    return { available: true };
+  }
+  
+  // Check if code is already in use as current orgId
+  const existingByCode = await getDocs(
+    query(collection(db(), 'organizations'), where('orgId', '==', trimmed))
+  );
+  if (!existingByCode.empty) {
+    return { available: false, reason: 'This code is already in use by another organization' };
+  }
+  
+  // Check if code exists in any previousCodes array
+  const existingInPrevious = await getDocs(
+    query(collection(db(), 'organizations'), where('previousCodes', 'array-contains', trimmed))
+  );
+  if (!existingInPrevious.empty) {
+    return { available: false, reason: 'This code was previously used by another organization' };
+  }
+  
+  return { available: true };
+}
+
+/**
+ * Update an organization's code, maintaining backwards compatibility.
+ * The old code is stored in previousCodes array so old links continue to work.
+ * 
+ * @param docId - Firestore document ID of the organization
+ * @param newCode - The new organization code (will be uppercased)
+ * @returns Promise<{ success: boolean; error?: string }>
+ */
+export async function updateOrgCode(
+  docId: string,
+  newCode: string
+): Promise<{ success: boolean; error?: string }> {
+  const trimmed = newCode.trim().toUpperCase();
+  
+  // Get current org data
+  const org = await getOrg(docId);
+  if (!org) {
+    return { success: false, error: 'Organization not found' };
+  }
+  
+  // Check availability
+  const availability = await checkOrgCodeAvailability(trimmed, org.orgId);
+  if (!availability.available) {
+    return { success: false, error: availability.reason };
+  }
+  
+  // If code hasn't changed, nothing to do
+  if (org.orgId.toUpperCase() === trimmed) {
+    return { success: true };
+  }
+  
+  // Update using transaction to ensure atomicity
+  const firestore = db();
+  const orgRef = doc(firestore, 'organizations', docId);
+  
+  try {
+    const oldCode = org.orgId;
+    
+    // Update organization code
+    await runTransaction(firestore, async (tx) => {
+      const latest = await tx.get(orgRef);
+      if (!latest.exists()) {
+        throw new Error('Organization not found');
+      }
+      
+      const currentData = latest.data() as OrgDoc;
+      const currentCode = currentData.orgId;
+      const previousCodes = currentData.previousCodes || [];
+      
+      // Add current code to previousCodes if not already there
+      const updatedPreviousCodes = previousCodes.includes(currentCode)
+        ? previousCodes
+        : [...previousCodes, currentCode];
+      
+      tx.update(orgRef, {
+        orgId: trimmed,
+        previousCodes: updatedPreviousCodes
+      });
+    });
+    
+    // Update all associated showcases to use the new code
+    // This ensures showcases remain accessible after org code change
+    const showcasesQuery = query(
+      collection(firestore, 'showcases'),
+      where('orgId', '==', oldCode)
+    );
+    const showcasesSnap = await getDocs(showcasesQuery);
+    
+    if (!showcasesSnap.empty) {
+      const batch = writeBatch(firestore);
+      
+      showcasesSnap.docs.forEach((showcaseDoc) => {
+        const showcaseData = showcaseDoc.data();
+        const updates: any = { orgId: trimmed };
+        
+        // Also update orgId in locationEntries if this is a location-based showcase
+        if (showcaseData.locationEntries && Array.isArray(showcaseData.locationEntries)) {
+          updates.locationEntries = showcaseData.locationEntries.map((entry: any) => ({
+            ...entry,
+            orgId: entry.orgId === oldCode ? trimmed : entry.orgId
+          }));
+        }
+        
+        batch.update(showcaseDoc.ref, updates);
+      });
+      
+      await batch.commit();
+    }
+    
+    // Update all projects that reference this organization
+    // This ensures projects continue to appear in the org's project list
+    const projectsQuery = query(
+      collection(firestore, 'projects'),
+      where('organizationId', '==', oldCode)
+    );
+    const projectsSnap = await getDocs(projectsQuery);
+    
+    if (!projectsSnap.empty) {
+      const batch = writeBatch(firestore);
+      
+      projectsSnap.docs.forEach((projectDoc) => {
+        const projectData = projectDoc.data();
+        const updates: any = { organizationId: trimmed };
+        
+        // Also update partners array if this org appears as a partner
+        if (projectData.partners && Array.isArray(projectData.partners)) {
+          const updatedPartners = projectData.partners.map((partner: any) => ({
+            ...partner,
+            orgId: partner.orgId === oldCode ? trimmed : partner.orgId
+          }));
+          
+          // Only update if there was a change
+          if (JSON.stringify(updatedPartners) !== JSON.stringify(projectData.partners)) {
+            updates.partners = updatedPartners;
+          }
+        }
+        
+        batch.update(projectDoc.ref, updates);
+      });
+      
+      await batch.commit();
+    }
+    
+    // Also need to check all OTHER projects where this org might appear as a partner
+    // (projects not owned by this org but that list this org as a partner)
+    const allProjectsSnap = await getDocs(collection(firestore, 'projects'));
+    const projectsWithThisAsPartner: any[] = [];
+    
+    allProjectsSnap.docs.forEach((projectDoc) => {
+      const data = projectDoc.data();
+      if (data.partners && Array.isArray(data.partners)) {
+        const hasThisOrg = data.partners.some((p: any) => p.orgId === oldCode);
+        if (hasThisOrg && data.organizationId !== oldCode) {
+          // This project has our org as a partner but is NOT owned by our org
+          projectsWithThisAsPartner.push(projectDoc);
+        }
+      }
+    });
+    
+    if (projectsWithThisAsPartner.length > 0) {
+      const batch = writeBatch(firestore);
+      
+      projectsWithThisAsPartner.forEach((projectDoc) => {
+        const data = projectDoc.data();
+        const updatedPartners = data.partners.map((partner: any) => ({
+          ...partner,
+          orgId: partner.orgId === oldCode ? trimmed : partner.orgId
+        }));
+        
+        batch.update(projectDoc.ref, { partners: updatedPartners });
+      });
+      
+      await batch.commit();
+    }
+    
+    // Invalidate all caches for this org, showcases, and projects
+    cache.invalidate(orgDocKey(docId));
+    cache.invalidatePrefix('org_code/');
+    cache.invalidatePrefix('showcase_code/');
+    cache.invalidatePrefix('showcases/');
+    cache.invalidatePrefix('projects/');
+    
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to update organization code' };
+  }
 }

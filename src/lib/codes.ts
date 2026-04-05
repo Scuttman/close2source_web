@@ -1,7 +1,7 @@
 // Shared code generation & migration utilities
 // Prefix rules: Project -> P + 6 letters, Organization -> O + 6 letters, Individual -> I + 6 letters
 
-export type CodeType = 'project' | 'organization' | 'individual' | 'showcase';
+export type CodeType = 'project' | 'organization' | 'individual' | 'showcase' | 'newsletter';
 
 function randomLetters(len:number){
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -11,7 +11,7 @@ function randomLetters(len:number){
 }
 
 export function generateCode(kind: CodeType){
-  const prefix = kind === 'project' ? 'P' : kind === 'organization' ? 'O' : kind === 'showcase' ? 'S' : 'I';
+  const prefix = kind === 'project' ? 'P' : kind === 'organization' ? 'O' : kind === 'showcase' ? 'S' : kind === 'newsletter' ? 'N' : 'I';
   return prefix + randomLetters(6);
 }
 

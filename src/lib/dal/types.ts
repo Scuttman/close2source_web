@@ -82,9 +82,13 @@ export interface OrgTeamMember {
 }
 
 export interface OrgDoc {
-  orgId: string;           // short human-readable code e.g. "OABC123"
+  orgId: string;           // short human-readable code e.g. "OABC123" or custom like "AAC"
+  previousCodes?: string[]; // array of old codes for backwards compatibility
   name: string;
   ownerUid: string;
+  title?: string;
+  status?: "draft" | "published";
+  publishedAt?: string;
   bio?: string;
   tagline?: string;
   logoUrl?: string | null;
@@ -201,6 +205,50 @@ export interface IndividualDoc {
   accessPin?: string;      // 4-6 digit PIN for access control
   authorizedViewers?: string[];  // UIDs of users who have entered correct PIN
   createdAt?: unknown;
+}
+
+// ─── newsletters/{id} ───────────────────────────────────────────────────────────
+
+export interface NewsletterProject {
+  id: string;
+  heading: string;
+  body: string;       // 1–2 paragraphs written by the user
+  images: string[];   // Firebase Storage URLs
+  links?: { label: string; url: string }[];  // optional external links
+}
+
+export interface NewsletterSupportMethod {
+  id: string;
+  title: string;
+  description: string;
+  link: string;       // clickable URL
+}
+
+export interface NewsletterDoc {
+  newsletterId: string;           // Share code e.g. "NABCDEF"
+  individualId: string;           // linked individual profile code
+  ownerUid: string;
+  title: string;
+  status: 'draft' | 'published';
+  publishedAt?: string;
+  letterDate?: string;            // Display date on the letter e.g. "5th January 2025"
+  personName: string;             // denormalised from individual
+  coverPhotoUrl?: string;
+  photoURL?: string;
+  isFamily?: boolean;
+  serviceLocation?: string;
+  sendingOrganization?: string;
+  introduction: string;
+  vision?: string;
+  currentProjects: NewsletterProject[];
+  prayerPoints: string[];         // simple bullet list
+  financialNeeds: string[];       // simple bullet list
+  supportMethods: NewsletterSupportMethod[];
+  contactEmail?: string;
+  contactPhone?: string;
+  contactWebsite?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 // ─── showcases/{id} ───────────────────────────────────────────────────────────

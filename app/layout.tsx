@@ -99,7 +99,7 @@ function CookieBanner() {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} bg-brand-sand`}>
-      <body className="min-h-dvh flex flex-col bg-brand-sand text-brand-dark antialiased relative overflow-x-hidden">
+      <body className="min-h-dvh flex flex-col bg-brand-sand text-brand-dark antialiased relative overflow-x-hidden" suppressHydrationWarning>
         <AIConsentProvider>
         <LegacyConsentGate>
         {/* Global background image and overlay.

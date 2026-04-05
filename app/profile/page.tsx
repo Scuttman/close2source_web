@@ -16,18 +16,21 @@ import {
   getUserIndividuals,
   getUserOrgs,
   getUserProjects,
+  getUserNewsletters,
+  deleteNewsletter,
   getActivityLog,
   joinOrgByPin,
 } from "@/lib/dal";
 import { generateCode } from "../../src/lib/codes";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon, ShieldCheckIcon, DocumentTextIcon, CheckCircleIcon, XCircleIcon, ArrowDownTrayIcon, PresentationChartBarIcon, TrashIcon, MapPinIcon } from "@heroicons/react/24/outline";
+import { BuildingOfficeIcon, RectangleGroupIcon, UserCircleIcon, PlusCircleIcon, SparklesIcon, PencilIcon, PhotoIcon, ArrowUpTrayIcon, InformationCircleIcon, ShieldCheckIcon, DocumentTextIcon, CheckCircleIcon, XCircleIcon, ArrowDownTrayIcon, PresentationChartBarIcon, TrashIcon, MapPinIcon, NewspaperIcon } from "@heroicons/react/24/outline";
 import { updateAIConsent } from "../../src/lib/userConsent";
 import AIConsentModal from "../../components/AIConsentModal";
 import PageShell from "../../components/PageShell";
 import C2SStampSVG from "../../components/C2SStampSVG";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { resizeImageFile, IMAGE_MAX_BANNER, IMAGE_MAX_THUMB } from "../../src/lib/imageResize";
+import CreateNewsletterModal from "../../components/CreateNewsletterModal";
 
 function ProfilePageInner() {
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +46,11 @@ function ProfilePageInner() {
   const [individualProfiles, setIndividualProfiles] = useState<any[]>([]);
   const [showcases, setShowcases] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+
+  // Newsletter modal state
+  const [showCreateNewsletter, setShowCreateNewsletter] = useState(false);
+  const [newsletters, setNewsletters] = useState<any[]>([]);
+  const [newslettersLoading, setNewslettersLoading] = useState(false);
 
   // Create showcase modal state
   const [showCreateShowcase, setShowCreateShowcase] = useState(false);
@@ -156,6 +164,16 @@ function ProfilePageInner() {
       unsubIndividuals();
       unsubShowcases();
     };
+  }, [user]);
+
+  // Load user newsletters
+  useEffect(() => {
+    if (!user) return;
+    setNewslettersLoading(true);
+    getUserNewsletters(user.uid)
+      .then(data => setNewsletters(data.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())))
+      .catch(() => setNewsletters([]))
+      .finally(() => setNewslettersLoading(false));
   }, [user]);
 
   // Join an organization via code + PIN
@@ -308,6 +326,7 @@ function ProfilePageInner() {
     { id: 'organizations', label: 'Organizations', icon: BuildingOfficeIcon },
     { id: 'projects', label: 'Projects', icon: RectangleGroupIcon },
     { id: 'showcases', label: 'Showcases', icon: PresentationChartBarIcon },
+    { id: 'newsletters', label: 'Newsletters', icon: NewspaperIcon },
     { id: 'userprofile', label: 'User Profile', icon: UserCircleIcon },
     { id: 'compliance', label: 'Compliance', icon: ShieldCheckIcon },
   ];
@@ -785,6 +804,85 @@ function ProfilePageInner() {
               </div>
             )}
 
+            {/* ── Newsletters Tab ─────────────────────────────────────────── */}
+            {activeTab === 'newsletters' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-brand-dark">Your Newsletters</h3>
+                  <button
+                    onClick={() => setShowCreateNewsletter(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-brand-main text-white rounded-lg text-sm font-semibold hover:bg-brand-dark transition"
+                  >
+                    <PlusCircleIcon className="w-4 h-4" />
+                    New Newsletter
+                  </button>
+                </div>
+
+                {newslettersLoading ? (
+                  <div className="text-center py-8 text-gray-500">Loading...</div>
+                ) : newsletters.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
+                    <NewspaperIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 mb-2 font-medium">No newsletters yet.</p>
+                    <p className="text-sm text-gray-500 mb-6">Create a newsletter from your individual profile to share your story, projects, and prayer needs with supporters.</p>
+                    <button
+                      onClick={() => setShowCreateNewsletter(true)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-brand-main text-white rounded-lg font-semibold hover:bg-brand-dark transition"
+                    >
+                      <PlusCircleIcon className="w-5 h-5" />
+                      Create Your First Newsletter
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {newsletters.map((nl: any) => (
+                      <div key={nl.id} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-semibold text-brand-dark text-sm leading-tight line-clamp-2">{nl.title || 'Untitled Newsletter'}</h4>
+                          <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium border ${nl.status === 'published' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                            {nl.status === 'published' ? 'Published' : 'Draft'}
+                          </span>
+                        </div>
+                        {nl.introduction && (
+                          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{nl.introduction}</p>
+                        )}
+                        <div className="text-xs text-gray-400 font-mono">{nl.newsletterId} · {nl.personName || nl.individualId}</div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          <a
+                            href={`/newsletter?id=${nl.individualId}&n=${nl.newsletterId}`}
+                            className="text-xs font-semibold px-3 py-1.5 bg-brand-main/10 hover:bg-brand-main/20 text-brand-main rounded transition"
+                          >
+                            Edit
+                          </a>
+                          {nl.status === 'published' && nl.newsletterId && (
+                            <a
+                              href={`/n/${nl.newsletterId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-semibold px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition"
+                            >
+                              View Live
+                            </a>
+                          )}
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Delete this newsletter? This cannot be undone.')) return;
+                              await deleteNewsletter(nl.id);
+                              setNewsletters(prev => prev.filter((n: any) => n.id !== nl.id));
+                            }}
+                            className="ml-auto p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition"
+                            title="Delete"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── Compliance Tab ─────────────────────────────────────────── */}
             {activeTab === 'compliance' && (
               <div className="flex flex-col gap-6">
@@ -948,13 +1046,11 @@ function ProfilePageInner() {
                 Profile Tools
               </h3>
               <button
-                disabled
-                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg bg-orange-50 border border-orange-200 text-orange-800 text-sm font-medium opacity-70 cursor-not-allowed"
-                title="Coming soon"
+                onClick={() => setActiveTab('newsletters')}
+                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg bg-orange-50 border border-orange-200 text-orange-800 text-sm font-medium hover:bg-orange-100 hover:border-orange-300 transition cursor-pointer"
               >
-                <UserCircleIcon className="w-5 h-5 text-orange-500" />
-                <span className="flex-1 text-left">Add Profile</span>
-                <span className="text-xs bg-orange-200 text-orange-700 px-2 py-0.5 rounded-full">Soon</span>
+                <NewspaperIcon className="w-5 h-5 text-orange-500" />
+                <span className="flex-1 text-left">Newsletters</span>
               </button>
             </div>
           </div>
@@ -981,6 +1077,14 @@ function ProfilePageInner() {
             }
           }}
           onCancel={() => setShowAIReconsentModal(false)}
+        />
+      )}
+
+      {/* Create Newsletter Modal */}
+      {showCreateNewsletter && user && (
+        <CreateNewsletterModal
+          userUid={user.uid}
+          onClose={() => setShowCreateNewsletter(false)}
         />
       )}
 

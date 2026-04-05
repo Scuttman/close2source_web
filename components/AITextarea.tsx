@@ -110,7 +110,7 @@ export default function AITextarea({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
-          className={`${className} ${aiEnabled ? 'pr-12' : ''}`}
+          className={`w-full border border-gray-200 bg-gray-50 focus:bg-white focus:border-brand-main focus:ring-2 focus:ring-brand-main/20 rounded-xl px-4 py-3 text-sm resize-y outline-none transition text-gray-700 leading-relaxed ${aiEnabled ? 'pr-12' : ''} ${className}`}
         />
         
         {/* AI Button — only shown when user has AI consent */}

@@ -18,6 +18,7 @@ import IndividualUpdatesTab from "../../../components/IndividualUpdatesTab";
 import IndividualPrayerTab from "../../../components/IndividualPrayerTab";
 import IndividualFinanceTab from "../../../components/IndividualFinanceTab";
 import ProfilePinGate from "../../../components/ProfilePinGate";
+import IndividualNewslettersSection from "../../../components/IndividualNewslettersSection";
 import IndividualSettingsTab from "../../../components/IndividualSettingsTab";
 import IndividualProjectsSection from "../../../components/IndividualProjectsSection";
 
@@ -524,6 +525,12 @@ function ProfilePageInner() {
                 currentUser={userUid ? { uid: userUid } : null}
               />
             )}
+            
+            <IndividualNewslettersSection
+              individual={individual}
+              canEdit={isOwner}
+            />
+
             {isOwner && (
               <IndividualSettingsTab
                 individual={individual}

@@ -98,6 +98,13 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+
+    /* ---------- Newsletters ---------- */
+    match /newsletters/{newsletterId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerUid;
+    }
     /* ---------- Organizations ---------- */
     match /organizations/{orgId} {
       allow create: if isSignedIn();
@@ -111,10 +118,15 @@ service cloud.firestore {
           resource.data.teamUids != null &&
           request.auth.uid in resource.data.teamUids
         ) ||
-        // Self-join via code+pin: user can only append to team, no other fields change
+        // Self-join via code+pin: user can only append to team and memberUids, no other fields change
         (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team']) &&
-          request.resource.data.team.size() == resource.data.team.size() + 1
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team', 'memberUids']) &&
+          request.resource.data.team.size() == resource.data.team.size() + 1 &&
+          (
+            // Handle case where memberUids doesn't exist yet
+            (resource.data.memberUids == null && request.resource.data.memberUids.size() == 1) ||
+            (resource.data.memberUids != null && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1)
+          )
         )
       );
       // Deletion restricted to Owner or SuperAdmin
