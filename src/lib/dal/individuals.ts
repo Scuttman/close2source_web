@@ -19,6 +19,10 @@ import {
   onSnapshot,
   runTransaction,
   serverTimestamp,
+  increment,
+  addDoc,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { app } from '../firebase';
 import { cache, DalCache } from './cache';
@@ -162,4 +166,41 @@ export async function deleteIndividual(docId: string): Promise<void> {
   await deleteDoc(doc(db(), 'individuals', docId));
   cache.invalidate(indDocKey(docId));
   cache.invalidatePrefix('ind_code/');
+}
+
+/**
+ * Record a profile view. Writes a timestamped event to the
+ * individuals/{docId}/profileViews subcollection.
+ * Firestore rules allow unauthenticated creates on this subcollection.
+ */
+export async function recordProfileView(
+  docId: string,
+  referrerUrl?: string,
+): Promise<void> {
+  const referrerDomain = referrerUrl
+    ? (() => { try { return new URL(referrerUrl).hostname || 'direct'; } catch { return 'direct'; } })()
+    : 'direct';
+  await addDoc(collection(db(), 'individuals', docId, 'profileViews'), {
+    timestamp: serverTimestamp(),
+    referrer: referrerUrl || '',
+    referrerDomain,
+  });
+}
+
+/**
+ * Fetch recent profile view events for the owner's analytics panel.
+ * Sorted newest-first.
+ */
+export async function getProfileViewStats(
+  docId: string,
+  limitN = 100,
+): Promise<{ id: string; timestamp: unknown; referrer: string; referrerDomain: string }[]> {
+  const snap = await getDocs(
+    query(
+      collection(db(), 'individuals', docId, 'profileViews'),
+      orderBy('timestamp', 'desc'),
+      limit(limitN),
+    ),
+  );
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 }

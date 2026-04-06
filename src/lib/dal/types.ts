@@ -204,6 +204,7 @@ export interface IndividualDoc {
   visibility?: ProjectVisibility;
   accessPin?: string;      // 4-6 digit PIN for access control
   authorizedViewers?: string[];  // UIDs of users who have entered correct PIN
+  noIndex?: boolean;       // if true, search engines are instructed not to index this profile
   createdAt?: unknown;
 }
 

@@ -4,7 +4,7 @@
 import { Suspense } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { getIndividualByCode, updateIndividual, subscribeIndividual, fieldDelete } from '@/lib/dal';
+import { getIndividualByCode, updateIndividual, subscribeIndividual, fieldDelete, recordProfileView } from '@/lib/dal';
 import { getAuth } from "firebase/auth";
 import { MapPinIcon, BuildingOfficeIcon, UserGroupIcon, SparklesIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import CreatePostModal from "../../../components/CreatePostModal";
@@ -204,6 +204,24 @@ function ProfilePageInner() {
     });
     return ()=>unsub();
   }, [individual]);
+
+  // Track profile view once per mount (non-owners only)
+  useEffect(() => {
+    if (!individual?.id || isOwner) return;
+    recordProfileView(individual.id, document.referrer).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [individual?.id, isOwner]);
+
+  // Inject noindex meta tag when the profile owner has opted out of indexing
+  useEffect(() => {
+    if (!individual?.noIndex) return;
+    const meta = document.createElement('meta');
+    meta.name = 'robots';
+    meta.content = 'noindex,nofollow';
+    meta.setAttribute('data-c2s-noindex', '1');
+    document.head.appendChild(meta);
+    return () => { document.querySelector('meta[data-c2s-noindex]')?.remove(); };
+  }, [individual?.noIndex]);
 
   async function claimOwnership(){
     if(!individual) return;

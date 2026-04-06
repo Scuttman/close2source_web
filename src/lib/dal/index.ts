@@ -101,6 +101,8 @@ export {
   updateIndividual,
   createIndividual,
   deleteIndividual,
+  recordProfileView,
+  getProfileViewStats,
 } from './individuals';
 
 // ── Showcases ────────────────────────────────────────────────────────────────

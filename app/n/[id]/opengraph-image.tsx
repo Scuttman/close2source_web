@@ -19,7 +19,12 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     if (nl) {
       name = nl.personName || name;
       location = nl.serviceLocation || '';
-      bgImage = nl.headerBgUrl || nl.coverPhotoUrl || null;
+      bgImage = nl.headerBgUrl
+        || nl.coverPhotoUrl
+        || (Array.isArray(nl.introPhotos) && nl.introPhotos[0] ? nl.introPhotos[0] : null)
+        || (Array.isArray(nl.familyUpdates) && nl.familyUpdates[0]?.images?.[0] ? nl.familyUpdates[0].images[0] : null)
+        || (Array.isArray(nl.currentProjects) && nl.currentProjects[0]?.images?.[0] ? nl.currentProjects[0].images[0] : null)
+        || null;
       const d = new Date(nl.letterDate || nl.publishedAt || '');
       if (!isNaN(d.getTime())) {
         dateLabel = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });

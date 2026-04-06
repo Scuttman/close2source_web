@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { updateIndividual, fieldDelete } from '@/lib/dal';
+import { updateIndividual, fieldDelete, getProfileViewStats } from '@/lib/dal';
 
 export type AccessLevel = 'public' | 'supporter' | 'representative' | 'owner';
 const ROLES: AccessLevel[] = ['public','supporter','representative','owner'];
@@ -54,8 +54,20 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
   const [allowRepSettings, setAllowRepSettings] = useState<boolean>(!!individual?.settingsAllowRepresentative);
   const [accessPin, setAccessPin] = useState<string>(individual?.accessPin || '');
   const [showPinInput, setShowPinInput] = useState<boolean>(!!individual?.accessPin);
+  const [noIndex, setNoIndex] = useState<boolean>(!!individual?.noIndex);
+  const [viewStats, setViewStats] = useState<{ id: string; timestamp: unknown; referrer: string; referrerDomain: string }[]>([]);
+  const [viewStatsLoading, setViewStatsLoading] = useState(false);
 
   useEffect(()=>{ setSettings(normalize(individual?.accessSettings)); },[individual?.accessSettings]);
+
+  useEffect(() => {
+    if (!individual?.id || !isOwner) return;
+    setViewStatsLoading(true);
+    getProfileViewStats(individual.id, 100)
+      .then(setViewStats)
+      .catch(() => {})
+      .finally(() => setViewStatsLoading(false));
+  }, [individual?.id, isOwner]);
 
   function toggleView(tab: string, role: AccessLevel){
     setSettings(s=> ({
@@ -98,6 +110,7 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
         representatives, 
         supporters, 
         settingsAllowRepresentative: allowRepSettings,
+        noIndex,
       };
       
       // Only include PIN fields when there's a PIN, or explicitly delete them
@@ -116,6 +129,7 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
         representatives, 
         supporters, 
         settingsAllowRepresentative: allowRepSettings,
+        noIndex,
       };
       
       if (pinValue) {
@@ -272,6 +286,66 @@ export default function IndividualSettingsTab({ individual, onUpdate, isOwner }:
             </div>
           )}
         </div>
+      </div>
+
+      {/* Search Engine Visibility */}
+      <div className="border-t border-gray-100 pt-6">
+        <h3 className="font-semibold text-brand-main mb-3 flex items-center gap-2">
+          <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          Search Engine Visibility
+        </h3>
+        <label className="flex items-center gap-3 text-sm">
+          <input type="checkbox" checked={noIndex} onChange={e => setNoIndex(e.target.checked)} />
+          <span className="font-medium">Hide this profile from search engines (Google, Bing, etc.)</span>
+        </label>
+        {noIndex && (
+          <p className="ml-6 mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            ⚠️ Search engines will be instructed not to index this profile. It will still be accessible via direct link.
+          </p>
+        )}
+      </div>
+
+      {/* Profile View Analytics */}
+      <div className="border-t border-gray-100 pt-6">
+        <h3 className="font-semibold text-brand-main mb-3 flex items-center gap-2">
+          <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          Profile Views
+        </h3>
+        {viewStatsLoading ? (
+          <p className="text-xs text-gray-400">Loading analytics…</p>
+        ) : (
+          <>
+            <p className="text-3xl font-bold text-gray-900">{viewStats.length}</p>
+            <p className="text-xs text-gray-500 mb-4">Total recorded views (last 100)</p>
+            {viewStats.length > 0 && (() => {
+              const breakdown = viewStats.reduce((acc: Record<string, number>, v) => {
+                const domain = v.referrerDomain || 'direct';
+                acc[domain] = (acc[domain] || 0) + 1;
+                return acc;
+              }, {});
+              const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]).slice(0, 8);
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Traffic sources</p>
+                  {sorted.map(([domain, count]) => (
+                    <div key={domain} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-1.5 text-xs">
+                      <span className="text-gray-700">{domain === 'direct' ? '🔗 Direct / unknown' : domain}</span>
+                      <span className="font-semibold text-gray-900">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {viewStats.length === 0 && (
+              <p className="text-xs text-gray-400">No views recorded yet.</p>
+            )}
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-4">

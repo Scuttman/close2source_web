@@ -35,6 +35,14 @@ export default function NewsletterShareButtons({ url, title, name }: Props) {
   const enc = encodeURIComponent;
   const shareText = `Read ${name}'s ministry newsletter update`;
 
+  const openFacebookShare = () => {
+    const fbAppId = '1598845148014953';
+    const shareUrl =
+      `https://www.facebook.com/dialog/share?app_id=${fbAppId}` +
+      `&display=popup&href=${enc(url)}&redirect_uri=${enc(url)}`;
+    window.open(shareUrl, 'fb-share', 'width=600,height=500,resizable=yes');
+  };
+
   return (
     <div className="space-y-5">
       {/* Copy link row */}
@@ -49,18 +57,20 @@ export default function NewsletterShareButtons({ url, title, name }: Props) {
         </button>
       </div>
 
+      {/* Facebook — full Share Dialog (feed + groups + pages) */}
+      <button
+        onClick={openFacebookShare}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#1877F2] hover:bg-[#166fe5] text-white font-semibold rounded-xl text-sm transition shadow-sm"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+        </svg>
+        Share on Facebook
+      </button>
+      <p className="text-xs text-center text-gray-400 -mt-2">Choose your feed, a group, or a page inside Facebook</p>
+
       {/* Social platform buttons */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Facebook */}
-        <a
-          href={`https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 px-4 py-3 bg-[#1877F2] hover:bg-[#166fe5] text-white font-semibold rounded-xl text-sm transition shadow-sm"
-        >
-          <span className="text-base font-black leading-none">f</span>
-          Facebook
-        </a>
+      <div className="grid grid-cols-3 gap-3">
 
         {/* WhatsApp */}
         <a
