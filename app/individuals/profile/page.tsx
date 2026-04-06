@@ -39,6 +39,7 @@ function ProfilePageInner() {
   const [tagFilter, setTagFilter] = useState("");
   const [showAIReview, setShowAIReview] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false); // For PIN gate
+  const [activeSection, setActiveSection] = useState('overview');
 
   // Build unified feed from legacy arrays (idempotent)
   function buildUnifiedFeed(raw: any){
@@ -325,10 +326,21 @@ function ProfilePageInner() {
     );
   }
   
+  const TABS = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'about', label: 'About' },
+    { id: 'updates', label: 'Updates' },
+    { id: 'prayer', label: 'Prayer' },
+    { id: 'finance', label: 'Finance' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'newsletters', label: 'Newsletters' },
+    ...(isOwner ? [{ id: 'settings', label: 'Settings' }] : []),
+  ];
+
   const headerRight = (
     <div className="flex items-center gap-3">
       {profileCode && (
-        <span className="inline-block text-xs font-mono bg-white/10 text-white px-2 py-1 rounded border border-white/20 tracking-wide md:text-sm md:scale-110 origin-left">
+        <span className="hidden sm:inline-block text-xs font-mono bg-white/10 text-white px-2 py-1 rounded border border-white/20 tracking-wide md:text-sm md:scale-110 origin-left">
           {profileCode}
         </span>
       )}
@@ -360,7 +372,7 @@ function ProfilePageInner() {
             title="Download PDF"
           >
             <ArrowDownTrayIcon className="w-4 h-4" />
-            <span>Download PDF</span>
+            <span className="hidden sm:inline">Download PDF</span>
           </button>
           <button
             onClick={() => setShowAIReview(true)}
@@ -368,7 +380,7 @@ function ProfilePageInner() {
             title="AI Review"
           >
             <SparklesIcon className="w-4 h-4" />
-            <span>AI Review</span>
+            <span className="hidden sm:inline">AI Review</span>
           </button>
           <button
             type="button"
@@ -377,7 +389,7 @@ function ProfilePageInner() {
             aria-pressed={editMode}
             aria-label="Toggle edit mode"
           >
-            <span>Edit</span>
+            <span className="hidden sm:inline">Edit</span>
             <span className={`inline-flex items-center h-4 w-8 rounded-full transition ${editMode? 'bg-brand-accent/80':'bg-white/30'}`}>
               <span className={`h-4 w-4 rounded-full bg-white shadow transform transition ${editMode? 'translate-x-4':'translate-x-0'}`}></span>
             </span>
@@ -437,29 +449,29 @@ function ProfilePageInner() {
 
             {/* Profile Photo – top right */}
             {individual.photoURL && (
-              <div className="absolute top-10 right-[2.7rem] z-20">
+              <div className="absolute top-3 right-4 md:top-10 md:right-[2.7rem] z-20">
                 <img
                   src={individual.photoURL}
                   alt={individual.name}
-                  className="h-24 w-24 object-cover rounded-full border-4 border-white shadow-2xl"
+                  className="h-14 w-14 md:h-24 md:w-24 object-cover rounded-full border-4 border-white shadow-2xl"
                 />
               </div>
             )}
 
             {/* Individual Code – bottom right */}
             {profileCode && (
-              <div className="absolute bottom-10 right-[2.7rem] z-20">
-                <div className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-                  <span className="text-2xl font-mono font-bold text-white">{profileCode}</span>
+              <div className="absolute bottom-3 right-4 md:bottom-10 md:right-[2.7rem] z-20">
+                <div className="px-2 py-1 md:px-4 md:py-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                  <span className="text-sm md:text-2xl font-mono font-bold text-white">{profileCode}</span>
                 </div>
               </div>
             )}
 
             {/* Content */}
-            <div className="relative py-12 md:py-20 px-8">
+            <div className="relative py-6 md:py-12 lg:py-20 px-4 md:px-8">
               <div className="max-w-4xl">
                 {/* Type label */}
-                <div className="inline-flex items-center gap-2 mb-4 px-4 py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
+                <div className="inline-flex items-center gap-2 mb-2 md:mb-4 px-3 md:px-4 py-1 md:py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
                   {individual.isFamily
                     ? <UserGroupIcon className="w-4 h-4 text-white" />
                     : <BuildingOfficeIcon className="w-4 h-4 text-white" />}
@@ -469,7 +481,7 @@ function ProfilePageInner() {
                 </div>
 
                 {/* Name */}
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
+                <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold text-white mb-2 md:mb-4 leading-tight">
                   {individual.name}
                 </h1>
 
@@ -500,61 +512,94 @@ function ProfilePageInner() {
           {/* Black border line */}
           <div className="w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] -ml-6 md:-ml-8 h-[2px] bg-black"></div>
 
-          {/* Sections */}
-          <div className="space-y-8 pt-8">
-            {/* canViewTab/canEditTab disabled – TODO: re-enable with permissions */}
-            <IndividualOverviewTab individual={individual} canEdit={isOwner && editMode} />
-            <IndividualAboutTab individual={individual} canEdit={isOwner && editMode} />
-            <IndividualUpdatesTab
-                individual={individual}
-                filteredUpdates={filteredUpdates}
-                searchValue={searchValue}
-                setSearchValue={setSearchValue}
-                tagFilter={tagFilter}
-                setTagFilter={setTagFilter}
-                showPostModal={showPostModal}
-                setShowPostModal={setShowPostModal}
-                submitComment={submitComment}
-                commentInputs={commentInputs}
-                setCommentInputs={setCommentInputs}
-                commentSubmitting={commentSubmitting}
-                code={code}
-                onPostCreated={(nu:any)=> setIndividual((prev:any)=> prev? ({...prev, updates:[nu, ...(prev.updates||[])], feed: [{type:'update', ...nu}, ...(prev.feed||[])] }): prev)}
-              />
-            <IndividualPrayerTab
-              individual={individual}
-              onUpdate={(next)=> setIndividual((prev:any)=>({...prev, prayerRequests: next, feed: (()=>{ const updates = prev?.updates||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...next.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
-              onUpdatesChange={(updates)=> setIndividual((prev:any)=>({...prev, updates, feed: (()=>{ const prayers = prev?.prayerRequests||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...prayers.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
-              readOnly={!(isOwner && editMode)}
-            />
-            <IndividualFinanceTab
-              individual={individual}
-              onUpdate={({ fundingNeeds, givingLinks })=> setIndividual((prev:any)=>({
-                ...prev,
-                fundingNeeds,
-                givingLinks
-              }))}
-              readOnly={!(isOwner && editMode)}
-            />
-            {individual.ownerUid && (
-              <IndividualProjectsSection
-                ownerUid={individual.ownerUid}
-                isOwner={isOwner}
-                currentUser={userUid ? { uid: userUid } : null}
-              />
-            )}
-            
-            <IndividualNewslettersSection
-              individual={individual}
-              canEdit={isOwner}
-            />
+          {/* Mobile Tab Navigation — hidden on lg+ where all sections are visible */}
+          <div className="block lg:hidden bg-white border-b border-gray-200 w-[calc(100%+3rem)] -ml-6 shadow-sm overflow-hidden">
+            <div className="flex overflow-x-auto">
+              {TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveSection(tab.id)}
+                  className={`flex-shrink-0 px-4 py-3 text-xs font-semibold border-b-2 transition whitespace-nowrap ${
+                    activeSection === tab.id
+                      ? 'border-brand-main text-brand-main bg-orange-50/40'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            {isOwner && (
-              <IndividualSettingsTab
+          {/* Sections — on mobile only the active tab is shown; on lg+ all are visible */}
+          <div className="lg:space-y-8 pt-4 lg:pt-8">
+            {/* canViewTab/canEditTab disabled – TODO: re-enable with permissions */}
+            <div className={activeSection === 'overview' ? '' : 'hidden lg:block'}>
+              <IndividualOverviewTab individual={individual} canEdit={isOwner && editMode} />
+            </div>
+            <div className={activeSection === 'about' ? '' : 'hidden lg:block'}>
+              <IndividualAboutTab individual={individual} canEdit={isOwner && editMode} />
+            </div>
+            <div className={activeSection === 'updates' ? '' : 'hidden lg:block'}>
+              <IndividualUpdatesTab
+                  individual={individual}
+                  filteredUpdates={filteredUpdates}
+                  searchValue={searchValue}
+                  setSearchValue={setSearchValue}
+                  tagFilter={tagFilter}
+                  setTagFilter={setTagFilter}
+                  showPostModal={showPostModal}
+                  setShowPostModal={setShowPostModal}
+                  submitComment={submitComment}
+                  commentInputs={commentInputs}
+                  setCommentInputs={setCommentInputs}
+                  commentSubmitting={commentSubmitting}
+                  code={code}
+                  onPostCreated={(nu:any)=> setIndividual((prev:any)=> prev? ({...prev, updates:[nu, ...(prev.updates||[])], feed: [{type:'update', ...nu}, ...(prev.feed||[])] }): prev)}
+                />
+            </div>
+            <div className={activeSection === 'prayer' ? '' : 'hidden lg:block'}>
+              <IndividualPrayerTab
                 individual={individual}
-                isOwner={isOwner}
-                onUpdate={(partial)=> setIndividual((prev:any)=>({...prev, ...partial}))}
+                onUpdate={(next)=> setIndividual((prev:any)=>({...prev, prayerRequests: next, feed: (()=>{ const updates = prev?.updates||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...next.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
+                onUpdatesChange={(updates)=> setIndividual((prev:any)=>({...prev, updates, feed: (()=>{ const prayers = prev?.prayerRequests||[]; const feedParts=[...updates.map((u:any)=>({type:'update', ...u})), ...prayers.map((p:any)=>({type:'prayer', ...p}))]; feedParts.sort((a,b)=> new Date(b.createdAt||0).getTime() - new Date(a.createdAt||0).getTime()); return feedParts; })()}))}
+                readOnly={!(isOwner && editMode)}
               />
+            </div>
+            <div className={activeSection === 'finance' ? '' : 'hidden lg:block'}>
+              <IndividualFinanceTab
+                individual={individual}
+                onUpdate={({ fundingNeeds, givingLinks })=> setIndividual((prev:any)=>({
+                  ...prev,
+                  fundingNeeds,
+                  givingLinks
+                }))}
+                readOnly={!(isOwner && editMode)}
+              />
+            </div>
+            <div className={activeSection === 'projects' ? '' : 'hidden lg:block'}>
+              {individual.ownerUid && (
+                <IndividualProjectsSection
+                  ownerUid={individual.ownerUid}
+                  isOwner={isOwner}
+                  currentUser={userUid ? { uid: userUid } : null}
+                />
+              )}
+            </div>
+            <div className={activeSection === 'newsletters' ? '' : 'hidden lg:block'}>
+              <IndividualNewslettersSection
+                individual={individual}
+                canEdit={isOwner}
+              />
+            </div>
+            {isOwner && (
+              <div className={activeSection === 'settings' ? '' : 'hidden lg:block'}>
+                <IndividualSettingsTab
+                  individual={individual}
+                  isOwner={isOwner}
+                  onUpdate={(partial)=> setIndividual((prev:any)=>({...prev, ...partial}))}
+                />
+              </div>
             )}
           </div>
 
